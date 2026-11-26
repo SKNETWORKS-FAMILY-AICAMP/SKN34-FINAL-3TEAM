@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 9개(#985 `tox-retrain` 포함), Secret 이름 12개, RDS·SG·subnet group, IAM 역할 13개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 9개(#985 `tox-retrain` 포함), Secret 이름 12개, RDS·SG·subnet group, IAM 역할 14개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning, #730 표현 분류 재학습 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다. `--without-rds`면 RDS 인스턴스만 만들지 않는다(SG·서브넷 그룹은 만듦, 스냅샷 복원용 #809) | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
@@ -63,11 +63,33 @@ ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행
 재가동 때 순서(A 계정, #601):
 
 1. `demo_stack.py plan` → 두 역할이 `MISSING`인지 확인 → `apply --confirm-account <계정>`이 역할·inline 정책을 만든다(기존 자원은 안 바꿈).
-2. 클러스터를 새로 만들면 `cluster.json`의 Pod Identity 10개에 두 연결이 들어 있다. 클러스터가 이미 있으면 `aws eks create-pod-identity-association --cluster-name sagomungchi-demo-eks --namespace app --service-account ai-service --role-arn <ai 역할 ARN>`(learning도 같게)로 만든다. 연결 뒤 Pod를 다시 띄워야 자격 증명이 주입된다.
+2. 클러스터를 새로 만들면 `cluster.json`의 Pod Identity(지금 11개, #730 재학습 포함)에 두 연결이 들어 있다. 클러스터가 이미 있으면 `aws eks create-pod-identity-association --cluster-name sagomungchi-demo-eks --namespace app --service-account ai-service --role-arn <ai 역할 ARN>`(learning도 같게)로 만든다. 연결 뒤 Pod를 다시 띄워야 자격 증명이 주입된다.
 3. prod `ai-service.json`·`learning-service.json`으로 두 앱을 재배포한다(`ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`·agent egress 포함).
 4. 확인: 관리자 화면에서 테마 초안 1건 생성 → ai 로그에 그림 단계 경고(`skipped`)가 없고 `theme-drafts/` 객체가 생겼는지 → 학생 테마 화면 응답의 장면 URL이 null이 아니고 브라우저에서 열리는지. 결과는 [infra 보고서 9.8](../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16)에 적는다.
 
 B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 계정 번호(`prod/ai-service.json`·`learning-service.json`의 `ASSET_S3_BUCKET`, `report-worker.json`의 그림책 그림 허용 출처 `MEMORY_BOOK_ASSET_ORIGINS`(#974)), `iam/ai-asset-s3-role.*`·`iam/learning-asset-s3-role.*`의 버킷·클러스터 ARN, `eks/cluster.json`의 두 연결 role ARN. 다른 계정 번호 항목과 함께 바꾼다(#601 11/14 메모). 전체 순서와 교체 목록은 아래 [B 계정 전환 런북](#b-계정-전환-런북-809)이다.
+
+## 표현 분류 재학습 권한 (#730, 2026-11-26)
+
+재학습 CronJob(`app/tox-retrain`, [infra 9.35](../../docs/report/infra.md#935-운영-a-표현-분류-재학습-cronjob-730-2026-11-26))이 쓰는 역할이다. 학생 글은 클러스터 안 learning에서 받아 Pod 임시 볼륨에서만 학습하고, S3에는 모델 파일만 올린다.
+
+| 역할 | Pod Identity 연결 | 권한(inline `tox-retrain-s3-access`) |
+|---|---|---|
+| `sagomungchi-demo-tox-retrain-s3-role` | `app/tox-retrain` | models 버킷 `s3:ListBucket`(조건 없음: 처음 실행 때 `models/tox-retrain/last.json`이 없으면 `NoSuchKey`로 받아야 해서. 접두사 조건을 걸면 403이 된다), `s3:GetObject` — `models/tox-*`·`datasets/tox-retrain/*`, `s3:PutObject` — `models/tox-*`(새 버전 폴더와 `last.json`) |
+
+- trust는 scoring과 같은 형식(`pods.eks.amazonaws.com`, 클러스터 ARN·`app`·ServiceAccount `tox-retrain`)이다. ServiceAccount는 chart가 `serviceAccount.create: true`(prod 값)로 만든다
+- 버킷은 SSE-S3(AES256)라 KMS 권한은 필요 없다. 버킷 정책의 설명 모델 잠금(`explanation/…`)과 겹치지 않는다
+- 삭제 권한은 없다. 업로드 중 실패해도 올라간 객체를 지우지 않는 설계(scoring.md 6.3)와 같다
+- NetworkPolicy egress는 S3 443(scoring과 같은 prefix list 대역)·Pod Identity agent `169.254.170.23/32:80`·core 8080·learning 8081·DNS뿐이다
+- 내부 토큰: Secrets Manager `sagomungchi/demo/app/internal`의 `INTERNAL_TOKEN_OPS`를 ESO `internal-service-credentials`가 읽고, core·learning은 `INTERNAL_TOKEN_OPS`, Job은 같은 키를 `INTERNAL_TOKEN`으로 받는다
+
+A 적용(이 PR 전 준비, 배포 전에 있어야 함):
+
+1. `demo_stack.py --profile <A> plan` → `iam-role sagomungchi-demo-tox-retrain-s3-role`·`pod-identity app/tox-retrain`만 MISSING → `apply --confirm-account <A 계정>`(역할·inline 정책만 만든다)
+2. `aws eks create-pod-identity-association --cluster-name sagomungchi-demo-eks --namespace app --service-account tox-retrain --role-arn <역할 ARN>` → `plan` 전부 OK
+3. `app/internal` Secret에 `INTERNAL_TOKEN_OPS` 키를 무작위 값으로 더한다(기존 키 보존, 값은 출력하지 않음). 키가 없으면 ExternalSecret `internal-service-credentials` 전체가 동기화 실패로 남는다
+
+B에서는 런북 1·3·6단계(역할 14개, `app/internal` 7개, Pod Identity 11개)에 들어 있어 따로 할 일이 없다. 공개 학습 데이터 `datasets/tox-retrain/public-v1/`은 A에도 아직 없어서 S3 복사 대상이 아니다(올린 뒤라면 models 행에 더한다).
 
 ## 리포트 Gemma SageMaker 엔드포인트 (#746, 2026-11-18)
 
@@ -342,12 +364,12 @@ aws rds describe-db-snapshot-attributes --db-snapshot-identifier sagomungchi-dem
 | # | 단계 | 명령·방법 | 확인 | 예상 | Argo CD면 |
 |---|---|---|---|---|---|
 | 0 | 도구·로그인 | AWS CLI v2, eksctl 0.231.0(공식 릴리스, 체크섬 확인), kubectl 1.35, Helm 4.3.1, argocd CLI v3.5.7(공식 릴리스 `argocd-windows-amd64.exe`, `cli_checksums.txt`로 확인), PowerShell 7, Python 3.12, Node.js·npm, gh. `aws sts get-caller-identity --profile <B>` | 계정이 B. 선행 1·2가 들어간 main SHA | 30분 | argocd CLI는 이 단계에 포함(#855) |
-| 1★ | IAM·OIDC·ECR·S3·VPC | GitHub OIDC 제공자를 먼저 만든다([CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경), `demo_stack.py`가 관리하지 않음) → `python infrastructure/aws/demo_stack.py --profile <B> plan` → `apply --confirm-account <B 계정> --without-rds`. VPC·NAT·S3 endpoint, S3 4개, ECR 9개(재학습 `tox-retrain` 포함, #985), IAM 역할 13개(SageMaker 실행 역할·ai invoke 정책 포함), RDS SG·서브넷 그룹을 만들고 RDS 인스턴스만 만들지 않는다 | `plan`에서 `eks`·`secret`·`rds`만 MISSING | 20분 | 같음 |
+| 1★ | IAM·OIDC·ECR·S3·VPC | GitHub OIDC 제공자를 먼저 만든다([CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경), `demo_stack.py`가 관리하지 않음) → `python infrastructure/aws/demo_stack.py --profile <B> plan` → `apply --confirm-account <B 계정> --without-rds`. VPC·NAT·S3 endpoint, S3 4개, ECR 9개(재학습 `tox-retrain` 포함, #985), IAM 역할 14개(SageMaker 실행 역할·ai invoke 정책, 재학습 `tox-retrain-s3-role` #730 포함), RDS SG·서브넷 그룹을 만들고 RDS 인스턴스만 만들지 않는다 | `plan`에서 `eks`·`secret`·`rds`만 MISSING | 20분 | 같음 |
 | 2★ | S3 데이터 | 아래 "S3 복사" | `sagemaker_explanation.py --profile <B> verify` 13개 일치, scoring 객체 `FULL_OBJECT` SHA-256 | 서버 간 30분, 로컬 경유 1~2시간 | 같음 |
-| 3★ | Secrets Manager 12개 | 이름은 `demo-stack.json` `secrets`. 값은 저장소 밖 파일로 `create-secret --secret-string file://…`(출력하지 않음). **A와 같아야 하는 값**: DB 계정 6개(복원 DB의 계정이 A 비밀번호를 그대로 갖고 `rds-bootstrap`은 비밀번호를 바꾸지 않음), `app/payment`의 `PAYMENT_BILLING_ENCRYPTION_KEY`(DB에 암호화해 둔 값을 읽는 키). **새 값 가능**: `app/internal` 6개·`platform/rabbitmq`(RabbitMQ는 새 PVC), `app/auth` JWT(새 값이면 기존 로그인은 다시 함). `app/ai`는 `OPENAI_API_KEY`·`THEME_VIDEO_CREDENTIALS_JSON`·`VIDEO_PROJECT`만 넣고 RunPod 키 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`는 넣지 않는다(11/19 결정, ExternalSecret도 `OPENAI_API_KEY`만 읽음) | `plan`의 secret OK. 값은 보지 않고 `describe-secret`로 이름만 본다 | 30분 | 같음(ESO) |
+| 3★ | Secrets Manager 12개 | 이름은 `demo-stack.json` `secrets`. 값은 저장소 밖 파일로 `create-secret --secret-string file://…`(출력하지 않음). **A와 같아야 하는 값**: DB 계정 6개(복원 DB의 계정이 A 비밀번호를 그대로 갖고 `rds-bootstrap`은 비밀번호를 바꾸지 않음), `app/payment`의 `PAYMENT_BILLING_ENCRYPTION_KEY`(DB에 암호화해 둔 값을 읽는 키). **새 값 가능**: `app/internal` 7개(#730 `INTERNAL_TOKEN_OPS` 포함, core·learning·재학습 Job이 같은 Secret을 읽어 한 번에 맞음)·`platform/rabbitmq`(RabbitMQ는 새 PVC), `app/auth` JWT(새 값이면 기존 로그인은 다시 함). `app/ai`는 `OPENAI_API_KEY`·`THEME_VIDEO_CREDENTIALS_JSON`·`VIDEO_PROJECT`만 넣고 RunPod 키 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`는 넣지 않는다(11/19 결정, ExternalSecret도 `OPENAI_API_KEY`만 읽음) | `plan`의 secret OK. 값은 보지 않고 `describe-secret`로 이름만 본다 | 30분 | 같음(ESO) |
 | 4★ | CloudFront 먼저 | 아래 "손으로 하는 단계"의 CloudFront를 웹 origin만으로 먼저 만든다(OAC·`spa-router.js`·웹 버킷 policy). 시연 주소 `www.sagomungchi.co.kr`은 저장소 값이 바뀌지 않으므로, B 인증서·대체 도메인·가비아 CNAME 전환은 위 "확인 필요" 도메인 행 순서대로 A 종료 뒤 한다. `/api/*`의 ALB origin은 12단계에서 붙인다 | 배포 Deployed, B 기본 주소 기록 | 20분 | 같음 |
 | 5★ | RDS 스냅샷 복원 | 선행 A-K4(공유)가 끝났는지 본 뒤 아래 "RDS 복원": B 작업자 IAM에 A CMK 허용 → 공유 스냅샷을 B 키로 복사 → 복원 | 복사본 `KmsKeyId`가 B 키, `plan`의 rds OK, `rds.force_ssl`, 새 endpoint 기록 | 40~60분 + 복사 시간(확인 필요) | 같음 |
-| 6★ | EKS | `render-eksctl --operator-cidr <작업자 IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>` → `apply --confirm-account <B 계정> --after-eksctl`(RDS SG에 클러스터 SG 5432) → `plan` | 노드그룹 2개 OK, add-on 7개, Pod Identity 10개 | 30~40분(11/17 실측 17분) | 같음 |
+| 6★ | EKS | `render-eksctl --operator-cidr <작업자 IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>` → `apply --confirm-account <B 계정> --after-eksctl`(RDS SG에 클러스터 SG 5432) → `plan` | 노드그룹 2개 OK, add-on 7개, Pod Identity 11개(#730 `app/tox-retrain` 포함) | 30~40분(11/17 실측 17분) | 같음 |
 | 6a | 자원 값 교체 PR | 아래 "B 자원을 만든 뒤 바꿀 값"(RDS endpoint·VPC·서브넷·클러스터 SG) → develop → main | main SHA에 B 값 | 1시간(리뷰 포함) | Argo CD가 읽을 브랜치에 같은 값 |
 | 7 | 플랫폼 | **Argo CD 먼저(#855)**: [prod Argo CD README](../gitops/argocd/prod/README.md)대로 `helm install argocd argo/argo-cd --version 10.11.7 -n argocd --create-namespace -f infrastructure/gitops/environments/prod/argocd.json` → `argocd-notifications-secret`(**Argo CD 전용** Discord webhook, 원본 Secrets Manager `sagomungchi/demo/argocd/discord-webhook`, Grafana 값과 다름 #1003, 값은 저장소 밖 파일) → `project.yaml` → `root-app.yaml` → root 손 동기화 1회 → admin 비밀번호 변경·초기 Secret 삭제. 그다음 [prod README 2절](../gitops/environments/prod/README.md#2-기반-자원--secret--저장소): gp3·namespace → ESO 2.14.0 → LB Controller 1.14.1(B `vpcId`) → `app/rds-ca` → `kubectl apply -f external-secret-resources.json` → `platform-network.json`·platform-data → Karpenter 1.15.1 → `karpenter-nodepool.json`(B 서브넷·SG) → `app-oneoff-db-network.json`·`app-check-pods-network.json` | Argo CD Pod 6개 Running(`application` 노드), `sagomungchi-prod-root` Synced·Healthy, Discord에 동기화 성공 1건. ESO Ready 14개(ExternalSecret 14, SecretStore 2), `ai-provider-credentials`에 `OPENAI_API_KEY`만, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분(11/17 실측 3분) + Argo CD 15분 | 외부 chart·ExternalSecret·NetworkPolicy를 Application으로. ESO·CRD 순서는 sync wave |
 | 7a | 관측(#784) | **7단계 root app 동기화 전에** `kubectl create namespace observability` → 관측 Secret 2개(`observability-credentials`의 Grafana admin, `discord-alert-webhook`의 `DISCORD_WEBHOOK_URL`. 값은 담당자, 출력하지 않음). 나머지는 플랫폼 Application([prod README](../gitops/environments/prod/README.md#argo-cd-플랫폼-application-856-2026-11-20))이 한다: wave 4 `prod-platform-network`(`observability-platform-network.json`), wave 8 `prod-observability`(Tempo 1Gi·Collector 지표 격리 포함). Secret이 없으면 wave 8이 Healthy가 안 되어 앱(wave 10)도 멈춘다. 비상용은 `helm upgrade --install observability infrastructure/gitops/charts/observability -n observability -f infrastructure/gitops/environments/prod/observability.json`(먼저 자동 동기화를 끈다) | `prod-observability` Synced/Healthy, Grafana 로그인·datasource, Tempo `/ready` 200, Prometheus `up`. 앱이 뜨기 전에는 LLM 비용 경보가 NoData로 Discord에 온다(11/17) | 15분 | Application(Secret 2개는 손으로, #856) |
@@ -443,7 +465,7 @@ B 계정 번호를 받으면 한 번에 바꾼다. 분류 기준은 [`scripts/aw
 
 | 분류 | 파일 | 수 |
 |---|---|---|
-| 바꿈: IAM 원문 | `infrastructure/aws/iam/*.json` | 25 |
+| 바꿈: IAM 원문 | `infrastructure/aws/iam/*.json` | 27 |
 | 바꿈: IaC | `infrastructure/aws/demo-stack.json`, `infrastructure/eks/cluster.json`, `infrastructure/aws/cloudfront-config.redacted.json` | 3 |
 | 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 5개(core는 ECR 주소가 `images/`로 옮겨 없음)·`images/` 6개·`redeploy-app.ps1`(#857 뒤. `images/`는 main에서 digest PR(#858)도 바꾸므로 develop과 main 양쪽 값을 맞춘다) | 12 |
 | 바꿈: 시험 | `scripts/tests/test_cd_migration_runner.py`(가짜 `sts`가 돌려주는 번호가 `redeploy-app.ps1`과 같아야 함), `scripts/tests/test_cd_digest_pr.py`(#858 fixture의 ECR 주소. 시험 안에서만 쓰여 B 번호로 바꿔도 통과하고, 바꾸면 `check`에 A 번호가 남지 않음) | 2 |
@@ -473,6 +495,7 @@ python -m unittest discover -s scripts/tests
 | RDS endpoint | `git grep -n czcw0ywu2euo` | prod `core-service.json`(2곳)·`learning-service.json`(2곳, migration `FLYWAY_URL` 포함, #857)·`external-secret-resources.json`(2곳), `infrastructure/aws/demo-db-oneoff.k8s.yaml` |
 | VPC ID | `git grep -n vpc-0f4d9134097830b4b -- infrastructure/gitops` | prod `aws-load-balancer-controller.json` |
 | 서브넷·클러스터 SG | `karpenter-nodepool.json`의 `subnet-…`·`sg-…` | prod `karpenter-nodepool.json`(EC2NodeClass. SG는 eksctl이 만든 클러스터 SG) |
+| Kubernetes API 송신 대역(#730) | prod `observability.json`의 `prometheus.retrainJobMetrics.apiServerEgress`(`172.20.0.1/32`·`10.20.128.0/20`·`10.20.144.0/20`) | B 클러스터 `kubectl get svc kubernetes`의 ClusterIP와 control plane ENI가 놓인 사설 서브넷 CIDR. 값이 같으면 그대로 둔다. 다르면 재학습 상태 수집기가 API에 못 닿아 재학습 경보 2개가 NoData가 된다 |
 | CloudFront 도메인 | 저장소 값 없음(앱·스크립트는 `https://www.sagomungchi.co.kr`을 씀) | 바꾸지 않는다. 가비아 `www` CNAME 대상만 B CloudFront 기본 주소로 바꾼다(위 "확인 필요" 도메인 행). 이 README 위쪽 `d3jf0rnm6vhd9v`는 A 관측 기록 |
 
 `demo-observed.json` 2개, infra 보고서, 이 README 위쪽 관측 절(VPC·SG·NAT·CloudFront ID)은 A 기록이라 그대로 둔다.

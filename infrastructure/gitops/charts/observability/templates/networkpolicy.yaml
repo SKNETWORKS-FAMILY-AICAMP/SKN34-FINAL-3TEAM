@@ -130,7 +130,26 @@ spec:
         - {protocol: TCP, port: 443}
     {{- end }}
 
-{{- if .Values.prometheus.retrainJobMetrics.enabled }}
+{{- if and .Values.prometheus.retrainJobMetrics.enabled .Values.prometheus.retrainJobMetrics.apiServerEgress }}
+---
+# EKS(VPC CNI network policy agent) has no Calico API. Allow the kubernetes Service
+# ClusterIP and the control-plane ENI subnets on 443 for the kube-state-metrics sidecar.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tox-retrain-state-api
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: prometheus}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.prometheus.retrainJobMetrics.apiServerEgress }}
+        - ipBlock: {cidr: {{ . }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 443}
+{{- else if .Values.prometheus.retrainJobMetrics.enabled }}
 ---
 # kind uses host networking for kube-apiserver. Calico resolves the actual API
 # endpoint and port from its Service when the local Docker node address changes.

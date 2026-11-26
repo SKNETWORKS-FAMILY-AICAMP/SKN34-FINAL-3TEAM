@@ -223,6 +223,13 @@
       }
     },
     {
+      "name": "sagomungchi-demo-tox-retrain-s3-role",
+      "trust": "iam/tox-retrain-s3-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-tox-retrain-s3-access": "iam/tox-retrain-s3-role.inline.tox-retrain-s3-access.json"
+      }
+    },
+    {
       "name": "sagomungchi-demo-sagemaker-explanation-role",
       "trust": "iam/sagemaker-explanation-role.trust.json",
       "inline": {

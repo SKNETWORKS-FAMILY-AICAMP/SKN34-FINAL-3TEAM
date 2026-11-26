@@ -136,7 +136,7 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 
 1. `demo_stack.py plan`으로 남은 자원을 확인하고 `apply --confirm-account 347161580747`로 NAT·EIP를 다시 만든다. private route table 두 개의 blackhole `0.0.0.0/0`을 `aws ec2 replace-route ... --nat-gateway-id <새 NAT>`로 고친다(`apply`는 기존 경로를 바꾸지 않음).
 2. RDS를 시작해 available을 확인한다.
-3. `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>`로 클러스터·노드그룹·add-on·Pod Identity를 만든다. 만든 뒤 access entry가 기존 `student` 권한과 같은지, Pod Identity 10개(#652 테마 자산 ai·learning 2개 포함)가 이 문서의 `cluster.json`과 같은지 확인한다.
+3. `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>`로 클러스터·노드그룹·add-on·Pod Identity를 만든다. 만든 뒤 access entry가 기존 `student` 권한과 같은지, Pod Identity 11개(#652 테마 자산 ai·learning 2개, #730 재학습 1개 포함)가 이 문서의 `cluster.json`과 같은지 확인한다.
 4. `apply --after-eksctl`로 새 클러스터 SG에서 RDS 5432를 허용한다. 앱이 RDS에 붙는 것을 확인한 뒤, 옛 클러스터 SG `sg-086c7c83b3638da59`를 가리키는 규칙과 그 SG를 정리한다.
 5. [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185) 2단계(gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·platform-data)를 따른다. Karpenter 1.15.1과 NodePool·EC2NodeClass는 보관한 JSON과 이 문서 맨 위 Karpenter 설명(#211)을 대조해 설치한다.
 6. **DB는 그대로이므로 RDS bootstrap·migration·운영 데이터 seed는 다시 실행하지 않는다.** 앱 6개를 보관한 Helm values(같은 이미지 digest)로 설치하고 readiness를 확인한다.

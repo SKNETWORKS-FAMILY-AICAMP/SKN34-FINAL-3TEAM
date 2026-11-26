@@ -19,6 +19,15 @@
     },
     "rabbitmqDlqMetrics": {
       "enabled": true
+    },
+    "retrainJobMetrics": {
+      "enabled": true,
+      "image": "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.17.0",
+      "apiServerEgress": [
+        "172.20.0.1/32",
+        "10.20.128.0/20",
+        "10.20.144.0/20"
+      ]
     }
   },
   "grafana": {
@@ -255,6 +264,24 @@
           "for": "5m",
           "noDataState": "OK",
           "summary": "Monday batch window (Sun 23:30-Mon 02:00 KST): 3 or more NOT_INCLUDED explanations and no INCLUDED one in the last 30 minutes. Check the report explanation SageMaker endpoint."
+        },
+        {
+          "uid": "tox-retrain-failed",
+          "title": "Tox retraining Job failed",
+          "expr": "max(kube_job_failed{namespace=\"app\",condition=\"true\"} and on(namespace,job_name) kube_job_owner{namespace=\"app\",owner_kind=\"CronJob\",owner_name=\"tox-retrain\"} and on(namespace,job_name) (kube_job_created{namespace=\"app\"} > time() - 86400)) or (max(kube_cronjob_spec_suspend{namespace=\"app\",cronjob=\"tox-retrain\"}) * 0)",
+          "operator": "gt",
+          "threshold": 0,
+          "for": "0s",
+          "summary": "A tox-retrain Job created in the last 24 hours reached the terminal Failed condition."
+        },
+        {
+          "uid": "tox-retrain-missed",
+          "title": "Tox retraining schedule missed",
+          "expr": "max(time() - kube_cronjob_next_schedule_time{namespace=\"app\",cronjob=\"tox-retrain\"}) or (max(kube_cronjob_spec_suspend{namespace=\"app\",cronjob=\"tox-retrain\"} == 1) * 0)",
+          "operator": "gt",
+          "threshold": 300,
+          "for": "0s",
+          "summary": "The enabled tox-retrain CronJob is over five minutes late."
         }
       ],
       "discordSecretName": "discord-alert-webhook"

@@ -2170,7 +2170,7 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 
 로컬에서 `ci-gitops`의 Helm·kubeconform 단계를 실행해 리소스 193개가 모두 유효했고 건너뜀은 0개였다. prod 관측 values로 렌더링한 Kubernetes 객체 21개를 변경 전과 대조했다. 원격 CI 및 Discord 수신은 이 로컬 검증에 포함하지 않았다.
 
-운영 노드 배치, AWS 권한, 비용과 Discord 수신은 11/28 B 첫 배포 안정화 뒤 검토한다. EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
+운영 노드 배치, AWS 권한과 Discord 수신은 11/26 결정으로 A에 먼저 넣었다(9.35). EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
 
 ## 9.26 A 계정 11/24 재가동 기록 (#927, 2026-11-24)
 
@@ -2545,6 +2545,92 @@ prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는
 - 영향: develop → main 릴리스 PR도 작성자가 아닌 1명의 승인이 있어야 병합된다(B2)
 - #991 커밋 메시지(`c283a2b8`)의 깨진 사유·호환성 근거 원문은 이력 재작성 없이 [#1004 댓글](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/1004#issuecomment-7184212482)에 남겼다. #991 본문 손 수정 때 빠진 호환성 근거 5행(data·api·events·ongoingLearning·payments)도 커밋 메시지에서 복원해 같이 적었다
 - 남은 것: 다른 code owner 승인 1명 뒤 병합 가능해지는지, 다음 cd-release digest PR 본문 한국어가 정상인지(#1004)
+
+## 9.35 운영(A) 표현 분류 재학습 CronJob (#730, 2026-11-26)
+
+9.25의 로컬 구성을 prod(A 계정 EKS)에 옮겼다. 재학습 이미지는 #985로 A ECR에 있고, digest는 main `images/tox-retrain.json`(1차 릴리스 digest PR #1077)이 갖는다. API 변경 없음.
+
+### 9.35.1 결정 (동섭, 2026-11-26)
+
+- A에서는 예약 실행을 끈다(`suspend: true`). 기본 일요일 03:00이 A 야간 정지(화·목·금·토·일 01:00~07:15 노드·RDS 정지)와 겹친다. 배포 뒤 수동 실행 1회로 확인한다
+- 실패·예약 지연 경보 2개와 상태 수집기(kube-state-metrics 곁 컨테이너)를 prod 관측에 같이 넣는다. 예약을 꺼 둔 동안 예약 지연 경보는 울리지 않는다(9.25 규칙 그대로)
+
+### 9.35.2 구성
+
+| 항목 | 로컬(kind, 9.25) | 운영(A) |
+|---|---|---|
+| 값 | `environments/local/tox-retrain.yaml` | `environments/prod/tox-retrain.json` + `images/tox-retrain.json` |
+| Argo CD | `local-tox-retrain` | `prod-tox-retrain`(`argocd/prod/apps/tox-retrain.yaml`, wave 10, 자동 동기화). chart가 app-service가 아니라 ApplicationSet 목록에 넣지 않았다 |
+| 이미지 | `sagomungchi/tox-retrain:local`, `Never` | `<A ECR>/sagomungchi/tox-retrain@sha256:…`, `IfNotPresent` |
+| 저장소 | MinIO 주소·루트 키(`storage: minio`) | S3 기본 주소, `S3_BUCKET_OWNER`=A 계정, Pod Identity(`storage: aws`, ServiceAccount `tox-retrain`, 역할 `sagomungchi-demo-tox-retrain-s3-role`) |
+| 내부 토큰 | `app-service-credentials`의 `INTERNAL_TOKEN_OPS` | `internal-service-credentials`(ESO, `sagomungchi/demo/app/internal`)의 `INTERNAL_TOKEN_OPS`. core·learning도 같은 키를 env로 받는다 |
+| egress | core 8080·learning 8081·MinIO 9000·DNS | core 8080·learning 8081·S3 443(scoring과 같은 S3 prefix list 대역 9개)·Pod Identity agent `169.254.170.23/32:80`·DNS |
+| ingress | core·learning `ingressFromApps`에 `tox-retrain` | 같음(prod core·learning) |
+| 노드 | kind 노드 | `nodeSelector: workload=application-burst`(Karpenter, t3.medium·t3.large, taint 없음). 요청 CPU 1·2560Mi는 상시 노드그룹 여유로 모자라 burst 노드에 둔다. Job이 끝나 노드가 비면 5분 뒤 정리된다 |
+| 상태 수집기 API 접근 | Calico `projectcalico.org/v3` 정책(`default/kubernetes` Service) | 표준 NetworkPolicy `tox-retrain-state-api`: `172.20.0.1/32`(kubernetes Service ClusterIP)·사설 서브넷 `10.20.128.0/20`·`10.20.144.0/20`(control plane ENI `10.20.130.189`·`10.20.148.21`, 11/26 조회) 443. EKS 네트워크 정책 agent v1.4.0에는 Calico API가 없다 |
+| 경보 | Discord 끔 | 같은 식 2개(`tox-retrain-failed`·`tox-retrain-missed`)를 prod 규칙에 더해 Discord로 보낸다 |
+
+chart는 `storage`(minio·aws), `image`(문자열·`repository`+`digest`), `imagePullPolicy`, `serviceAccount`, `nodeSelector`·`tolerations`, `networkPolicy.s3Egress`로 나눴다. 로컬 values의 렌더 결과는 바뀌지 않는다(아래 검증).
+
+### 9.35.3 검증 (로컬, 2026-11-26)
+
+- `helm lint --strict`·`helm template`(Helm 4.3.1): tox-retrain local·prod, observability local·prod, core·learning prod 모두 통과
+- 로컬 렌더 대조: tox-retrain·observability local values의 렌더 결과가 변경 전과 같다(줄 끝 제외 `diff` 0줄). observability prod values를 변경 전 값으로 렌더한 결과도 같다
+- `verify_chart.py`: 기존 단계 전부와 새 단계 "prod retraining scrape, EKS API egress and the kind-verified rules routed to Discord" 통과. 가속 복사 시험(Docker)에서는 kube-state-metrics를 띄우지 않으므로 `tox-retrain-*` 규칙을 뺐다(kind에서 9.25로 확인한 식과 prod 식이 같은지는 새 단계가 본다)
+- `scripts/tests` 중 `test_aws_demo_stack`(IAM 역할 수 13→14)·`test_runtime_config`·`test_cd_deployment`·`test_cd_digest_pr` 102개 통과. `demo_stack.py plan`은 9.35.4
+- kubeconform은 로컬에 없어 원격 `ci-gitops`로 확인한다
+
+### 9.35.4 A 사전 준비
+
+2026-11-26 16시 무렵 A 계정(프로필 `sagomungchi-provided`, ap-northeast-2)에 적용했다. 절차는 [AWS README #730 절](../../infrastructure/aws/README.md#표현-분류-재학습-권한-730-2026-11-26).
+
+| 작업 | 결과 |
+|---|---|
+| `demo_stack.py plan` | 적용 전 `iam-role sagomungchi-demo-tox-retrain-s3-role`·`pod-identity app/tox-retrain`만 MISSING(나머지 68개 OK) |
+| `demo_stack.py apply --confirm-account 347161580747` | `created iam-role sagomungchi-demo-tox-retrain-s3-role`(trust·inline `sagomungchi-demo-tox-retrain-s3-access`) |
+| `aws eks create-pod-identity-association` | `app/tox-retrain` → 위 역할, association `a-sfpnfra90dhpn6xn5` |
+| `plan` 재실행 | `summary: OK=70` |
+| Secrets Manager `sagomungchi/demo/app/internal` | `INTERNAL_TOKEN_OPS`를 무작위 값(43자, 다른 토큰과 다름)으로 더함. 기존 키 7개 값은 그대로인지 대조했다. 값은 출력·기록하지 않았고 임시 파일은 지웠다 |
+
+배포 전이라 ServiceAccount `app/tox-retrain`은 아직 없다. Pod Identity 연결은 ServiceAccount가 생긴 뒤 만든 Pod부터 적용된다. 지금 떠 있는 ExternalSecret은 새 키를 아직 읽지 않으므로 영향이 없다.
+
+### 9.35.5 배포 뒤 수동 실행 (main 반영 뒤)
+
+전제: 이 변경이 2차 릴리스로 main에 들어가 `prod-tox-retrain`·`prod-observability`·`prod-external-secret-resources`·core·learning이 Synced/Healthy. core·learning Pod가 새 env(`INTERNAL_TOKEN_OPS`)로 다시 떠 있어야 한다.
+
+```powershell
+$env:KUBECONFIG = '<A kubeconfig>'
+kubectl -n argocd get applications prod-tox-retrain prod-observability prod-core-service prod-learning-service
+kubectl -n app get cronjob tox-retrain -o jsonpath='{.spec.suspend}'   # true
+kubectl -n app get externalsecret internal-service-credentials          # Ready True(키가 없으면 SecretSyncedError)
+kubectl -n app get secret internal-service-credentials -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'   # 키 이름만, INTERNAL_TOKEN_OPS 포함
+kubectl -n app get jobs -l app.kubernetes.io/name=tox-retrain          # 실행 중인 Job이 없어야 함(손 Job은 Forbid가 막지 않음)
+$job = 'tox-retrain-manual-' + (Get-Date -Format yyyyMMddHHmmss)
+kubectl -n app create job $job --from=cronjob/tox-retrain
+kubectl -n app get pod -l job-name=$job -o wide -w                     # Karpenter burst 노드에 배치되는지
+kubectl -n app logs -f job/$job
+kubectl -n app get job $job
+```
+
+확인 기준:
+
+| 항목 | 통과 |
+|---|---|
+| 배치 | Pod가 `workload=application-burst` 노드에서 실행, 이미지 pull 성공 |
+| 자격 증명 | Pod에 `eks-pod-identity-token` 볼륨, 로그에 S3 `AccessDenied`·자격 증명 오류 없음 |
+| S3·내부 API | `last_read` 단계 통과(처음이면 `last.json` 없음), learning `label-count` 응답 |
+| 라벨 200건 미만 | `skip reason=not_enough_labels`, 종료 코드 0, Job Complete. 이 경우 다운로드·업로드·등록은 확인되지 않는다 |
+| 라벨 200건 이상 | `stage=register`·`stage=last_write` 완료, S3 `models/<활성 tox 이름>/<새 버전>/` 파일 5개와 `models/tox-retrain/last.json`, 등록부 새 행 `REGISTERED`(활성화 안 함), 기존 활성 모델 유지 |
+| 경보 | Prometheus `up{job="tox-retrain-state"}=1`, Grafana 두 규칙이 Normal(예약 지연 규칙은 suspend라 0). 실패하면 실패 경보가 Discord로 온다 |
+| 정리 | Job 완료 5분 뒤 burst 노드 정리(`kubectl get nodes -l workload=application-burst`) |
+
+### 9.35.6 한계·남은 것
+
+- 전체 경로(다운로드·학습·업로드·등록) 확인에는 두 가지가 먼저 있어야 한다. A models 버킷에 공개 데이터 묶음 `datasets/tox-retrain/public-v1/`이 아직 없고(11/26 조회 0개, learning.md 16절), 새 라벨이 200건 이상이어야 한다. 둘 중 하나라도 없으면 수동 실행은 `last_read`·라벨 수 조회까지만 확인한다
+- 상태 수집기 API egress는 EKS 네트워크 정책 agent에서 ClusterIP와 ENI 대역 중 어느 쪽으로 판정되는지 실제로 재지 않아 둘 다 열었다. 배포 뒤 `up{job="tox-retrain-state"}`로 확인한다. 사설 서브넷 443이 함께 열리는 범위는 Prometheus Pod 하나다
+- `ListBucket`은 접두사 조건 없이 models 버킷 전체 목록을 볼 수 있다(처음 실행의 `NoSuchKey` 판정 때문, AWS README #730 절)
+- 실제 학습 시간·최고 메모리는 운영 모델로 재지 않았다. Job 기한 40분·상한 3Gi는 9.25 값 그대로다
+- B 전환(#809): 역할·Pod Identity·`INTERNAL_TOKEN_OPS`는 런북 1·3·6단계에 들어 있다. API 송신 대역은 "B 자원을 만든 뒤 바꿀 값"에 더했다. B에서 예약을 켤지는 B 야간 정지 계획에 맞춰 따로 정한다
 
 ## 10. 근거 링크
 

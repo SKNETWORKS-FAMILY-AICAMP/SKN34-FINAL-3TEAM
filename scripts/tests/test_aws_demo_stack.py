@@ -301,7 +301,7 @@ class DemoStackTest(unittest.TestCase):
         kinds = [kind for kind, _ in created]
         self.assertEqual(kinds.count('subnet'), 4)
         self.assertEqual(kinds.count('s3'), 4)
-        self.assertEqual(kinds.count('iam-role'), 13)
+        self.assertEqual(kinds.count('iam-role'), 14)  # #730 tox-retrain-s3-role 포함
         self.assertEqual(kinds.count('ecr'), 9)  # #985 tox-retrain 포함
         self.assertIn(('rds', 'sagomungchi-demo-db'), created)
 
