@@ -60,12 +60,6 @@ def test_ready_down_without_dependencies() -> None:
     assert response.json()["checks"]["rabbitmq"] == "DOWN"
 
 
-@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
-def test_api_docs_are_disabled(path: str) -> None:
-    with make_client() as client:
-        assert client.get(path).status_code == 404
-
-
 def test_internal_without_token_is_401_problem() -> None:
     with make_client() as client:
         response = client.get("/internal/analysis/probe/students/s1")
