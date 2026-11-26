@@ -141,7 +141,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=get_settings().service_name, lifespan=lifespan)
+    # 문서 경로는 인증 미들웨어(/internal/만 검사) 밖이라 끈다 (#1053). 계약은 contracts/openapi
+    app = FastAPI(
+        title=get_settings().service_name,
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     register_error_handlers(app)
     app.add_middleware(InternalAuthMiddleware)
     # 마지막에 넣어 가장 바깥: 401·403도 재고, 서버 span 안에서 인증·처리가 돈다
