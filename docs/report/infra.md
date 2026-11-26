@@ -2516,6 +2516,21 @@ prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는
 | 분석 대체 응답률 | 기록 예정 | 판단 예정 |
 | 가드 차단율(`followup_leak`·`judgment_quote`) | 기록 예정 | 판단 예정 |
 
+## 9.33 법정대리인 동의서 1.2 시드 (#1061 V60, 2026-11-26)
+
+에픽 #1064의 core 부분이다. 학부모 원문 제공을 학생 선택(#206)에서 법정대리인 동의서(GUARDIAN) 1.2 필수 동의로 옮겼다. 문구·시행일은 [auth-account 20절](auth-account.md#20-원문-제공-법정대리인-필수-동의-1064)(#1058), API 변경은 [core-gateway 38절](core-gateway.md#38-학생-원문-공개-비공개-차단-제거와-법정대리인-동의서-12-1061-2026-11-26).
+
+| 바꾼 것 | 내용 | 근거 |
+|---|---|---|
+| `V60__guardian_consent_record_sharing.sql` | `consent_document`에 GUARDIAN 1.2 행 1개 추가(`00000000-0000-4000-8000-000010610001`, `required = true`, `effective_from = 2026-11-27`). 본문은 V54 GUARDIAN 1.1 원문에서 두 번째 항목 목적 줄 끝 한 구절만 다름 | #732(V54)처럼 게시한 행은 고치지 않고 새 판 행을 더한다. 현재 판 조회(`effective_from DESC`)가 시행일부터 1.2를 고르므로 코드 변경 없이 기존 자녀는 `guardianConsentRequired = true`·학생 세션 차단(재동의 전까지) |
+| `student.parent_sharing_enabled`(V21) | 지우지 않고 남김. 앱은 더 이상 읽고 쓰지 않는다 | `docs/README.md` DB migration·API 변경 규칙(#1076): 칼럼 삭제는 안 쓰게 바꾼 PR과 나눠 다음 릴리스에서 한다. 이 릴리스를 되돌리면 옛 앱이 이 칼럼을 읽기 때문. 삭제는 #1078 |
+
+- 잠금·데이터: INSERT 1건이라 잠금이 짧고 기존 행은 바뀌지 않는다
+- 되돌리기: 칼럼 삭제·이름 변경이 없어 직전 digest로 되돌릴 수 있다. 되돌리면 옛 앱이 칼럼 값(대부분 false)으로 다시 원문을 가리고, GUARDIAN 1.2 행은 옛 앱에서도 현재 판으로 쓰인다(재동의 화면은 같음)
+- 시행일: 2026-11-27은 prod 배포일 기준안이며 배포일이 바뀌면 병합 전에 V60 날짜를 같이 바꾼다(auth-account 20절). 시행일 전에 배포되면 그날까지는 1.1 동의만으로 학부모가 원문을 본다
+- 시연·더미 계정: 시행일 뒤 `demo_account_data.py children`·`prepare_accounts.py --families`를 다시 돌려 GUARDIAN 1.2 재동의를 보낸다(#1063, `infrastructure/aws/README.md`)
+- local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v59` → `v60`으로 올렸다. prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

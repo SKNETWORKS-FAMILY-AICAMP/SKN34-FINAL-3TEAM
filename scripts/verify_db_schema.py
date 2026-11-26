@@ -28,7 +28,7 @@ def require(condition, message):
 
 # Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0, #388 COMMUNITY 1.0,
 # #389 V35 reward rules, #485 V43 THEME_ON_TIME·THEME_FINISHED rules, #415 V39 TERMS·PRIVACY 1.1,
-# #732 V54 PRIVACY 1.2·GUARDIAN 1.1, #728 V55 pipeline account). Only these exact keys may exist before the fixtures run;
+# #732 V54 PRIVACY 1.2·GUARDIAN 1.1, #728 V55 pipeline account, #1061 V60 GUARDIAN 1.2). Only these exact keys may exist before the fixtures run;
 # anything else means a non-isolated DB.
 MIGRATION_SEED_ROWS = {
     "core_db": {
@@ -41,6 +41,7 @@ MIGRATION_SEED_ROWS = {
             "00000000-0000-4000-8000-000004150002",
             "00000000-0000-4000-8000-000007320001",
             "00000000-0000-4000-8000-000007320002",
+            "00000000-0000-4000-8000-000010610001",
         ),
         "reward_rule": (
             "MISSION_COMPLETED",

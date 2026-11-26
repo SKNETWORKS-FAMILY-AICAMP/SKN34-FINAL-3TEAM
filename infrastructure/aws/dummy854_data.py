@@ -135,19 +135,17 @@ def community_consent(api, ptok, child_id):
 
 
 def cmd_community(api, args):
-    """첫 풀이 전에: 원문 공개를 켜고 공개 대상은 커뮤니티 공개를 켠다. 공유물은 돌아보기 저장 때만 생긴다"""
+    """첫 풀이 전에: 공개 대상 학생의 커뮤니티 공개를 켠다. 공유물은 돌아보기 저장 때만 생긴다.
+    학부모 원문 제공은 법정대리인 동의서(GUARDIAN) 필수 동의라 따로 켜지 않는다(#1064)"""
     _, students, accounts = load(args)
 
-    def turn_on(stok, label, public):
-        s, p, _ = api.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True}, stok)
-        api.ok("원문 공개", s, p)
-        if public:
-            s, p, _ = api.call("PUT", "/students/me/community-settings", {"enabled": True}, stok)
-            api.ok("커뮤니티 공개", s, p, (200,))
-        print(f"{label}: 원문 공개, 커뮤니티 공개 {'켬' if public else '끔(그대로)'}")
+    def turn_on(stok, label):
+        s, p, _ = api.call("PUT", "/students/me/community-settings", {"enabled": True}, stok)
+        api.ok("커뮤니티 공개", s, p, (200,))
+        print(f"{label}: 커뮤니티 공개 켬")
 
-    each(students, "공개 설정", lambda st: turn_on(api.student(st["nickname"], creds(accounts, st))[0],
-                                              st["nickname"], st["public"]))
+    each([st for st in students if st["public"]], "커뮤니티 공개",
+         lambda st: turn_on(api.student(st["nickname"], creds(accounts, st))[0], st["nickname"]))
     for nickname in args.demo_child or []:
         # #624 시연 학생: children 명령은 GUARDIAN 동의만 저장하므로 COMMUNITY 동의를 먼저 더한다
         ptok, _ = api.parent()
@@ -155,7 +153,7 @@ def cmd_community(api, args):
         if not child:
             raise SystemExit(f"시연 자녀 '{nickname}' 없음")
         community_consent(api, ptok, child["id"])
-        turn_on(api.student(nickname)[0], nickname, True)
+        turn_on(api.student(nickname)[0], nickname)
 
 
 def cmd_solve(api, args):
@@ -449,7 +447,7 @@ def main():
     ap.add_argument("--grades", help="대상 학년, 예: G3,G5(테마가 게시된 학년만 돌릴 때)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("plan", help="무리·학년·주별 문제 수와 구독 SQL 값(API 없음)")
-    p = sub.add_parser("community", help="원문 공개·커뮤니티 공개 켬(첫 풀이 전)")
+    p = sub.add_parser("community", help="공개 대상 커뮤니티 공개 켬(첫 풀이 전)")
     p.add_argument("--demo-child", action="append", help="함께 공개할 #624 시연 자녀 별명(시연 학부모 환경 변수)")
     p = sub.add_parser("solve", help="무리별 문제 수만큼 이번 주 풀이")
     p.add_argument("--stage", required=True, choices=("wed", "sat"))

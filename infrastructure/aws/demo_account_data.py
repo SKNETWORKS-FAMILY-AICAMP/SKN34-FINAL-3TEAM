@@ -329,10 +329,8 @@ def solve_mission(api, stok, mission_id, context, week_start, day, seed=0):
 
 
 def cmd_solve(api, args):
-    """서버 시계 기준 이번 주 테마를 끝낸다: 원문 공개 → 시작 이야기 → 남은 요일 풀이 → 정답 고르기 → 종료 이야기."""
+    """서버 시계 기준 이번 주 테마를 끝낸다: 시작 이야기 → 남은 요일 풀이 → 정답 고르기 → 종료 이야기."""
     stok, child = api.student(args.child)
-    s, p, _ = api.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True}, stok)
-    api.ok("원문 공개", s, p)
     solve_week(api, stok, args.child, skip_pick=args.skip_pick)
 
 

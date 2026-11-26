@@ -195,9 +195,6 @@ def judge(args):
     judgments = followups = 0
     for index, child in enumerate(account["children"]):
         session = TokenSession(api, lambda child=child: student_token(api, account, child))
-        # 분석 대화·주간 리포트 서술은 학생이 보호자 공유를 켜야 기록을 쓴다(학생 설정 화면과 같은 API)
-        s, shared = session.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True})
-        api.ok("보호자 공유 켜기", s, shared, (200,))
         s, listed = session.call("GET", "/missions")
         missions = [m for m in api.ok("미션 목록", s, listed, (200,)).get("items", []) if m.get("inputType") in args.input_types]
         for mission in missions:

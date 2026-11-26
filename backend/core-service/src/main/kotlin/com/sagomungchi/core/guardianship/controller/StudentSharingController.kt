@@ -14,7 +14,8 @@ class StudentSharingController(private val service: StudentLearningContextServic
     @GetMapping("/api/v1/students/me/sharing-preferences")
     fun own() = response(service.ownSharing())
     @PutMapping("/api/v1/students/me/sharing-preferences")
-    fun update(@Valid @RequestBody body: Update) = response(service.ownSharing(body.parentSharingEnabled!!))
+    // #1064: the value is validated but ignored; originals follow GUARDIAN consent (removed after web #1062).
+    fun update(@Valid @RequestBody body: Update) = response(service.ownSharing())
     @GetMapping("/api/v1/children/{childId}/sharing-preferences")
     fun parent(@PathVariable childId: UUID) = response(service.parentSharing(childId))
     private fun response(value: StudentLearningContextService.SharingPreference) =

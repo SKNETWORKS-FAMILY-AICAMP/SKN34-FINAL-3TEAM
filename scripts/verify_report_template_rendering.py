@@ -30,7 +30,7 @@ from tests.test_narrative import Previous
 from tests.test_rendering import pdf_text
 
 
-async def verify(core_url: str, student: UUID, private: bool = False):
+async def verify(core_url: str, student: UUID):
     report, source = fixed_result(student)
     bodies = {}
     sent = []
@@ -76,25 +76,6 @@ async def verify(core_url: str, student: UUID, private: bool = False):
                     del bodies[key]
 
     previous = Previous(source)
-    if private:
-        from app.generation.record_generator import RecordGenerator
-        from tests.record_helpers import attempt_for, records_for
-
-        class Records:
-            async def records(self, student_id, period):
-                return replace(
-                    records_for(
-                        student_id,
-                        [
-                            attempt_for(
-                                student_id, texts=("합성비밀 첫답", "합성비밀 새답")
-                            )
-                        ],
-                    ),
-                    period=period,
-                )
-
-        previous = RecordGenerator(Records())
     token = bind_user_context(UserContext(None, "SYSTEM", frozenset([str(student)])))
     try:
         async with internal_client(core_url) as client:
@@ -112,20 +93,18 @@ async def verify(core_url: str, student: UUID, private: bool = False):
             )
         assert result.versions["template"]["revision"] == 1
         assert result.versions["template"]["settings"]["tone"] == "EASY"
-        assert not sent if private else sent[0]["tone"] == "EASY"
+        assert sent[0]["tone"] == "EASY"
         assert (
             result.verification["numbersMatched"]
             and result.verification["quotesMatched"]
         )
-        assert (
-            result.narrative is None if private else result.narrative["source"] == "LLM"
-        )
+        assert result.narrative["source"] == "LLM"
         assert len(bodies) == 6
         for key, body in bodies.items():
             text = pdf_text(body) if key.endswith("/pdf") else body.decode()
             assert "[강조]" in text
             assert "합성비밀" not in text
-            if private or "/free/" in key:
+            if "/free/" in key:
                 assert "답변제출시도1건이확인되었습니다." not in "".join(text.split())
             else:
                 assert "답변제출시도1건이확인되었습니다." in "".join(text.split())
@@ -136,7 +115,6 @@ async def verify(core_url: str, student: UUID, private: bool = False):
                     "coreHttp": True,
                     "templateRevision": 1,
                     "tone": "EASY",
-                    "private": private,
                     "renderedFiles": len(bodies),
                     "numbersMatched": True,
                     "quotesMatched": True,
@@ -150,9 +128,5 @@ async def verify(core_url: str, student: UUID, private: bool = False):
 
 if __name__ == "__main__":
     asyncio.run(
-        verify(
-            sys.argv[1],
-            UUID(sys.argv[2]),
-            len(sys.argv) > 3 and sys.argv[3] == "private",
-        )
+        verify(sys.argv[1], UUID(sys.argv[2]))
     )
