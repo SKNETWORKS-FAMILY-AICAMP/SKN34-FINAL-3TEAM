@@ -8,7 +8,7 @@
 - access JWT는 HS256(Spring Security JOSE), 부모·관리자 기본 15분·프론트 메모리 보관. 학생은 #995에서 기본 미사용 30분·탭 sessionStorage 보관 및 유효 Bearer 갱신으로 변경(18장). refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
 - 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`, 학부모 ID·비밀번호 가입·로그인은 12장 `parent_credential`)
-- 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
+- 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적으로 1회 소비한다. 재사용을 감지하면 해당 세션과 그 세션에서 동석으로 들어간 학생 세션을 같이 폐기한다(#1055).
 - 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 다시 로그인(Google 또는 아이디, 12장)
 - 키: JWT 키는 base64 32바이트 이상 난수, core에만 Secret으로 주입. 단일 HS256 키라 교체 시 기존 access·OAuth 상태 토큰이 무효화됨. Google 키가 없으면 로그인 시작은 명시적 503(가짜 로그인 없음)
 - Google SSO가 보호자 본인 재확인을 보장하지는 않음(추가 본인 확인은 별도 제품 정책)
@@ -264,6 +264,7 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 - `parent_credential`(V38)은 `admin_credential`과 같은 모양. 검사·잠금은 `PasswordCredentialService` 하나로 공유. 탈퇴 완료 시 행 삭제, `login_id`는 `withdrawn:<id>`로 바뀌어 아이디가 풀림
 - 가입 `POST /auth/parent/signup {loginId,password,name}`: 409 `LOGIN_ID_TAKEN`, 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`, 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애 503 `SIGNUP_UNAVAILABLE`). 성공하면 Google 신규 가입과 같은 `startSession`. `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`
 - 로그인 `POST /auth/parent/login`: 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성은 같은 401 `INVALID_CREDENTIALS`. 5회째 실패에 15분 잠금(423 `LOGIN_LOCKED`)
+- #1054에서 관리자·학부모 비밀번호 로그인에 Redis IP 한도를 도입했다. 기본 15분에 실패·처리 중 요청 4건까지 허용하고 성공하면 자리를 돌려준다. 한도 초과와 Redis 장애는 각각 429 `LOGIN_RATE_LIMITED`, 503 `LOGIN_UNAVAILABLE`로 응답한다.
 - 비밀번호 재확인 `POST /me/reauth/password {purpose,childId?,scope?,password}`: 맞으면 `reauth_challenge`와 `reauth_grant`를 한 번에 만들어 `{reauthToken,expiresAt}` 반환. 기존 사용처의 consume 검사는 불변. 틀리면 403 `REAUTH_PASSWORD_INVALID`, Google 계정은 409 `REAUTH_METHOD_MISMATCH`
 - `GET /me`에 `authMethod`(`PASSWORD`·`GOOGLE`)와 `loginId` 추가. 비밀번호 학부모의 `email`은 null
 - 별도 경로로 둔 이유: `/me/reauth`에 `password`를 더하면 Google 시작 응답과 바로 발급 응답이 한 경로에 섞임
