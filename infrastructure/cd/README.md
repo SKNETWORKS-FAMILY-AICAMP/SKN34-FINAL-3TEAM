@@ -203,8 +203,32 @@ B 계정은 IAM·ECR 파일의 계정 번호를 바꾸는 6a PR 뒤 `demo_stack.
 
 1. 되돌릴 digest PR 화면에서 **Revert** → 만들어진 revert PR을 같은 승인 규칙(Revert를 누른 사람과 다른 code owner 1명)으로 병합한다. Argo CD가 이전 digest로 동기화한다.
 2. Argo CD UI의 rollback·수동 sync로 이전 revision을 띄우지 않는다(Git과 어긋나 다음 자동 동기화가 되돌림).
-3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision도 이전 값으로 돌아가지만 이미 끝난 Job 이름이 같으면 다시 실행해도 Flyway·Alembic은 할 일이 없다.
+3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision이 이전 값으로 돌아가면 이전 이름의 migration Job이 PreSync로 다시 돈다. Flyway(core·learning)는 모르는 최신 migration을 건너뛰고 통과하지만, Alembic(report)은 DB의 revision을 모르면 실패해 report-api가 바뀌지 않는다(11/24 확인, infra 9.26.6).
 4. 그 뒤 다른 digest PR이 병합돼 revert가 충돌하면, 되돌릴 digest를 넣은 PR을 손으로 만든다(`images/**`만, 같은 승인 규칙). 경로 확인은 위 8단계와 같다.
+
+### revert할지 고쳐서 새로 배포할지 (2026-11-24)
+
+11/24 A에서 11/06 digest로 revert하자 report-api migration 실패와 `GET /students/me/weekly-theme` 404로 서비스가 깨졌다(#1008 → #1010으로 복구, infra 9.26.6). 문제가 생기면 먼저 아래로 정한다.
+
+| 상황 | 대응 |
+|---|---|
+| 되돌릴 digest와 지금 사이에 migration 파일 변경이 없고 API가 지금 웹과 맞음 | 위 1번 revert |
+| 그 사이 migration 변경이 있음, 또는 API 경로가 바뀜 | revert하지 않고 고친 커밋을 main에 올려 새 digest PR(fix-forward) |
+| 데이터가 잘못 바뀜 | RDS 시점 복원(PITR, infra 9.12). 데이터 손실이 있을 수 있어 마지막 수단 |
+
+- 판단 근거: 그 digest PR 본문의 migration revision과 schema 근거, 그리고 `git diff --stat <이전 SHA> <이번 SHA> -- backend/*/src/main/resources/db/migration backend/report-service/migrations/versions contracts/openapi`. PR 본문에 자동으로 넣는 일은 #1013.
+- 되돌릴 수 있는 것은 사실상 바로 앞 digest PR 하나다. 여러 릴리스 전으로는 되돌리지 않는다.
+
+### 시연 기간 운영 (B, 11/30~12/8)
+
+- migration이 든 digest PR은 병합 전에 RDS 수동 스냅샷을 남긴다. 이름은 `sagomungchi-before-main-<SHA 12자리>`로 한다. 스냅샷 하나는 몇 분이면 되고, 잘못되면 배포 직전 DB로 돌아갈 지점이 된다.
+
+```powershell
+aws rds create-db-snapshot --profile <프로필> --region ap-northeast-2 --db-instance-identifier <DB 인스턴스> --db-snapshot-identifier sagomungchi-before-main-<SHA 12자리>
+```
+
+- 모든 digest PR은 병합 뒤 위 8단계 경로 확인을 하고 PR 댓글로 남긴다.
+- 11/30 이후에는 컬럼 삭제·이름 변경 같은 큰 migration을 올리지 않는다. 고칠 일이 생기면 작은 수정으로 고쳐서 새로 배포한다.
 
 ## 11/25 A 계정 확인 절차 (#858)
 
