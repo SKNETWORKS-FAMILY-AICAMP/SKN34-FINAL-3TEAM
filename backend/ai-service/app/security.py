@@ -27,6 +27,7 @@ CALLER_PATHS: dict[str, tuple[str, ...]] = {
     "core": (r"/internal/analysis(/.*)?",),
     "learning": (
         r"/internal/(judgments|followups|mission-drafts|theme-drafts|embeddings|memory-explanations|memory-queries)(/.*)?",
+        r"/internal/word-helps",
     ),
     "report-worker": (r"/internal/(report-narratives|report-explanations)(/.*)?",),
     "ops": (r"/internal/(embeddings|judgments|versions)(/.*)?",),

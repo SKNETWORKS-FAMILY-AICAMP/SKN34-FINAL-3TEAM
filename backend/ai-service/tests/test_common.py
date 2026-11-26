@@ -47,6 +47,12 @@ def test_live() -> None:
         assert client.get("/health/live").json() == {"status": "UP"}
 
 
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_api_documentation_routes_are_disabled(path) -> None:
+    with make_client() as client:
+        assert client.get(path).status_code == 404
+
+
 def test_ready_down_without_dependencies() -> None:
     with make_client() as client:
         response = client.get("/health/ready")
@@ -110,9 +116,45 @@ def test_caller_tokens_are_separate(monkeypatch) -> None:
     assert empty.status_code == 401
 
 
+def test_only_learning_can_request_word_help(monkeypatch) -> None:
+    settings = Settings(
+        internal_token_core="core-token",
+        internal_token_learning="learning-token",
+        internal_token_report_worker="report-worker-token",
+        internal_token_ops="ops-token",
+    )
+    monkeypatch.setattr(security, "get_settings", lambda: settings)
+    body = {
+        "question": "증발이 뭐야?",
+        "missionText": "물이 사라진 까닭을 생각해 보세요.",
+        "grade": 4,
+        "subject": "과학",
+        "leak": {"answerKey": ["증발"]},
+    }
+    with make_client() as client:
+        path = "/internal/word-helps"
+        response = client.post(path, json=body, headers={"X-Internal-Token": "learning-token"})
+        assert response.status_code == 200
+        assert response.json()["state"] == "DEFERRED"
+        for token in ("core-token", "report-worker-token", "ops-token"):
+            denied = client.post(path, json=body, headers={"X-Internal-Token": token})
+            assert denied.status_code == 403
+
+
 def test_dot_segments_never_match_allowlist() -> None:
     assert caller_permits("core", "/internal/analysis/probe/students/s1")
     assert not caller_permits("core", "/internal/analysis/probe/../../not-allowed")
+
+
+def test_registered_internal_routes_have_an_allowed_caller() -> None:
+    paths = [path for path in create_app().openapi()["paths"] if path.startswith("/internal/")]
+    assert paths
+    uncovered = [
+        path
+        for path in paths
+        if not any(caller_permits(caller, path) for caller in security.CALLER_PATHS)
+    ]
+    assert not uncovered
 
 
 def test_langfuse_enabled_requires_keys_and_collector_endpoint(monkeypatch) -> None:

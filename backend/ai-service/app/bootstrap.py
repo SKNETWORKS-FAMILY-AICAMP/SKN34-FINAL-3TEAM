@@ -141,7 +141,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=get_settings().service_name, lifespan=lifespan)
+    app = FastAPI(
+        title=get_settings().service_name,
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     register_error_handlers(app)
     app.add_middleware(InternalAuthMiddleware)
     # 마지막에 넣어 가장 바깥: 401·403도 재고, 서버 span 안에서 인증·처리가 돈다
