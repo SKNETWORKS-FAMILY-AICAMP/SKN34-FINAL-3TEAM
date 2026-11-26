@@ -71,13 +71,13 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 ### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, #1004)
 
-**아직 적용하지 않았다**(저장소 관리자 권한 필요, 2026-11-24 기준). 그래서 11/24 A 확인의 digest PR #991이 GitHub 승인(Approve) 기록 0건으로 병합됐다. 지금은 "digest PR 승인 = 배포 승인"이 사람 약속일 뿐 강제되지 않으므로, 적용 전까지는 아래 승인 규칙(PR을 연 사람과 다른 code owner 1명)을 지켜 승인 기록을 남긴 뒤 병합한다. 적용과 확인은 #1004에서 한다(필요 승인 수는 팀장 확인 값). develop → main 릴리스가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
+**2026-11-26 적용 완료**(#1004). repository ruleset `main-protection-1004`(id 28138960)로 아래 1을 켰고, 필요 승인 수 1명은 팀장 확정 값이다. 적용 전에는 강제되지 않아 11/24 A 확인의 digest PR #991이 GitHub 승인(Approve) 기록 0건으로 병합됐다. 이제 main 대상 PR은 develop → main 릴리스 PR을 포함해 모두 아래 승인 규칙(PR을 연 사람과 다른 1명, images 폴더는 code owner)을 거쳐야 병합된다. 화면 이름은 2026-11 GitHub 기준이다. 되돌리기: `gh api -X DELETE repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/rulesets/28138960`.
 
 | 순서 | 위치 | 값 | 이유 |
 |---|---|---|---|
-| 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
+| 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명, 2026-11-26 팀장 확정)과 같다. 바뀌면 이 값만 고친다 |
 | 2 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (11/24 릴리스로 main에 들어감) | 1의 Code Owners 설정이 있어야 강제된다 |
-| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 다음에 연 digest PR에 "Review required"·Code owner 표시가 뜨고 다른 code owner 승인 1명 뒤에만 병합되는지 | |
+| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 다음에 연 digest PR에 "Review required"·Code owner 표시가 뜨고 다른 code owner 승인 1명 뒤에만 병합되는지 | 11/26 확인 PR #1081(CODEOWNERS 주석 한 줄, 병합 안 함): Review required·code owner 리뷰 요청이 뜨고, 관리자 계정의 병합도 "base branch policy prohibits the merge"로 거부됨(infra 9.34) |
 
 예전 1단계("Allow GitHub Actions to create and approve pull requests")는 조직 정책이 막아 저장소에서 켤 수 없고, 2026-11-24부터 필요 없다(아래 PR 생성 토큰 표, #986).
 

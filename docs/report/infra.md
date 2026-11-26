@@ -2531,6 +2531,21 @@ prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는
 - 시연·더미 계정: 시행일 뒤 `demo_account_data.py children`·`prepare_accounts.py --families`를 다시 돌려 GUARDIAN 1.2 재동의를 보낸다(#1063, `infrastructure/aws/README.md`)
 - local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v59` → `v60`으로 올렸다. prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
 
+## 9.34 main 보호 규칙 적용 (#1004, 2026-11-26)
+
+9.26.1에서 digest PR #991이 승인 기록 0건으로 병합된 원인이던 main 보호 규칙을 켰다. 필요 승인 수 1명은 팀장 확정 값이다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1004). API 변경 없음.
+
+| 항목 | 값 |
+|---|---|
+| 방식 | repository ruleset `main-protection-1004`(id 28138960), 대상 `refs/heads/main`, 활성. 2026-11-26 15:11 KST `gh api`로 생성 |
+| pull request | 승인 1명, Require review from Code Owners, Dismiss stale approvals 켬. 필수 status check 없음(경로 필터 때문, B2) |
+| 그 밖 | Block force pushes·Restrict deletions 켬. Bypass list 비움(`current_user_can_bypass: never`) |
+
+- 확인: 확인 PR #1081(`.github/CODEOWNERS` 주석 한 줄, 병합하지 않음)에서 `reviewDecision=REVIEW_REQUIRED`·`mergeStateStatus=BLOCKED`, code owner `20220348-kim`에게 리뷰 요청. 관리자 계정의 `gh pr merge`도 "the base branch policy prohibits the merge"로 거부
+- 영향: develop → main 릴리스 PR도 작성자가 아닌 1명의 승인이 있어야 병합된다(B2)
+- #991 커밋 메시지(`c283a2b8`)의 깨진 사유·호환성 근거 원문은 이력 재작성 없이 [#1004 댓글](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/1004#issuecomment-7184212482)에 남겼다. #991 본문 손 수정 때 빠진 호환성 근거 5행(data·api·events·ongoingLearning·payments)도 커밋 메시지에서 복원해 같이 적었다
+- 남은 것: 다른 code owner 승인 1명 뒤 병합 가능해지는지, 다음 cd-release digest PR 본문 한국어가 정상인지(#1004)
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
