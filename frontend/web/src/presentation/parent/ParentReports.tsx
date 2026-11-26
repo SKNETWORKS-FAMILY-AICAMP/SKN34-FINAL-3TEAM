@@ -23,6 +23,7 @@ import { ReportDialogNavigation } from './ReportDialogNavigation.tsx'
 import { useReportDialogHistory } from './useReportDialogHistory.ts'
 import { WeeklyReportOverview } from './WeeklyReportOverview.tsx'
 import { WeeklyReportDialog } from './WeeklyReportDialog.tsx'
+import { ReportProblem } from '../service/ReportProblem.tsx'
 import { weeklyActivities, weeklyCategories, type WeeklyReportView } from '../../domain/weeklyReportNavigation.ts'
 import './report-reader.css'
 
@@ -88,7 +89,7 @@ export function ParentReports({
         />
       </div>
     ) : reports.data && !reports.error && <p>아직 볼 수 있는 리포트가 없습니다.</p>}
-    <ParentMemoryBooks child={child} />
+    <ParentMemoryBooks key={child.id} child={child} />
   </>
 }
 
@@ -189,7 +190,8 @@ function ReportDetail({
     // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 서버가 내려준 리포트 내용을 그대로 쓴다.
     entitlement = knownEntitlement(useChildEntitlement(child.id)),
     conversationOff = entitlement?.conversationEnabled === false,
-    download = useParentMutation(() => parentApi.download(id, 'pdf')),
+    download = useParentMutation((format: 'pdf' | 'md') => parentApi.download(id, format)),
+    [downloadFormat, setDownloadFormat] = useState<'pdf' | 'md'>('pdf'),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
   const r = q.error ? undefined : q.data,
@@ -232,7 +234,7 @@ function ReportDetail({
   async function downloadReport() {
     setNotice('')
     try {
-      const data = await download.mutateAsync(undefined)
+      const data = await download.mutateAsync(downloadFormat)
       const url = new URL(data.url, location.href)
       if (!['http:', 'https:'].includes(url.protocol))
         throw new Error('허용되지 않은 다운로드 주소입니다.')
@@ -265,13 +267,22 @@ function ReportDetail({
             </button>
           )}
           {r && ready && (
-            <button className="cj-primary" disabled={download.isPending}
-              onClick={() => void downloadReport()}>
-              {download.isPending ? '다운로드 준비 중' : '리포트 다운로드'}
-            </button>
+            <div className="report-download-controls">
+              <select aria-label="리포트 다운로드 형식" value={downloadFormat} disabled={download.isPending}
+                onChange={event => setDownloadFormat(event.target.value === 'md' ? 'md' : 'pdf')}>
+                <option value="pdf">PDF</option><option value="md">Markdown (MD)</option>
+              </select>
+              <button className="cj-primary" disabled={download.isPending}
+                onClick={() => void downloadReport()}>
+                {download.isPending ? '다운로드 준비 중' : '리포트 다운로드'}
+              </button>
+            </div>
           )}
         </div>
       </header>
+      {r && ready && <details className="report-help-actions"><summary>리포트 도움말</summary>
+        <ReportProblem targetType="REPORT" targetId={r.reportId} />
+      </details>}
       <QueryFeedback query={q} />
       {highlight && r && <><p>선택한 질문 · {highlight.question}</p><p role="status" className="report-highlight-summary">{matched
         ? `선택한 답변과 연결된 ${matched}개 항목을 초록 테두리로 표시했습니다.`

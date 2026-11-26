@@ -208,6 +208,17 @@
 #class-journal .ws-main a {
   color: #3f694a;
 }
+#class-journal .ws-main a.cj-primary {
+  color: #fff;
+}
+#class-journal .ws-consent-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+#class-journal .ws-consent-effective {
+  font-size: 14px;
+}
 #class-journal .ws-main :focus-visible,
 #class-journal .ws-nav :focus-visible {
   outline: 3px solid #718c55;

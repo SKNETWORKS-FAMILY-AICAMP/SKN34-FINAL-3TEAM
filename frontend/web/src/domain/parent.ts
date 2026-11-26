@@ -13,6 +13,7 @@ export interface ConsentDocument {
   title: string
   content: string
   required: boolean
+  effectiveFrom?: string
 }
 /** 가입·계정 단위 필수 동의 문서(이용 안내·개인정보). 자녀 단위 법정대리인·선택 커뮤니티 동의는 빠진다. */
 export const isAccountDocument = (d: Pick<ConsentDocument, 'kind'>) => d.kind === 'TERMS' || d.kind === 'PRIVACY'

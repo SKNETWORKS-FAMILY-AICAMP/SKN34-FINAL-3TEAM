@@ -82,6 +82,11 @@
 #class-journal .ws-parent .report-reader-layout summary { color:var(--reader-muted); font-size:14px; cursor:pointer; }
 #class-journal .ws-parent .report-reader-layout summary:focus-visible { outline:2px solid #245f3d; outline-offset:4px; }
 #class-journal .ws-parent .report-reader-layout details[open] > summary { margin-bottom:16px; }
+.report-download-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
+#class-journal .ws-parent .report-download-controls select { width:auto; }
+#class-journal .ws-parent .report-help-actions { margin:12px 0 20px; font-size:14px; }
+#class-journal .ws-parent .report-help-actions summary { width:fit-content; min-height:44px; line-height:44px; }
+#class-journal .ws-parent .report-help-actions a { display:inline-flex; align-items:center; min-height:44px; }
 @media(max-width:760px) {
   #class-journal .ws-parent .report-reader-heading { gap:12px; padding:20px; }
   #class-journal .ws-parent .report-reader-heading > svg { width:22px; height:22px; margin-top:4px; }

@@ -39,7 +39,8 @@ function Cover({ round, lockedIssue }: { round: MemoryBookRoundItem; lockedIssue
  * 아이 화면에는 없다(FN-DSH-01).
  */
 export function ParentMemoryBooks({ child }: { child: Child }) {
-  const rounds = useMemoryBookRounds(child.id)
+  const [page, setPage] = useState(0)
+  const rounds = useMemoryBookRounds(child.id, page)
   const create = useCreateMemoryBook(child.id)
   const download = useMemoryBookDownload(child.id)
   const readTogether = useReadTogether(child.id)
@@ -136,6 +137,12 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
           ))}
         </ul>
       )}
+      {(page > 0 || shelf && shelf.totalElements > shelf.size) && <nav className="ws-actions" aria-label="그림책 책장 페이지">
+        <button type="button" disabled={page === 0 || rounds.isFetching} onClick={() => setPage(page - 1)}>이전 회차</button>
+        <span aria-live="polite">{page + 1}페이지</span>
+        <button type="button" disabled={rounds.isFetching || !!rounds.error || !shelf || (page + 1) * shelf.size >= shelf.totalElements}
+          onClick={() => setPage(page + 1)}>다음 회차</button>
+      </nav>}
       {shelf && locked && (
         <p className="memory-shelf-notice" role="note">
           {memoryBookLockedNotice(lockedCount)} <Link to={comparePath(child.id)}>무료와 프리미엄 비교 보기</Link>

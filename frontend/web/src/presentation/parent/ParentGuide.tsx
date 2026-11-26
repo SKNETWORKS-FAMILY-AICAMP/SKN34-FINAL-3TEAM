@@ -22,15 +22,23 @@ function ParentGuideRun({ replay }: { replay: boolean }) {
   const complete = useCompleteOnboarding('PARENT')
   const navigate = useNavigate(), location = useLocation()
   const [closed, setClosed] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const pending = needsOnboarding(query)
   if (closed || !(replay || pending)) return null
-  return <ParentGuide onFinish={goDevices => {
-    setClosed(true)
-    if (pending) complete.mutate(undefined, { onError: () => {} })
-    const search = parentMenuSearch(location.search)
-    if (goDevices) navigate(PARENT_GUIDE_DEVICES + search)
-    else if (replay) navigate(location.pathname + location.search, { replace: true, state: null })
-  }} />
+  async function finish(goDevices: boolean) {
+    if (complete.isPending) return
+    setSaveError('')
+    try {
+      if (pending) await complete.mutateAsync(undefined)
+      setClosed(true)
+      const search = parentMenuSearch(location.search)
+      if (goDevices) navigate(PARENT_GUIDE_DEVICES + search)
+      else if (replay) navigate(location.pathname + location.search, { replace: true, state: null })
+    } catch {
+      setSaveError('안내 완료를 저장하지 못했어요. 연결을 확인한 뒤 다시 눌러 주세요.')
+    }
+  }
+  return <ParentGuide saving={complete.isPending} error={saveError} onFinish={goDevices => { void finish(goDevices) }} />
 }
 
 type Place = { where: 'side' | 'bottom' | 'collapsed'; anchor: DOMRect | null; covered: boolean }
@@ -40,7 +48,7 @@ const menuLinks = () => [...document.querySelectorAll<HTMLAnchorElement>('#class
 const linkPath = (a: HTMLAnchorElement) => new URL(a.href, window.location.origin).pathname
 
 /** 안내 한 단계 = 강조 메뉴 1곳 + 문구 + 다음·건너뛰기. 외부 투어 라이브러리 없이 메뉴 링크에 표시만 붙인다. */
-export function ParentGuide({ onFinish }: { onFinish: (goDevices: boolean) => void }) {
+export function ParentGuide({ onFinish, saving = false, error = '' }: { onFinish: (goDevices: boolean) => void; saving?: boolean; error?: string }) {
   const [index, setIndex] = useState(0)
   const [place, setPlace] = useState<Place>({ where: 'side', anchor: null, covered: false })
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -111,13 +119,15 @@ export function ParentGuide({ onFinish }: { onFinish: (goDevices: boolean) => vo
     <h2 ref={title} tabIndex={-1}>{step.title}</h2>
     <p id="parent-guide-body">{step.body}</p>
     <p className="parent-guide-place">{parentGuidePlace(step.targets, place.where)}</p>
+    {error && <p role="alert">{error}</p>}
+    {saving && <p role="status">안내 완료를 저장하고 있어요.</p>}
     <div className="parent-guide-actions">
       {last ? <>
-        <button type="button" className="cj-primary" onClick={() => onFinish(true)}>기기 등록하러 가기</button>
-        <button type="button" className="cj-secondary" onClick={() => onFinish(false)}>나중에</button>
+        <button type="button" className="cj-primary" disabled={saving} onClick={() => onFinish(true)}>기기 등록하러 가기</button>
+        <button type="button" className="cj-secondary" disabled={saving} onClick={() => onFinish(false)}>나중에</button>
       </> : <>
-        <button type="button" className="cj-primary" onClick={() => setIndex(index + 1)}>다음</button>
-        <button type="button" className="cj-secondary" onClick={() => onFinish(false)}>건너뛰기</button>
+        <button type="button" className="cj-primary" disabled={saving} onClick={() => setIndex(index + 1)}>다음</button>
+        <button type="button" className="cj-secondary" disabled={saving} onClick={() => onFinish(false)}>건너뛰기</button>
       </>}
     </div>
   </section>

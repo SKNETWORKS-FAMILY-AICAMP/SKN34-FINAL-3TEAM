@@ -19,7 +19,7 @@ export function useOnboarding(role: OnboardingRole, childId?: string) {
 export const needsOnboarding = (query: { isSuccess: boolean; data?: OnboardingState }) =>
   query.isSuccess && query.data?.completedAt === null
 
-/** 완료 기록. 실패해도 오류를 보이지 않고, 다음 진입 때 조회가 다시 미완료라 안내가 다시 보인다. */
+/** 완료 기록. 성공한 경우에만 캐시를 갱신하고, 실패 시 호출 화면에서 재시도를 안내한다. */
 export function useCompleteOnboarding(role: OnboardingRole, childId?: string) {
   const cache = useQueryClient()
   return useMutation({

@@ -197,7 +197,7 @@
 @media (max-width: 600px) { .parent-memory-books .memory-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .parent-memory-books .memory-shelf-meta { font-size: 13px; } }
 /* 리포트 | AI 챗봇 전환 (제목 자리, 사이드바는 한 칸) */
 #class-journal .ws-parent .parent-insights-switch{display:flex;align-items:center;gap:12px;margin:0}
-#class-journal .ws-parent .parent-insights-switch button{all:unset;cursor:pointer;font:inherit;color:#9aa69f;border-radius:6px;padding:0 2px}
+#class-journal .ws-parent .parent-insights-switch button{all:unset;cursor:pointer;font:inherit;color:#59685f;border-radius:6px;padding:0 2px}
 #class-journal .ws-parent .parent-insights-switch button[aria-pressed="true"],#class-journal .ws-parent .parent-insights-switch button[aria-pressed="false"]{border:0;background:none;box-shadow:none;min-height:0}
 #class-journal .ws-parent .parent-insights-switch button[aria-pressed="true"]{color:inherit}
 #class-journal .ws-parent .parent-insights-switch button:hover{color:#2f7d4f}

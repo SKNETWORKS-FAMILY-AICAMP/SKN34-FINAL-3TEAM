@@ -4,10 +4,10 @@ import type { MemoryBookRound } from '../../domain/memoryBook.ts'
 import { MEMORY_BOOK_POLL_MS, memoryBookPolling } from '../../domain/memoryBook.ts'
 
 /** 발급 화면 회차 목록. 만드는 중(QUEUED) 그림책이 있으면 몇 초마다 다시 본다 */
-export const useMemoryBookRounds = (childId: string) =>
+export const useMemoryBookRounds = (childId: string, page = 0) =>
   useQuery({
-    queryKey: ['memory-books', 'rounds', childId],
-    queryFn: ({ signal }) => memoryBookApi.rounds(childId, signal),
+    queryKey: ['memory-books', 'rounds', childId, page],
+    queryFn: ({ signal }) => memoryBookApi.rounds(childId, signal, page),
     retry: false,
     refetchInterval: (query) => (memoryBookPolling(query.state.data?.items) ? MEMORY_BOOK_POLL_MS : false),
   })

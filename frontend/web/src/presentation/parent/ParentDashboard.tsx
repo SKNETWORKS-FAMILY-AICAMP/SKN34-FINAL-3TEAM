@@ -252,6 +252,7 @@ export function RecordDetail({ scope, id }: { scope: Scope; id: string }) {
         <>
           <article className="pd-original">
             <header className="pd-original-heading"><h2>{q.data.mission.title}</h2><p>{q.data.period.from} — {q.data.period.to}</p></header>
+            {q.data.mission.question && <section className="pd-original-question"><h3>문제</h3><p>{q.data.mission.question}</p></section>}
             <div className="pd-original-answers">{q.data.answers.map(a => <section className="pd-original-answer" key={a.answerId}>
               <header><h3>{a.version === 1 ? '최초 답변' : `보완 답변 ${a.version - 1}`}</h3><time>{new Date(a.submittedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' })}</time></header>
               <blockquote>{a.text}</blockquote>

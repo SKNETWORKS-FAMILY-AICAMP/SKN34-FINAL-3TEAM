@@ -92,7 +92,10 @@ export function ParentPayments({ child }: { child?: Child }) {
   }
   return <section className={checkoutMode ? "payment-page" : "payment-page premium-billing"}>
     <header><div><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></div>
-      {!checkoutMode && <button ref={changePlanButton} className="premium-change-plan" aria-controls="plan-change-preview" aria-expanded={catalogOpen} onClick={openCatalog}>이용권 변경</button>}
+      {!checkoutMode && <div className="premium-header-actions ws-actions">
+        <Link to={{ search: params.toString(), hash: '#plan-compare' }}>무료·프리미엄 비교</Link>
+        <button ref={changePlanButton} className="premium-change-plan" aria-controls="plan-change-preview" aria-expanded={catalogOpen} onClick={openCatalog}>이용권 변경</button>
+      </div>}
     </header>
     {paymentTestMode && <p className="payment-test-note">결제 연동 테스트 · 실제 청구 없이 토스 인증과 승인을 확인합니다. 테스트 주문은 서버 메모리에만 보관되며 학습 이용권에는 적용되지 않습니다.</p>}
     {mockPaymentMode && <p className="payment-test-note">모의 결제 시연 · 외부 PG를 호출하지 않고 가상 승인·구독·환불을 확인합니다.</p>}

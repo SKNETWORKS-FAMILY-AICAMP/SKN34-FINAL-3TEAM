@@ -8,6 +8,7 @@ import { WithdrawalReceipt } from './service/Withdrawal.tsx'
 import { LoginHelp } from './service/LoginHelp.tsx'
 import { lazy, Suspense } from 'react'
 import type { ComponentType } from 'react'
+import { PageUnavailable } from './common/PageUnavailable.tsx'
 
 // 역할별 작업 공간과 결제·계정 화면은 들어갈 때 받는다(#247). 학생 기기 첫 화면은 학부모·관리자 코드를 받지 않는다.
 const page = <P extends object>(load: () => Promise<ComponentType<P>>) => lazy(async () => ({ default: await load() }))
@@ -27,8 +28,9 @@ const LandingPage = page(() => import('./landing/LandingPage.tsx').then(m => m.L
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
 export const router = createBrowserRouter([
   // 공개 소개 화면은 세션 복원·백엔드 연결 여부와 관계없이 열 수 있다 (#724).
-  { path: '/', element: <Suspense fallback={<PageLoading />}><LandingPage /></Suspense> },
+  { path: '/', element: <Suspense fallback={<PageLoading />}><LandingPage /></Suspense>, errorElement: <PageUnavailable /> },
   {
+    errorElement: <PageUnavailable />,
     element: (
       <SessionProvider>
         <Suspense fallback={<PageLoading />}>
@@ -94,7 +96,7 @@ export const router = createBrowserRouter([
           },
         ],
       })),
-      { path: '*', element: <Navigate to="/login" replace /> },
+      { path: '*', element: <PageUnavailable notFound /> },
     ],
   },
 ])

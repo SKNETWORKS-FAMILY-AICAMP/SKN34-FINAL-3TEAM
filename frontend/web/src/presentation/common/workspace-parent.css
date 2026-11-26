@@ -559,7 +559,7 @@
 #class-journal .ws-parent .ws-plan { padding-top: 20px; margin-top: 0; }
 #class-journal .ws-parent .ws-header { min-height: 80px; padding: 16px 32px; }
 #class-journal .ws-parent .ws-mobile-notifications { display: none; }
-#class-journal .ws-parent .ws-main { padding: 32px; max-width: 1440px; align-self: center; }
+#class-journal .ws-parent .ws-main { padding: 32px; max-width: none; align-self: stretch; }
 #class-journal .ws-parent .parent-page-head { margin: 0 0 24px; }
 #class-journal .ws-parent .parent-page-head p, #class-journal .ws-parent .payment-page > header p { color: var(--pd-muted); margin: 0; }
 #class-journal .ws-parent .ws-card > :first-child { margin-top: 0; }

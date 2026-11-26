@@ -24,6 +24,8 @@ import { ParentGuideGate } from './ParentGuide.tsx'
 const ServiceContent = lazy(() => import('../service/ServiceCenter.tsx').then(m => ({ default: m.ServiceContent })))
 const SupportResults = lazy(() => import('../support/SupportResults.tsx').then(m => ({ default: m.SupportResults })))
 
+const parentPaths = new Set(['journal', 'analysis', 'chat', 'report', 'settings', 'billing', 'devices', 'help', 'support', 'support/results', 'notices', 'notifications'])
+
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(), location = useLocation()
   const periodFilter = useRef<HTMLDetailsElement>(null)
@@ -54,6 +56,11 @@ export function ParentWorkspace() {
   if (page === 'analysis' || page === 'chat') {
     const next = new URLSearchParams(params); next.set('view', 'chat')
     return <Navigate to={'/parent/report?' + next} replace />
+  }
+  if (!parentPaths.has(location.pathname.replace(/^\/parent\/?/, '').replace(/\/$/, ''))) {
+    return <Workspace title="학부모 공간" nav={parentNavigation} variant="parent"><section className="ws-card">
+      <h1>페이지를 찾을 수 없어요</h1><p>주소를 확인하거나 학습 현황으로 이동해 주세요.</p><Link className="cj-primary" to="/parent/journal">학습 현황으로</Link>
+    </section></Workspace>
   }
   const insightsMode = params.get('view') === 'chat' ? 'chat' : 'report'
   return <Workspace title="학부모 공간" nav={parentNavigation} variant="parent" fullScreen={page === 'report' && insightsMode === 'chat'} actions={consentReady && <ChildPicker items={children.data?.items ?? []} selectedId={child?.id} loading={children.isPending} failed={!!children.error} disabled={page === 'billing' && params.get('checkout') === '1'} onSelect={c => select(c)} />}>

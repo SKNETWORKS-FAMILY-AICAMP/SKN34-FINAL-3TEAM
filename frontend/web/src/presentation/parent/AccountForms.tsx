@@ -28,7 +28,8 @@ export function ConsentFields({
             <summary>
               {d.title} · v{d.version} · {d.required ? '필수' : '선택'}
             </summary>
-            <p>{d.content}</p>
+            {d.effectiveFrom && <p className="ws-consent-effective">시행일 · {d.effectiveFrom}</p>}
+            <p className="ws-consent-content">{d.content}</p>
           </details>
           <label className="ws-check ws-consent-check">
             <input

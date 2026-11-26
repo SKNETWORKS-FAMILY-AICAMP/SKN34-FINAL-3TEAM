@@ -11,8 +11,8 @@ const e = encodeURIComponent
  */
 export const memoryBookApi = {
   /** 발급 화면: 자녀의 보유 액자 회차와 회차마다 가장 최근 그림책 */
-  rounds: async (childId: string, signal?: AbortSignal): Promise<MemoryBookRoundPage> =>
-    readMemoryBookRoundPage(await apiFetch<unknown>(`/children/${e(childId)}/memory-books/rounds?page=0&size=50`, { signal, cache: 'no-store' })),
+  rounds: async (childId: string, signal?: AbortSignal, page = 0): Promise<MemoryBookRoundPage> =>
+    readMemoryBookRoundPage(await apiFetch<unknown>(`/children/${e(childId)}/memory-books/rounds?page=${page}&size=50`, { signal, cache: 'no-store' })),
   create: async (childId: string, round: MemoryBookRound): Promise<MemoryBook> =>
     readMemoryBook(await apiFetch<unknown>(`/children/${e(childId)}/memory-books`, { ...json({ rounds: [round] }), cache: 'no-store' })),
   books: async (childId: string, signal?: AbortSignal): Promise<MemoryBookPage> =>
