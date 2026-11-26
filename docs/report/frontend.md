@@ -1576,5 +1576,5 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 
 #### 남은 것
 
-- 실서버 연동: core #1061(GUARDIAN 1.2 시드·비공개 차단 제거)이 병합되기 전 실서버는 학생 기본 비공개라 원문 요청이 403이다. e2e `learning-journey`·`parent-reports`·`memory-book`과 `transfer-local/transfer-ui.spec.ts`는 학생 공개 켜기·`parent_sharing_enabled` SQL을 뺐으므로 #1061 병합 뒤에 돌려야 통과한다
+- 실서버 연동: core #1061(GUARDIAN 1.2 시드·비공개 차단 제거)이 병합되기 전 실서버는 학생 기본 비공개라 원문 요청이 403이다. 그래서 e2e `learning-journey`·`parent-reports`·`memory-book`은 임시로 `allowParentOriginals`(`tests/e2e/support/memoryBook.ts`)를 부른다. 컬럼이 있을 때만 `parent_sharing_enabled`를 켜고, #1061 병합 뒤에는 아무 일도 하지 않는다. #1061 병합 뒤 함수와 호출을 지운다. CI에 없는 `transfer-local/transfer-ui.spec.ts`는 #1061 병합 뒤에 돌려야 통과한다
 - `docs/design`의 나머지 정책 문구(functional-spec·api-spec·erd 등)는 #1058에서 바꾼다. 이 이슈는 `user-flow.md`의 학부모 원문 열람·그림책·학생 설정·둘러보기·사용성 기준 줄만 고쳤다

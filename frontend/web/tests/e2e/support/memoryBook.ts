@@ -26,8 +26,21 @@ export function psql(database: string, sql: string) {
 export const studentIdOf = (nickname: string) =>
   psql('core_db', `SELECT id FROM student WHERE nickname = '${nickname.replaceAll("'", "''")}'`)
 
+/**
+ * 임시(#1064): core #1061이 `student.parent_sharing_enabled`를 지우기 전 서버는 학생 기본 비공개라 원문이 403이다.
+ * 웹에는 이제 켜는 화면이 없으므로 컬럼이 있을 때만 DB에서 켠다. #1061 병합 뒤에는 아무 일도 하지 않으며, 그때 이 함수와 호출을 지운다.
+ */
+export function allowParentOriginals(studentId: string) {
+  psql('core_db', `DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'student' AND column_name = 'parent_sharing_enabled') THEN
+    EXECUTE format('UPDATE student SET parent_sharing_enabled = true WHERE id = %L', '${studentId}');
+  END IF;
+END $$;`)
+}
+
 /** 프리미엄 구독(지금 기간)·그림책 하루 한도. 학부모 = 그 학생의 보호자. 원문 공개 설정은 없어졌다(#1064) */
 export function premium(studentId: string) {
+  allowParentOriginals(studentId)
   psql('core_db', `
 UPDATE product SET limits = limits || '{"dailyMemoryBooks":3}'::jsonb;
 INSERT INTO subscription (id, parent_user_id, student_id, product_id, status, period_start, period_end, auto_renew, created_at, updated_at, product_snapshot, revision)

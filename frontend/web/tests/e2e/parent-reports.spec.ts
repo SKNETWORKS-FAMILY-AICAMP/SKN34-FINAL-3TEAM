@@ -5,6 +5,7 @@ import { onboardParent } from './support/onboarding.ts'
 import { subscribePremium } from './support/payment.ts'
 import { loginStudent, solveNarrative, startExtraMission } from './support/student.ts'
 import { queueReport } from './support/db.ts'
+import { allowParentOriginals, studentIdOf } from './support/memoryBook.ts'
 import { ensureExplanationModel } from './support/admin.ts'
 
 // 대표 답변 설명(FN-RPT-09)은 프리미엄·답변 공개·초5~6 서술 답변의 M2 점수가 모두 있어야 생성된다.
@@ -19,6 +20,7 @@ test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기�
   await useGoogleIdentity(context, newParent('reports'))
   await onboardParent(page, nickname, { grade: 5 })
   await subscribePremium(page)
+  allowParentOriginals(studentIdOf(nickname)) // 임시: core #1061 전 서버는 기본 비공개
 
   const student = await loginStudent(browser, page, nickname, '리포트 E2E')
   try {

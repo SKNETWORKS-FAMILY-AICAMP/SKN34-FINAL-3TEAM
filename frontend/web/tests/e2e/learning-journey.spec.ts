@@ -3,6 +3,7 @@ import { expect, test, type BrowserContext } from '@playwright/test'
 import { newParent, useGoogleIdentity, type GoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { queueWeeklyReport } from './support/db.ts'
+import { allowParentOriginals, studentIdOf } from './support/memoryBook.ts'
 import { expectJournalDone, loginStudent, solveNarrative, startExtraMission } from './support/student.ts'
 
 const mission = '쉬는 시간을 늘린다면?' // backend/learning-service/db/seed/demo_missions.sql 2번 (초3·NARRATIVE)
@@ -30,6 +31,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     // #648: 완료 기록은 내 공책 한 줄의 '마무리' 상태로 확인한다(옛 기록 카드 "국어 · 제목 … 완료" 대신)
     await expectJournalDone(page, mission)
     // 답변 원문은 자녀 등록 때 법정대리인 동의(GUARDIAN 1.2)로 학부모에게 보인다(#1064). 학생 설정은 바꾸지 않는다.
+    allowParentOriginals(studentIdOf(nickname)) // 임시: core #1061 전 서버는 기본 비공개
   })
 
   // 학생 기기와 별개인 새 보호자 컨텍스트에서 로그인해 기록을 확인한다.

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { loginStudent, studentMenu } from './support/student.ts'
-import { bookStatus, pastRound, premium, readTogetherOf, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
+import { allowParentOriginals, bookStatus, pastRound, premium, readTogetherOf, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
 
 /** 오늘 KST 날짜: 화면 표시(MM/DD)와 DB(YYYY-MM-DD) */
 const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
@@ -75,6 +75,7 @@ test('학부모: 무료 자녀는 오래된 회차가 잠긴 수로만 보이고
   await useGoogleIdentity(context, newParent('shelf'))
   await onboardParent(page, nickname)
   const studentId = studentIdOf(nickname)
+  allowParentOriginals(studentId) // 임시: core #1061 전
   const prefix = `memorybook-shelf-${Date.now().toString(36)}`
   uploadSceneImages(prefix)
   pastRound(studentId, prefix, title, 8)
