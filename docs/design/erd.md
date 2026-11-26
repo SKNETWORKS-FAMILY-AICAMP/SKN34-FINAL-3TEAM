@@ -120,6 +120,7 @@ erDiagram
     timestamptz grade_changed_at "NULL 허용, 학년 수정·진급 시각. NULL은 등록 후 그대로(created_at 사용) (#432)"
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
+    boolean parent_sharing_enabled "NOT NULL DEFAULT false, #206 학생 원문 공개 설정. #1064 core 구현 이슈 migration에서 삭제 예정"
     boolean community_enabled "NOT NULL DEFAULT false, 커뮤니티 공개 설정 학생 본인만 변경 (P20, #388)"
     timestamptz community_updated_at "NULL 허용, 공개 설정 변경 시각 (#388)"
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
