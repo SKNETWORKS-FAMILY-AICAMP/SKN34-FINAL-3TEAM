@@ -266,6 +266,7 @@
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 별도 학생 세션(`STUDENT` 토큰) 발급, 학부모 세션은 잠금(refresh 쿠키 유지). 시연 링크·URL 식별값 진입 없음 (P01, 5.1) | ACC-05 | 제안 |
 | POST | `/auth/parent-unlock` | 쿠키 | 학생 화면 → 학부모 화면 복귀: `{password}` 보호자 비밀번호 확인 후 잠긴 학부모 세션 해제, 그 세션에서 들어간 학생 세션 폐기, refresh 응답과 같은 형식 + 회전 쿠키 (5.1) | ACC-05 | 제안 |
 | GET | `/me/guardian-password` | 학부모 | 보호자 비밀번호 상태 `{set, locked, updatedAt}`. 값·해시는 반환하지 않음 | ACC-05 | 제안 |
+| GET · PUT | `/me/onboarding` | 학부모 | 첫 사용 안내 완료 기록 `{completedAt}`(미완료 null). PUT은 본문 없이 기록하고 이미 있으면 처음 시각 유지(멱등), 지우는 API 없음. 학부모 외 403. 동의 전 허용 경로 아님(안내는 `READY` 뒤) (#1035) | - | 우선1 |
 | PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제. 학부모가 아니면 입력과 관계없이 403(규칙 검사 422보다 먼저, #310) | ACC-05, ACC-10 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
@@ -378,6 +379,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 | GET | `/students/me/attempts` | 학생 | 최근 학습 기록(미션·시점·완료 여부, `status` 필터) | DSH-03, LRN-16 | 제안 |
 | GET | `/students/me/thinking-activities` | 학생 | 수행 미션의 생각 유형·본인 돌아보기 (레벨·등급·순위 없음) | DSH-04 | 제안 |
 | GET·PUT | `/students/me/preferences` | 학생 | 화면 테마·동행 캐릭터 설정 (3.12, #234) | - | 제안 |
+| GET·PUT | `/students/me/onboarding` | 학생 | 첫 사용 안내 완료 기록 `{completedAt}`(미완료 null). 학생별(형제 분리), PUT 멱등·처음 시각 유지, 학생 외 403 (#1035) | - | 우선1 |
 | GET | `/children/{childId}/summary?from&to` | 학부모 | 학습 건수·상태 `Metric[]`, 집계 기준·기간 (P08) | DSH-06, DSH-07, DSH-10 | 제안 |
 | GET | `/children/{childId}/thinking-types?from&to` | 학부모 | 다섯 유형별 미션·기록, 없는 유형은 `NO_RECORD`("미관찰") | DSH-08 | 제안 |
 | GET | `/children/{childId}/attempts?from&to` | 학부모 | 기간 내 학습 목록 | DSH-07, DSH-09 | 제안 |
@@ -423,7 +425,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 - 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[], finished, ending}`. 테마 미참여 주는 `state: NO_RECORD` 요약. #486: `days[].completed`(당일 풀이)·`days[].completedInWeek`(그 주 안에 학습 완료)로 요일별 "그날 풀었어요·나중에 풀었어요·못 풀었어요", `completed`(개근)·`finished`(주간 완주)·`ending`(`NOT_ENDED`·`ENDED`)을 표시. 새 칸은 learning이 주지 않으면 `null`이며 이전처럼 표시
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
-- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~9개, #390). 기록 없는 날 완료 알림 문구는 2.7(#846)
+- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~10개, #390). 기록 없는 날 완료 알림 문구는 2.7(#846)
 - 리포트 고정 대화의 질문은 그 대상일 밖으로 범위를 바꾸지 않는다. 다른 날 질문은 범위 확인에서 새 대화 안내
 
 #### 2.5.1 추억 그림책 (FN-RPT-18, 구현 #966, 계약 #975)
@@ -436,10 +438,14 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 | POST | `/children/{childId}/memory-books` | 학부모 | body `{rounds:[{themeId, weekStart}]}`(1차 길이 1, `weekStart` 월요일) → 새로 만들면 202, 같은 회차의 만드는 중·보관 기간 안 완성본이 있으면 200으로 그것(한도·사용 예약 안 씀). 응답 `{bookId, status, failureCode, rounds, createdAt, completedAt, expiresAt}` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books?page&size` | 학부모 | 발급 목록(최근순). 보관 기간이 지난 완성본은 `status: EXPIRED` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | `{url, expiresAt}`(report 서명 URL, TTL 300초, attachment). 받을 때마다 `memory_book_download` 기록 | RPT-18 | 구현 |
+| PUT | `/children/{childId}/memory-books/{bookId}/read-together` | 학부모 | "같이 읽었어요" 표시(본문 없음) → 200 그림책 응답. 멱등(이미 표시했으면 처음 `readTogetherAt` 그대로), 취소 없음. 보관 기간이 지난 책(`EXPIRED`)도 표시 가능, 유료 판정 없음 | RPT-18 | 구현(#1025) |
 
 - 순서(발급): 학부모 세션(아니면 403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 원문 공개(#206, 비공개면 403 `STUDENT_RECORDS_PRIVATE`, learning 미호출) → 같은 회차 재사용 → learning `frames/ownership` 보유 확인(트랜잭션 밖, 미보유 404 `THEME_FRAME_NOT_FOUND`) → 하루 한도 `limits.dailyMemoryBooks`(KST, 429 `USAGE_LIMIT_REACHED`) → 유료 판정 `features.memoryBook`(무료 403 `PREMIUM_REQUIRED`)·`MEMORY_BOOK` 사용 예약(환불 중 409 `REFUND_IN_PROGRESS`) → 학생 행 잠금 안에서 작업 행·`memorybook.generate` Outbox 저장(삭제 확정 학생 409 `STUDENT_UNAVAILABLE`). 저장 실패·재사용이면 예약을 미사용으로 마감
 - 목록·회차 목록·받기도 매번 연결·동의와 **현재** 원문 공개를 확인한다. 비공개로 바꾸면 파일은 남기고 받기만 막는다(C4, 리포트와 같음). 다시 공개하면 보관 기간 안의 파일을 다시 받을 수 있다
 - 생성 실패 코드(`failureCode`, 목록·회차 목록의 `status: FAILED`): `STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`(그림 주소가 있는데 한 장도 받지 못함, #975). 실패는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않는다. 일부 그림만 받지 못하면 그 칸만 비우고 `READY`
+- 그림책 응답(`MemoryBook`: 발급·발급 목록·책장 `book`·같이 읽음)에는 `readTogetherAt`(학부모가 처음 "같이 읽었어요"를 누른 시각, 없으면 null)이 있다(#1025). 누가 눌렀는지는 저장하지 않는다
+- 같이 읽음 오류(#1025): 권한·확인 순서는 받기와 같다(학부모 세션 403 `FORBIDDEN` → 연결·동의 403 `CHILD_NOT_LINKED` → 현재 원문 공개 403 `STUDENT_RECORDS_PRIVATE`). 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`. 410은 없다
+- 토요일 저녁 같이 읽기 알림(#1025): core 예약 작업이 매주 토요일 19:30 KST(ShedLock `core-memory-book-read-reminder`)에 `status = READY`·`completed_at ≥ 실행 시각 − 7일`·`read_together_at IS NULL`·`expires_at > 실행 시각`인 책이 있는 자녀마다 알림 받을 학부모(연결 + 필수 동의 + 법정대리인 동의)에게 `MEMORY_BOOK_READ_REMINDER` 1건(2.7). 원문 비공개 자녀는 받기가 403이라 보내지 않는다. 같은 주에 다시 돌아도 원천 ID가 자녀·그 주 월요일(KST)이라 1건
 - 받기 오류: 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`(detail에 실패 코드), 학생 기록 삭제 중 409 `DELETION_IN_PROGRESS`, 보관 기간(30일)이 지났거나 파일 없음 410 `MEMORY_BOOK_EXPIRED`, report 장애 503 `REPORT_UNAVAILABLE`·모양 오류 502 `REPORT_CONTRACT_INVALID`
 - 구독이 끝나도 보관 기간 안의 파일은 받을 수 있다(C2). 새 발급만 유료다
 - 무료 책장(B6, 설계 #997, 구현 #999): 유료 판정은 발급과 같은 `ProductEntitlementService`의 `features.memoryBook` 규칙(값이 없으면 구독 중만)을 쓴다. 무료면 `weekStart ≥ 이번 주 월요일(KST) − 28일`인 회차만 반환한다(진행 중인 주는 원래 빠지므로 최대 4회차). `totalElements`·페이지는 노출 회차 기준, `lockedCount`는 무료라 숨긴 회차 수(유료 0), `canCreate`는 유료 판정 결과(하루 한도·원문 공개는 기존 오류 그대로). 숨긴 회차의 기록·PDF는 지우지 않고(P09, C1) 이미 만든 그림책은 발급 목록·받기에서 보관 기간 안 그대로 쓸 수 있다. 결제하면 다음 조회부터 전체가 보인다. 무료 발급은 403 `PREMIUM_REQUIRED` 그대로
@@ -488,7 +494,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 
 - #44 권한: 학생 세션의 account.id는 보호자 ID를 공유하므로 학생은 모든 알림/설정 API에서 403이다. PARENT·ADMIN은 인증된 본인 계정만 사용하며 userId 입력을 받지 않는다. 학생 전용 알림함은 현재 제공하지 않는다.
 - 목록: `GET /notifications?unreadOnly=false&page=0&size=20` → `{items:[{id,childId,type,title,link,readAt,createdAt}],page,size,hasNext}`. size 1~100, 최신 createdAt·id 내림차순. 읽음 PATCH와 전체 읽음 POST는 204, 반복해도 최초 readAt 유지, 타인/없는 ID는 404.
-- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~9개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED, GRADE_PROMOTED. `GRADE_PROMOTED`는 3월 학년 자동 진급 안내(P26, #432): 제목 "{별명}의 학년이 {새 학년}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.", 링크 `/parent/settings`, 원천 ID는 학생·학년도로 정해 같은 진급을 두 번 알리지 않는다. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
+- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~10개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED, GRADE_PROMOTED, MEMORY_BOOK_READ_REMINDER. `GRADE_PROMOTED`는 3월 학년 자동 진급 안내(P26, #432): 제목 "{별명}의 학년이 {새 학년}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.", 링크 `/parent/settings`, 원천 ID는 학생·학년도로 정해 같은 진급을 두 번 알리지 않는다. `MEMORY_BOOK_READ_REMINDER`는 토요일 저녁 추억 그림책 같이 읽기 알림(#1025, 2.5.1): 제목 "이번 주 {별명}의 그림책이 나왔어요. 오늘 저녁 같이 읽어 보세요.", 링크 `/parent/report?childId={childId}`(책장이 리포트 화면 아래), 원천 ID는 자녀·그 주 월요일(KST)로 정해 자녀·주마다 1건. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
 - 리포트 실패는 REPORT_FAILED로 독립 설정한다. 일일 리포트(P24)는 DAILY_REPORT_COMPLETED·DAILY_REPORT_FAILED로 주간과 따로 설정한다(#390).
 - 리포트 알림 제목: 주간 완료 "주간 리포트가 완성되었습니다.", 일일 완료 "일일 리포트가 완성되었습니다.", 실패 "{주간|일일} 리포트 생성에 실패했습니다.". 기록 없는 날(report `COMPLETED` + `NO_RECORD`)의 일일 완료 알림만 "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요."(2026-11-20 결정, #846). 대상일이 알림 생성일(KST)의 전날이 아니면(늦은 재생성·재처리·복구) "어제는" 대신 "{M}월 {d}일은"을 쓴다. 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크(리포트 상세)는 같다. core는 `report.completed` v1의 선택 `noRecord`(생략 = false)와 복구 응답의 같은 칸으로 기록 없음을 안다([report-messages](../../contracts/events/report-messages.md)). 주간 문구는 바꾸지 않는다. 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
 - SSE는 `event: notification`에 목록 항목과 같은 데이터를 전송한다. 15초 `: ping`, 최대 5분 후 재연결. 각 전송·heartbeat에서 세션/동의를 재검사하고 만료·폐기 시 연결을 닫는다. 학생으로 역할을 바꾸면 기존 보호자 구독도 폐기된 세션 검사로 닫힌다.
@@ -1137,7 +1143,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/students/{studentId}/album/{themeId}/{weekStart}` | 2.12 회차 상세, 미보유 404 `THEME_FRAME_NOT_FOUND`, `weekStart`가 월요일이 아니면 400 |
 | POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등, 처음 시각 유지) → 204, 미보유 404 `THEME_FRAME_NOT_FOUND` |
 | POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}`(최대 100개) → `{owned:[{themeId, weekStart}]}`(보유한 것만, 중복은 한 번. core 액자 슬롯 저장 전·추억 그림책 발급 전 확인) |
-| GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | 추억 그림책 회차 조립(2.5.1, #966). 호출자는 report-worker(SYSTEM 역할 + `X-Student-Scope`)만. `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt}], ending:{seen, outro, answer, outroImage}}`. 문제 글·장면 그림은 시도의 미션 버전 값. 엔딩 전이면 `outro`·`answer`·`outroImage` null(P23). 그림 칸은 단기 presigned URL 또는 null. 미보유 404 `THEME_FRAME_NOT_FOUND`, 월요일 아님 400 |
+| GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | 추억 그림책 회차 조립(2.5.1, #966). 호출자는 report-worker(SYSTEM 역할 + `X-Student-Scope`)만. `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt}], ending:{seen, outro, answer, outroImage}}`. 문제 글·장면 그림은 시도의 미션 버전 값. `attempt.answers[]`는 `{version, text, followup, result}`이고 `result`는 그 답변 판정의 지금 결과(최신 정정 반영, 판정 전·실패·판정 없음 null, report가 가장 많이 자란 날을 고르는 데만 쓰고 책에는 싣지 않음, #1024). 엔딩 전이면 `outro`·`answer`·`outroImage` null(P23). 그림 칸은 단기 presigned URL 또는 null. 미보유 404 `THEME_FRAME_NOT_FOUND`, 월요일 아님 400 |
 | POST | `/internal/students/{studentId}/memories/search` | `{query}` → 2.12 검색 응답. 질의 변환은 ai 4.2.7(실패하면 1회 다시 시도, 끝내 실패하면 기간 낱말이 있는 질문은 503 `AI_UNAVAILABLE`·없으면 원문으로 진행, #878), 질문 임베딩은 ai 4.2.4, 임베딩 실패 503 `AI_UNAVAILABLE` |
 | POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6. ai 장애 503 `AI_UNAVAILABLE`(아래 설명 규칙) |
 

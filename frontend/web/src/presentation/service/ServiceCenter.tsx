@@ -1,5 +1,5 @@
 import { lazy, Suspense, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { serviceApi } from '../../data/serviceApi.ts'
@@ -8,6 +8,9 @@ import type { InquiryCategory, SupportTarget } from '../../domain/service.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { formatKoreanDateTime } from '../common/dateTime.ts'
+import { parentMenuSearch } from '../common/parentDisplay.ts'
+import { parentGuideReplayState } from '../parent/parentGuide.ts'
+import '../parent/parent-guide.css'
 import { supportStatusLabel, supportCategoryLabel, supportTargetLabel } from '../support/supportLabels.ts'
 import './service.css'
 const NotificationCenter = lazy(() => import('./NotificationCenter.tsx').then(module => ({ default: module.NotificationCenter })))
@@ -30,11 +33,17 @@ export function ServiceContent({ page }: { page: 'help' | 'support' | 'notices' 
 export function Help({ role }: { role: string }) {
   const q = useParentQuery(['help', role], signal => serviceApi.help(role, signal))
   const root = '/' + role.toLowerCase()
-  return <section className="service-help"><header className="parent-page-head"><h1>이용 도움말</h1><p>학습 기록을 읽는 방법과 이용 안내를 확인하세요.</p></header><QueryFeedback query={q} />
+  return <section className="service-help">{role === 'PARENT' && <GuideReplay />}<header className="parent-page-head"><h1>이용 도움말</h1><p>학습 기록을 읽는 방법과 이용 안내를 확인하세요.</p></header><QueryFeedback query={q} />
     <div className="service-reading-list">{q.data?.items.map(item => <details key={item.title}><summary>{role === 'PARENT' && item.title === '수치와 분석의 한계' ? '학습 수치와 분석은 어떻게 읽어야 하나요?' : item.title}</summary><div className="service-reading-body"><p>{item.body}</p></div></details>)}</div>
     {q.data && !q.data.items.length && <p>등록된 도움말이 없습니다.</p>}
     <footer className="service-help-footer"><div><h2>더 확인할 내용이 있나요?</h2><p>문의하거나 이미 접수한 내용을 확인할 수 있어요.</p></div><div><Link to={root + '/support'}>문의하기</Link>{role !== 'ADMIN' && <Link to={root + '/support/results'}>내 접수 내역 보기</Link>}</div></footer>
   </section>
+}
+/** 학부모 첫 사용 안내 다시 보기(#1037). 서버 완료 기록은 그대로 두고 학습 현황에서 안내만 다시 띄운다. */
+function GuideReplay() {
+  const navigate = useNavigate(), location = useLocation()
+  return <div className="service-guide-replay"><p>메뉴 위치와 첫 할 일을 다시 확인할 수 있어요.</p>
+    <button type="button" className="cj-secondary" onClick={() => navigate('/parent/journal' + parentMenuSearch(location.search), { state: parentGuideReplayState })}>처음 안내 다시 보기</button></div>
 }
 export function Notices() {
   const q = useParentQuery(['notices'], serviceApi.notices)

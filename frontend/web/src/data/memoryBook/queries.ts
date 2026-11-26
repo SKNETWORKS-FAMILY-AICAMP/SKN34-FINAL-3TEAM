@@ -23,5 +23,19 @@ export function useCreateMemoryBook(childId: string) {
   })
 }
 
+/**
+ * 같이 읽었어요: 성공하면 책장 회차 목록을 다시 받아 표지에 날짜를 보인다.
+ * 다시 받을 때까지 기다려(Promise를 돌려줌) 그동안 isPending이 유지되므로 단추가 다시 눌리는 틈이 없다
+ */
+export function useReadTogether(childId: string) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationKey: ['memory-book-read-together', childId],
+    mutationFn: (bookId: string) => memoryBookApi.readTogether(childId, bookId),
+    retry: false,
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['memory-books', 'rounds', childId] }),
+  })
+}
+
 export const useMemoryBookDownload = (childId: string) =>
   useMutation({ mutationKey: ['memory-book-download', childId], mutationFn: (bookId: string) => memoryBookApi.download(childId, bookId), retry: false })

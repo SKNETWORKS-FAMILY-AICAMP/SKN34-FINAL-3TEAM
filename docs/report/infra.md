@@ -2265,6 +2265,122 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 - scoring·report-api는 여전히 자체 span·HTTP 지표가 없다.
 - Langfuse를 켜면 generation 부모는 이전처럼 요청 `traceparent`(호출한 서비스 span)이고 ai span이 아니다. 두 저장소는 trace ID로 맞춘다.
 
+## 9.29 리포트 설명 누락 지표와 경보 (#1031, 2026-11-25)
+
+에픽 #1027의 리포트 설명 부분이다. 리포트 Gemma(SageMaker, #742)가 창 시작 뒤 InService가 아니거나 0대 호출에 실패해도 리포트는 `COMPLETED`라 기존 규칙에 잡히지 않았다.
+
+### 9.29.1 결정 (2026-11-25 동섭)
+
+| 항목 | 결정 |
+|---|---|
+| 지표 출처 | CloudWatch 데이터 소스 대신 report-worker 지표. 새 IAM·데이터 소스 없음. 엔드포인트 InService 여부·`NoCapacityInvocationFailures` 자체는 보지 않고 "설명이 실제로 빠졌다"는 결과만 본다 |
+| 내보내기 | `app/tracing.py`가 `tracing.enabled`(`OTEL_TRACES_EXPORTER=otlp`)일 때 trace와 함께 MeterProvider를 설치. chart는 Java가 아닌 서비스에 `OTEL_METRICS_EXPORTER`를 주지 않아 chart 렌더는 바꾸지 않음. ai-service(#1029)는 values의 `OTEL_METRICS_EXPORTER`로 따로 켠다 |
+| 임계값 | 기준안. 30명 배치 실측 뒤 조정 |
+| prod 적용 | prod values에 넣었으나 B 첫 배포 포함 여부는 결정 대기(#886: 12/1 이후 장애·시험 메시지 금지) |
+
+### 9.29.2 바꾼 것
+
+- report-worker: OTel 카운터 `report.explanation.state`(Prometheus `report_explanation_state_total`). 속성은 `state`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`) 하나이고 학생·리포트·답변 ID와 원문은 넣지 않는다(NFR-SEC-05). `explanation_generator.py`가 상태를 정하는 두 곳(공유 꺼짐 `NO_TARGET`, 설명 단계 끝)에서 1을 더하고, 일일 리포트·설명 꺼짐은 세지 않는다. 재시작 뒤 첫 결정도 `increase()`에 잡히도록 세 상태를 0부터 낸다
+- prod `observability.json`에 규칙 2개 추가(#1028 포함 총 22개). 둘 다 지속 5분, 창 밖은 `noDataState: OK`
+
+| uid | 조건 |
+|---|---|
+| `report-explanation-not-included` | 최근 30분 `NO_TARGET`을 뺀 결정 5건 이상 중 `NOT_INCLUDED` > 50% |
+| `report-explanation-none-included` | 최근 30분 `NOT_INCLUDED` 3건 이상이고 `INCLUDED` 0건 |
+
+- 창(일 23:30 ~ 월 02:00 KST, `explanation-endpoint.json` `schedule`)은 UTC 일 14:30~17:00으로 바꿔 `day_of_week()`·`hour()`·`minute()` 조건으로 건다. 창 밖에서는 값이 비어 울리지 않는다. `increase()` 외삽으로 건수가 소수가 되지 않도록 건수는 `round()`로 본다
+- 검증기 `verify_chart.py`·`verify.py`, `operational-alerts/README.md`, architecture 4.7 남은 경계 갱신
+
+### 9.29.3 검증 (로컬)
+
+| 검사 | 결과 |
+|---|---|
+| report 시험 | 전체 564개 통과. 상태별 카운터(INCLUDED 1·NOT_INCLUDED 1·NO_TARGET 2, 설명 꺼짐은 미집계), 속성이 `state` 하나뿐이고 학생 ID·원문이 없음, 세 상태 0 시작 확인. ruff 통과 |
+| 실제 Collector | `otel/opentelemetry-collector-contrib:0.164.0`에 OTLP로 보내 `report_explanation_state_total{job="report-worker",state=...}`로 나오고 `NO_TARGET` 0도 나오는 것 확인(Prometheus 수집 뒤 `exported_job`) |
+| Helm | observability prod·local, report-worker prod `helm lint --strict`·`helm template` 통과 |
+| `verify_chart.py` (Docker 격리) | 22개 규칙 정상 평가. 창 조건을 Prometheus `time` 지정 조회로 일 14:29:59·14:30·15:30·16:59:59·17:00 UTC와 월·토 15:30 UTC에서 확인. 가속 사본(창 조건 제거, `[1m]`)에서 `NO_TARGET` 제외 비율 발생(넣으면 울리지 않는 값), `INCLUDED` 0건 발생, 두 규칙 회복. 기존 검사 모두 통과 |
+
+AWS·SageMaker·A 계정 클러스터와 실제 Discord 수신은 이 검증에 포함하지 않았다.
+
+### 9.29.4 남은 것
+
+- 배치가 아예 돌지 않거나 report-worker 지표가 끊기면 두 규칙 모두 울리지 않는다(창 안에서도 NoData는 OK)
+- 엔드포인트 InService 직접 감시(CloudWatch)는 하지 않는다
+- 30명 배치 실측 뒤 임계값·30분 창·창 끝 시각 조정
+- B 첫 배포 포함 여부 결정
+
+## 9.30 첫 사용 안내 완료 기록 migration V58 (#1035, 2026-11-25)
+
+에픽 #1034(첫 사용 안내)의 core 부분이다. 제안 [onboarding 7.1 B안](../proposals/onboarding.md)대로 완료 기록을 서버에 둬 기기·브라우저를 바꿔도 안내가 한 번만 보이게 한다.
+
+| 항목 | 내용 |
+|---|---|
+| 변경 | `V58__onboarding_completion.sql`: `user_account.onboarding_completed_at`·`student.onboarding_completed_at` (`timestamptz NULL`) 추가. 인덱스·CHECK·DEFAULT 없음 |
+| 학생을 `student`에 둔 근거 | 학생은 `user_account` 행이 없다(V7에서 `student.user_account_id` 삭제). 학생 본인 설정 시각을 `student`에 두는 `look_updated_at`(V23) 선례를 따른다. 형제가 한 보호자 계정을 써도 학생별로 따로 남는다 |
+| 기존 행 | 모두 NULL = 미완료. 배포 뒤 기존 사용자도 안내를 한 번 본다. 시연 계정은 시연 전에 각 계정으로 들어가 안내를 끝내 둔다(에픽 #1034) |
+| 기록 규칙 | `... WHERE ... AND onboarding_completed_at IS NULL` 조건부 UPDATE라 다시 기록해도 처음 시각을 유지한다(learning `ThemeFrameMapper.xml` `seen_at` 선례). 지우는 API·관리자 초기화는 없고, 학생 삭제·탈퇴 때도 지우지 않는다(개인정보가 아닌 시각 값이고 차단된 행은 다시 쓰이지 않음) |
+| 배포 | 칼럼 추가만이라 잠금이 짧고 되돌릴 데이터가 없다. core-migrate 이미지의 PreSync Job이 앱보다 먼저 돈다(9.18.3). local values `migration.revision`을 `v58`로 올렸다 |
+
+API: `GET·PUT /api/v1/me/onboarding`(학부모), `GET·PUT /api/v1/students/me/onboarding`(학생). 기록은 [auth-account 19](auth-account.md#19-첫-사용-안내-완료-기록-1035-2026-11-25).
+
+## 9.31 추억 그림책 같이 읽음 칸·알림 유형 (#1025 V59, 2026-11-25)
+
+core migration `V59__memory_book_read_together.sql`(#1035가 V58을 먼저 써서 V59). API·정한 것은 [core-gateway 36절](core-gateway.md#36-추억-그림책-같이-읽음-표시토요일-저녁-알림-1025-2026-11-25), 저장 구조는 [ERD 3.5.3](../design/erd.md).
+
+| 바꾼 것 | 내용 | 근거 |
+|---|---|---|
+| 잠금 | `LOCK TABLE memory_book_job, notification, notification_setting IN ACCESS EXCLUSIVE MODE` | V41·V30처럼 고치는 표를 먼저 한 번에 잠가 순서를 고정한다. 세 표 모두 작고 문장이 짧아 잠금 시간이 짧다 |
+| 칸 추가 | `memory_book_job.read_together_at timestamptz` (nullable, 기본값 없음) | nullable 칸 추가라 기존 행은 NULL로 남고 다시 쓰지 않는다(PostgreSQL은 기본값 없는 칸 추가에 표를 다시 쓰지 않음). 기본값을 두지 않는 ERD 규칙(3.6)을 따른다 |
+| CHECK 추가 | `ck_memory_book_job_read_together (read_together_at IS NULL OR status = 'READY')` | 상태는 QUEUED → READY·FAILED로 한 번만 바뀌고 READY는 다시 바뀌지 않으며, API도 READY에서만 값을 넣는다. 정상 흐름을 막지 않고 잘못된 값만 막는다. 기존 행은 모두 NULL이라 통과한다(확인을 위해 표를 한 번 읽음) |
+| 알림 CHECK | `ck_notification_type`·`ck_notification_setting_type`을 지우고 기존 9개 + `MEMORY_BOOK_READ_REMINDER`로 다시 만듦 | V41과 같은 방식. 허용 목록만 넓혀 기존 행은 모두 통과한다 |
+| 인덱스 | 새로 만들지 않음 | 토요일 예약 작업이 주 1회 `status='READY' AND completed_at ≥ … AND read_together_at IS NULL AND expires_at > …`를 읽는다. 행 수가 자녀당 하루 최대 3권인 데모 규모라 표 전체 읽기로 충분하다. 커지면 부분 인덱스 `(completed_at) WHERE status='READY' AND read_together_at IS NULL`을 검토한다 |
+
+- 되돌리기: 칸·CHECK를 지우고 알림 CHECK를 V41 목록으로 되돌리는 새 migration이 필요하다(그 전에 `MEMORY_BOOK_READ_REMINDER` 알림·설정 행을 지워야 함). 적용된 V59는 고치지 않는다
+- local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v58`(#1035) → `v59`로 올렸다(`test_core_migration_versions`가 마지막 migration과 같은지 봄). prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
+- 새 ShedLock 이름 `core-memory-book-read-reminder`는 기존 `shedlock` 표에 행으로 생기며 migration이 필요 없다
+
+## 9.32 AI 품질 신호 대시보드 (#1030, 2026-11-25)
+
+에픽 #1027의 ai 품질 부분이다. #1029의 ai-service meter provider·Collector 전송 경로를 그대로 쓰고 새 의존성·운영 도구는 없다. 지표 정의는 [architecture 4.6](../design/architecture.md#46-관측), 정한 것과 주간 비교 SQL은 [ai 28](ai.md#28-ai-품질-신호-지표와-주간-판정-비교-1030-2026-11-25).
+
+### 9.32.1 구성
+
+| 항목 | 내용 |
+|---|---|
+| 지표 | ai-service OTel 카운터 `ai.judgment.results`·`ai.analysis.fallbacks`·`ai.guard.blocked` → Collector → Prometheus(`ai_judgment_results_total`·`ai_analysis_fallbacks_total`·`ai_guard_blocked_total`). 단위는 중괄호 주석(`{judgment}` 등)이라 이름에 단위 접미사가 붙지 않는다(#984 `{check}`와 같음) |
+| 대시보드 | `charts/observability/dashboards/ai-quality.json`(uid `ai-quality`, "AI 품질 신호"). chart가 `dashboards/*.json`을 `grafana-dashboards` ConfigMap에 넣으므로(templates/configmaps.yaml) 파일 추가만으로 local·prod 모두 provision된다. values 변경 없음 |
+| 창 | 비율·건수 모두 `increase(...[24h])`(이슈 "24시간 창"). local Prometheus 보존이 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(패널 설명에 적음). prod 보존은 3d |
+| 분모 | 판정·인용 대조 차단은 `ai_judgment_results_total`. 분석 대체 응답·되묻기 누출은 #1029 HTTP 지표 `http_server_request_duration_seconds_count{exported_job="ai-service",http_route=…,http_response_status_code="200"}`(경로 `/internal/analysis/stream`·`/internal/followups`) |
+| 0건 표시 | `(분자 or 0 * 분모) / 분모`(표현 분류 판정 대시보드와 같은 모양) |
+| 경보 | 두지 않음(이슈 범위 밖) |
+
+### 9.32.2 검증
+
+| 확인 | 결과 |
+|---|---|
+| ai 단위 시험 `tests/test_quality_metrics.py`(InMemoryMetricReader) | 16 통과. 판정 정상·LLM 전 보류·`QUOTE_MISMATCH`(+`judgment_quote`)·503 0회, 분석 대체 두 이유 각 1회·안내 3경로·템플릿 대조 실패 0회, 되묻기 누출 0·1·2회·빈 질문 0회, 속성 키 고정·원문·ID 없음 |
+| ai 전체 `uv run pytest`·`ruff check`·`ruff format --check` | 1467 통과, ruff 통과 |
+| `verify_chart.py`에 `ai-quality.json` uid·식·datasource 확인 추가(local·prod 렌더) | `verify_chart.py`는 helm이 없어 못 돌림, ai-quality 확인 식만 따로 통과. 이 스크립트는 CI 워크플로에서 돌지 않는다(README의 수동 절차) |
+| ci-gitops(helm lint·template·kubeconform) | PR CI에서 확인 |
+| 로컬 확인 방식 | kind 없어 #1029(9.28.3)처럼 Docker 격리로 확인, QUOTE_MISMATCH는 llm-stub 한계로 0만 확인(단위 시험으로 대신). `compose.yaml`의 postgres·rabbitmq·learning·이 브랜치 ai 이미지에 llm-stub, local values와 같은 판의 Collector 0.164.0·Prometheus v3.15.1(보존 1d)·Grafana 13.3.0을 붙였다. helm이 없어 Collector(otlp → memory_limiter·batch → prometheus :8889)·수집(job `otel-collector`)·datasource(uid `prometheus`)·대시보드 provider는 chart 템플릿을 손으로 옮겼고 대시보드는 이 브랜치 `ai-quality.json` 그대로. core를 띄우지 않아 ai readiness는 `versions` DOWN(core 프롬프트 snapshot 없음)이었고 요청은 기본 활성 버전(`judge@2` 등)으로 처리됐다. 요청은 ai 내부 API를 직접 불렀다 |
+| 보낸 요청 (두 번 반복) | 판정 정상 3·짧은 답 2, 되묻기 정상 2·금지어 누출 2(재생성도 누출), 분석 2, llm-stub을 멈춘 뒤 분석 2·판정 1(503) |
+| Prometheus 이름·라벨 | `ai_judgment_results_total{result,held_reason,prompt_version}`·`ai_analysis_fallbacks_total{reason}`·`ai_guard_blocked_total{guard}`, HTTP 분모 `http_server_request_duration_seconds_count{exported_job="ai-service",http_route="/internal/analysis/stream"·"/internal/followups"·"/internal/judgments"}`. 문서·대시보드에 적은 이름과 같음. 이 밖의 라벨은 Collector·Prometheus 공통(`exported_job`·`exported_instance`(SDK `service.instance.id`)·`job`·`instance`·`otel_scope_name`)뿐 |
+| 첫 회 값 (한 번째 반복 뒤) | 판정 `CORRECT/none/judge@2` 3, `HELD/TOO_SHORT/none` 2, 503은 0(HTTP 503 1건과 대조), 대체 응답 `AI_UNAVAILABLE` 2(llm-stub이 떠 있을 때 0), `followup_leak` 4(요청 2 × 2회) |
+| 원문·ID | ai 시계열 89개 전체에서 답변·질문에 붙인 표시 문자열과 학생·사용자 ID가 나오지 않음 |
+| 주간 SQL(ai 28.2) | learning_db에서 두 문 모두 오류 없이 실행, 결과 0행(ai 직접 호출이라 `judgment` 행 없음). 같은 SQL을 세션 임시 테이블의 합성 7행에 돌려 KST 주 경계(일 23:59 → 앞 주, 월 00:00 → 그 주), `RULE`·`FAILED` 제외, NULL → `none`, 주·버전 안 비율을 확인(실제 표에는 쓰지 않음) |
+| Grafana 패널 6개(식 8개) | "AI 품질 신호"가 provision됨(`provisioned=true`). 두 번째 반복 뒤 Grafana datasource로 조회해 모두 값이 나옴: 보류율 `judge@2` 0, 결과 분포 `none` HELD 1·`judge@2` CORRECT 1, 보류 이유 TOO_SHORT 2.13, 대체 응답률 전체·`AI_UNAVAILABLE` 0.504, 차단율 `followup_leak` 1·`judgment_quote` 0, 차단 건수 `followup_leak` 4.26. 소수는 `increase()`의 창 끝 보정 |
+| 확인한 한계 | 카운터는 첫 증가 때 시계열이 생기므로 Prometheus가 처음 본 값(첫 반복의 3·2·4 등)은 `increase()`에 들어가지 않는다. 프로세스마다 `exported_instance`가 달라 재시작 뒤 처음 나온 조합의 첫 건도 같다. 드문 조합(`QUOTE_MISMATCH` 등)은 적게 보일 수 있다 |
+
+### 9.32.3 1주 실측 (배포 뒤)
+
+prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는다(임계값은 정하지 않음).
+
+| 지표 | 1주 값 | 경보 필요 여부 |
+|---|---|---|
+| 판정 보류율(프롬프트 버전별) | 기록 예정 | 판단 예정 |
+| 분석 대체 응답률 | 기록 예정 | 판단 예정 |
+| 가드 차단율(`followup_leak`·`judgment_quote`) | 기록 예정 | 판단 예정 |
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

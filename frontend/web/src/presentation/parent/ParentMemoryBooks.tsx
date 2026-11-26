@@ -1,10 +1,10 @@
-import { BookOpen, Download, Lock } from 'lucide-react'
+import { BookOpen, Check, Download, Lock } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { openDownload } from '../../data/memoryBook/api.ts'
-import { useCreateMemoryBook, useMemoryBookDownload, useMemoryBookRounds } from '../../data/memoryBook/queries.ts'
+import { useCreateMemoryBook, useMemoryBookDownload, useMemoryBookRounds, useReadTogether } from '../../data/memoryBook/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { memoryBookFailedReason, memoryBookFailure, memoryBookLockedNotice, memoryBookShelfLocked } from '../../domain/memoryBook.ts'
+import { memoryBookFailedReason, memoryBookFailure, memoryBookLockedNotice, memoryBookShelfLocked, readTogetherLabel } from '../../domain/memoryBook.ts'
 import type { MemoryBookRoundItem } from '../../domain/memoryBook.ts'
 import { weekLabel } from '../../domain/retention.ts'
 
@@ -25,6 +25,8 @@ function Cover({ round, lockedIssue }: { round: MemoryBookRoundItem; lockedIssue
     <strong className="memory-shelf-title">{title}</strong>
     {/* 무료라 발급이 잠긴 책: 책마다 문장을 반복하지 않고 표지 모서리 표시 하나로(화면 읽기는 "발급은 프리미엄") */}
     {lockedIssue && <span className="memory-shelf-badge"><Lock size={13} aria-hidden="true" /><span className="memory-shelf-sr">발급은 </span>프리미엄</span>}
+    {/* 같이 읽은 책(#1026): 왼쪽 위, 자물쇠도 있으면(무료·보관 기간 지남) 한 줄 아래. 보관 기간이 지나도(EXPIRED) 이미 남긴 날짜는 보인다 */}
+    {round.book?.readTogetherAt && <span className={`memory-shelf-read${lockedIssue ? ' memory-shelf-read-below' : ''}`}><Check size={13} aria-hidden="true" />{readTogetherLabel(round.book.readTogetherAt)}</span>}
   </span>
 }
 
@@ -40,6 +42,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
   const rounds = useMemoryBookRounds(child.id)
   const create = useCreateMemoryBook(child.id)
   const download = useMemoryBookDownload(child.id)
+  const readTogether = useReadTogether(child.id)
   const [notice, setNotice] = useState<string | null>(null)
   const blocked = memoryBookFailure(rounds.error)
   const shelf = rounds.data
@@ -63,6 +66,15 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
       void rounds.refetch()
     }
   }
+  /** 같이 읽었어요(#1026, core #1025): 취소 없음·확인 창 없음. 다시 눌러도 서버가 처음 시각을 지킨다 */
+  async function markRead(bookId: string) {
+    setNotice(null)
+    try {
+      await readTogether.mutateAsync(bookId)
+    } catch (error) {
+      setNotice(memoryBookFailure(error) ?? '같이 읽음을 표시하지 못했습니다. 잠시 뒤 다시 시도해 주세요.')
+    }
+  }
 
   /** 무료라 이 회차를 발급할 수 없음(이미 만든 그림책을 받거나 만드는 중이면 아님) */
   const lockedIssue = (round: MemoryBookRoundItem) => locked && round.book?.status !== 'READY' && round.book?.status !== 'QUEUED'
@@ -70,8 +82,12 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
   function action(round: MemoryBookRoundItem) {
     const book = round.book
     // 무료라도 이미 만든 그림책(구독 중에 만든 것)은 보관 기간 안 받을 수 있다(api-spec 2.5.1, C2)
+    // 같이 읽었어요는 받은 책(READY)에만, 무료 자녀도 같다(core가 유료 판정을 하지 않음, #1025). 표시한 뒤에는 표지 날짜로 대신한다
     if (book?.status === 'READY')
-      return <button type="button" disabled={download.isPending} onClick={() => void save(book.bookId)}><Download size={16} aria-hidden="true" /> 받기</button>
+      return <>
+        <button type="button" disabled={download.isPending} onClick={() => void save(book.bookId)}><Download size={16} aria-hidden="true" /> 받기</button>
+        {!book.readTogetherAt && <button type="button" disabled={readTogether.isPending} onClick={() => void markRead(book.bookId)}>같이 읽었어요</button>}
+      </>
     if (book?.status === 'QUEUED') return <span role="status" className="muted">만드는 중</span>
     if (locked) return null
     return <>

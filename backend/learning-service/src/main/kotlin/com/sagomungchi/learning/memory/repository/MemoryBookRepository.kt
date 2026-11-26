@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.memory.repository
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.memory.domain.MemoryBookLine
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -18,7 +19,14 @@ data class BookDayRow(val dayOfWeek: Int, val missionId: UUID, val question: Str
 /** 시도가 쓴 미션 버전의 문제 글·장면 그림 */
 data class BookAttemptRow(val attemptId: UUID, val completedAt: Instant?, val question: String, val sceneUri: String?)
 
-data class BookAnswerRow(val attemptId: UUID, val version: Int, val text: String?, val followupType: String?, val followupQuestion: String?)
+data class BookAnswerRow(
+    val attemptId: UUID,
+    val version: Int,
+    val text: String?,
+    val followupType: String?,
+    val followupQuestion: String?,
+    val result: JudgmentResult?,
+)
 
 data class BookReflectionRow(val attemptId: UUID, val difficulty: String?, val text: String?)
 
@@ -62,16 +70,28 @@ class MemoryBookRepository(private val jdbc: JdbcTemplate, private val json: Obj
         studentId, ids.toTypedArray(),
     )
 
+    /**
+     * 답변과 그 판정의 지금 결과. 판정은 답변당 1행(uq_judgment_answer_id), 결과는 DONE일 때만 있다.
+     * 정정(#80)이 있으면 최신 정정 결과(created_at 가장 늦은 행, CorrectionMapper.findTarget과 같은 규칙)
+     */
     fun answers(ids: List<UUID>): List<BookAnswerRow> = if (ids.isEmpty()) emptyList() else jdbc.query(
         """
-        SELECT an.attempt_id, an.version, an.plain_text, f.type followup_type, f.question followup_question
-        FROM answer an LEFT JOIN followup f ON f.id = an.followup_id
+        SELECT an.attempt_id, an.version, an.plain_text, f.type followup_type, f.question followup_question,
+               CASE WHEN j.process_status = 'DONE' THEN COALESCE(c.result, j.result) END result
+        FROM answer an
+        LEFT JOIN followup f ON f.id = an.followup_id
+        LEFT JOIN judgment j ON j.answer_id = an.id
+        LEFT JOIN LATERAL (
+            SELECT jc.corrected ->> 'result' AS result FROM judgment_correction jc WHERE jc.judgment_id = j.id
+            ORDER BY jc.created_at DESC, jc.id DESC LIMIT 1
+        ) c ON TRUE
         WHERE an.attempt_id = ANY(?)
         ORDER BY an.attempt_id, an.version
         """.trimIndent(),
         { rs, _ ->
             BookAnswerRow(rs.uuid("attempt_id"), rs.getInt("version"), rs.getString("plain_text"),
-                rs.getString("followup_type"), rs.getString("followup_question"))
+                rs.getString("followup_type"), rs.getString("followup_question"),
+                rs.getString("result")?.let(JudgmentResult::valueOf))
         },
         ids.toTypedArray(),
     )

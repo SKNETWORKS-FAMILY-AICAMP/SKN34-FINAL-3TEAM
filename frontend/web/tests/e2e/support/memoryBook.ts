@@ -143,6 +143,10 @@ WHERE EXISTS (SELECT 1 FROM picked) AND EXISTS (SELECT 1 FROM reflected);`)
   return { themeId, weekStart }
 }
 
+/** core 그림책 같이 읽음 시각(#1025 V59, KST 날짜 YYYY-MM-DD). 없으면 빈 문자열 */
+export const readTogetherOf = (studentId: string) =>
+  psql('core_db', `SELECT coalesce(to_char(read_together_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'), '') FROM memory_book_job WHERE student_id = '${studentId}' ORDER BY created_at DESC LIMIT 1`)
+
 /** core 그림책 작업 상태(완료 이벤트 반영 확인) */
 export const bookStatus = (studentId: string) =>
   psql('core_db', `SELECT status || ' ' || coalesce(size_bytes::text, '-') FROM memory_book_job WHERE student_id = '${studentId}' ORDER BY created_at DESC LIMIT 1`)

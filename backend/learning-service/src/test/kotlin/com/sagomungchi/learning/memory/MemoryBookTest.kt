@@ -7,6 +7,7 @@ import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.attempt.repository.AttemptRepository
+import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.memory.domain.RoundKey
 import com.sagomungchi.learning.memory.repository.MemoryBookRepository
 import com.sagomungchi.learning.memory.repository.ThemeFrameRepository
@@ -109,6 +110,26 @@ class MemoryBookTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `답변마다 판정의 지금 결과(최신 정정 반영), 판정 전·판정 없음은 null (#1024)`() {
+        val days = completeWeek()
+        val first = answer(days[0], 1, "바람이 불었어요") // 되묻기를 만든 판정 RETHINK
+        val revised = answer(days[0], 2, "문이 열려서 꺼졌어요", followupOf = first, question = "언제 꺼졌을까?")
+        val revisedJudgment = judge(revised, days[0], "DONE", "PARTIAL")
+        correct(revisedJudgment, "PARTIAL", "RETHINK", hoursAgo = 2)
+        correct(revisedJudgment, "RETHINK", "CORRECT", hoursAgo = 1)
+        judge(answer(days[1], 1, "잘 모르겠어요"), days[1], "DONE", "HELD", heldReason = "INSUFFICIENT_EVIDENCE")
+        judge(answer(days[2], 1, "유리 벽을 만들어요"), days[2], "PENDING", null)
+        answer(days[3], 1, "기름이 사흘 치예요")
+
+        val round = book.round(student, RoundKey(themeId, WEEK))
+
+        assertEquals(listOf(JudgmentResult.RETHINK, JudgmentResult.CORRECT), round.days[0].attempt!!.answers.map { it.result })
+        assertEquals(listOf(JudgmentResult.HELD), round.days[1].attempt!!.answers.map { it.result })
+        assertEquals(listOf<JudgmentResult?>(null), round.days[2].attempt!!.answers.map { it.result })
+        assertEquals(listOf<JudgmentResult?>(null), round.days[3].attempt!!.answers.map { it.result })
+    }
+
+    @Test
     fun `정답을 맞혀 엔딩을 본 회차는 종료 이야기·정답·종료 그림을 줌`() {
         completeWeek()
         themeRepository.recordAnswerPick(student, WEEK, themeId, missions[4].id, "바람", true, at(WEEK.plusDays(4), 18).toInstant())
@@ -185,6 +206,27 @@ class MemoryBookTest : PostgresRepositoryTest() {
                 it, attemptId, version, followupId, text, UUID.randomUUID(),
             )
         }
+    }
+
+    /** 답변 판정 1행. DONE이 아니면 결과 없음(ck_judgment_result_when_done), HELD면 보류 사유 */
+    private fun judge(answerId: UUID, attemptId: UUID, status: String, result: String?, heldReason: String? = null): UUID =
+        UUID.randomUUID().also {
+            val rubric = jdbc.queryForObject("SELECT rubric_version_id FROM attempt WHERE id = ?", UUID::class.java, attemptId)
+            jdbc.update(
+                """INSERT INTO judgment (id, answer_id, process_status, result, held_reason, method, rubric_version_id, retry_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'LLM', ?, 0, now())""",
+                it, answerId, status, result, heldReason, rubric,
+            )
+        }
+
+    /** 판정 정정 1건(#80). created_at이 늦은 정정이 지금 결과 */
+    private fun correct(judgmentId: UUID, previous: String, corrected: String, hoursAgo: Long) {
+        jdbc.update(
+            """INSERT INTO judgment_correction (id, judgment_id, error_report_id, reason, previous, corrected, corrected_by, idempotency_key, created_at)
+               VALUES (?, ?, ?, '사유', ?::jsonb, ?::jsonb, ?, ?, now() - make_interval(hours => ?))""",
+            UUID.randomUUID(), judgmentId, UUID.randomUUID(), """{"result":"$previous"}""", """{"result":"$corrected"}""",
+            UUID.randomUUID(), UUID.randomUUID(), hoursAgo.toInt(),
+        )
     }
 
     private fun assertNotFound(block: () -> Unit) {

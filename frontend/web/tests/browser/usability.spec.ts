@@ -1,4 +1,4 @@
-import { enterStudentFixture } from './studentFixture.ts'
+import { enterStudentFixture, skipStudentTour } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -91,6 +91,7 @@ test('동의 전 공개는 설명을 열고 상태 갱신 후에만 선택할 �
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
   await expect(page).toHaveURL(/\/student\/home/)
   await expect(page.getByRole('region', { name: /^우리 집/ })).toBeVisible()
+  await skipStudentTour(page)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   await page.getByRole('button', { name: '설정', exact: true }).click()
   const sharing = page.getByRole('radio', { name: '친구들에게 보여 줄게요', exact: true })

@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router'
+import { needsOnboarding, useOnboarding } from '../../../data/onboarding/queries.ts'
 import { useMyPoints, useWeeklyTheme } from '../../../data/retention/queries.ts'
 import type { Child } from '../../../domain/classroom.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
@@ -9,6 +11,7 @@ import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
 import { HomeScene } from './HomeScene.tsx'
 import { useLook } from './lookContext.ts'
 import { useThemeMissions } from './themeWeek.ts'
+import { TOUR_RESTART_PATH, tourIndex, tourSeen } from './tourSteps.ts'
 import './home.css'
 
 /** 이 탭에서 이미 자동으로 띄운 이야기(열람 기록이 실패해도 같은 세션에서 다시 띄우지 않음) */
@@ -131,6 +134,27 @@ export function StudentHome({
   // 엔딩 뒤 아직 안 봤으면 이야기의 끝을 먼저 띄운다(시안 Home ended "엔딩 뒤 처음 들어오면 끝 영상이 먼저"). 시작 이야기는 홈에서 자동으로 띄우지 않고
   // 그 주 처음 문제를 열 때(open) 보여 준다(user-flow 사용자 결정 2026-11-13·14)
   const story = theme && storyToShow(theme) === 'OUTRO' ? 'OUTRO' : null
+  // 화면 둘러보기 자동 시작(#1038): 완료 기록이 없고, 홈이 다 그려졌고, 이야기의 끝·다른 창이 없을 때.
+  // data-tour-home은 wait(아직 판단 전)·start(곧 시작)·none(시작 안 함). 시험이 둘러보기를 기다릴지 이것으로 안다
+  const location = useLocation()
+  const navigate = useNavigate()
+  const onboarding = useOnboarding('STUDENT', child.id)
+  const touring = tourIndex(location.search) !== null
+  const tourAuto = themeQuery.isPending || homeQuery.isPending || onboarding.isPending
+    ? 'wait'
+    : needsOnboarding(onboarding) && !story && !touring && !tourSeen.has(child.id) ? 'start' : 'none'
+  useEffect(() => {
+    if (tourAuto !== 'start') return
+    const begin = () => {
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return false
+      tourSeen.add(child.id)
+      void navigate(TOUR_RESTART_PATH, { replace: true })
+      return true
+    }
+    if (begin()) return
+    const timer = window.setInterval(() => { if (begin()) window.clearInterval(timer) }, 500)
+    return () => window.clearInterval(timer)
+  }, [tourAuto, child.id, navigate])
   useEffect(() => {
     if (!theme || !story) return
     const key = `${child.id}:${theme.themeId}:${theme.weekStart}:${story}`
@@ -140,12 +164,14 @@ export function StudentHome({
   }, [theme, story, child.id, onStory])
 
   return (
-    <main className="sh-home">
+    <main className="sh-home" data-tour-home={tourAuto}>
       {(homeQuery.isPending || themeQuery.isPending) && <QueryStateNotice state="PROCESSING" />}
       <ErrorNotice error={homeQuery.error} retry={() => void homeQuery.refetch()} />
       {home && home.state !== 'OK' && <QueryStateNotice state={home.state} />}
       <div className="sh-hero">
-        <div className="sh-left">
+        {/* 둘러보기 표시: 오늘 문제 큰 버튼이 없으면(다 풀었음·주말·정답 고르기 등) 또는 테마가 없으면 대체 대사 */}
+        <div className="sh-left" data-tour={theme ? (!homeQuery.isPending && !(ready && today && today.attemptStatus !== 'COMPLETED') ? 'home-no-today' : undefined)
+          : !themeQuery.isPending ? 'home-no-theme' : undefined}>
           {theme ? (
             <>
               <p className="sh-hello">
@@ -155,7 +181,8 @@ export function StudentHome({
               {theme.bigQuestion && <p className="sh-question">{theme.bigQuestion}</p>}
               {ready && today && today.attemptStatus !== 'COMPLETED' ? (
                 <div className="sh-cta-row">
-                  <button type="button" className="sh-cta" onClick={() => open(today.missionId, 'THEME_DAY')}>
+                  <button type="button" className="sh-cta" onClick={() => open(today.missionId, 'THEME_DAY')}
+                    data-tour={today.attemptStatus === 'IN_PROGRESS' ? 'home-resume' : 'home-today'}>
                     {today.attemptStatus === 'IN_PROGRESS' ? '이어서 풀기' : '오늘 문제 풀기'}
                     <span aria-hidden="true" className="sh-cta-play">
                       ▶
@@ -314,7 +341,7 @@ export function StudentHome({
           <HomeScene t={t} companion={companion} worn={worn} lines={lines(theme, t.place, missed, today, until)} onRoom={onRoom} />
           {theme && (
             <>
-              <ol className="sh-chips" aria-label="이번 주 진행">
+              <ol className="sh-chips" aria-label="이번 주 진행" data-tour="home-days">
                 {theme.days.map((d) => {
                   const st = chipState(d, today)
                   // 지금 새로 시작하거나 이어서 할 수 있는 날만 누를 수 있다(공개된 안 푼 문제·푸는 중, #487 42행). 마무리한 날(다시 풀기는 주말 되돌아보기)·

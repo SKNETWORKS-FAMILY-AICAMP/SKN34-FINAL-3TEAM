@@ -4767,7 +4767,7 @@ components:
                     type: array
                     items:
                       type: object
-                      required: [version, text, followup]
+                      required: [version, text, followup, result]
                       properties:
                         version: {type: integer, minimum: 1}
                         text: {type: string}
@@ -4777,6 +4777,12 @@ components:
                           properties:
                             type: {type: string}
                             question: {type: string}
+                        result:
+                          type: [string, 'null']
+                          enum: [CORRECT, PARTIAL, RETHINK, HELD, null]
+                          description: >-
+                            그 답변 판정의 지금 결과(최신 정정 반영). 판정 전·실패·판정 없음은 null.
+                            report가 가장 많이 자란 날을 고르는 데만 쓰고 그림책에는 싣지 않는다(#1024)
                   reflection:
                     type: [object, 'null']
                     required: [difficulty, text]

@@ -139,12 +139,20 @@ def main():
             llm_exprs = [t["expr"] for panel in llm["panels"] for t in panel["targets"]]
             assert llm["uid"] == "llm-calls" and all(re.search(r"llm_call_(duration_seconds_(bucket|count)|tokens_total)", e) for e in llm_exprs)
             assert all(t["datasource"]["uid"] == "prometheus" for panel in llm["panels"] for t in panel["targets"])
+            # #1030: ai-service judgment, analysis fallback and guard counters over a 24h window.
+            ai = json.loads(data["ai-quality.json"])
+            ai_exprs = [t["expr"] for panel in ai["panels"] for t in panel["targets"]]
+            assert ai["uid"] == "ai-quality" and all(re.search(r"ai_(judgment_results|analysis_fallbacks|guard_blocked)_total", e) for e in ai_exprs)
+            assert all("[24h]" in e and "$__rate_interval" not in e for e in ai_exprs)
+            assert {"ai_judgment_results_total", "ai_analysis_fallbacks_total", "ai_guard_blocked_total"} <= {
+                name for e in ai_exprs for name in re.findall(r"ai_\w+_total", e)}
+            assert all(t["datasource"]["uid"] == "prometheus" for panel in ai["panels"] for t in panel["targets"])
             grafana = rendered["Deployment", "grafana"]["spec"]["template"]["spec"]
             mounts = {m["name"]: m["mountPath"] for m in grafana["containers"][0]["volumeMounts"]}
             assert mounts["dashboard-provider"] == "/etc/grafana/provisioning/dashboards"
             assert mounts["dashboards"] == "/etc/grafana/dashboards"
             assert {v["name"] for v in grafana["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboards"} == {"dashboard-provider", "dashboards"}
-        print("PASS local and prod values provision the expression toxicity and LLM call dashboards", flush=True)
+        print("PASS local and prod values provision the expression toxicity, LLM call and AI quality dashboards", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
@@ -155,6 +163,16 @@ def main():
         unpriced["expr"] = unpriced["expr"].replace("[1h]", "[1m]")
         backlog = next(rule for rule in rules if "rabbitmq_queue_messages_ready" in rule["expr"])
         backlog["threshold"] = 10
+        # #1031: Monday window gate (Sun 23:30-Mon 02:00 KST in UTC). verify.py checks the gate itself
+        # with Prometheus at fixed times; the accelerated copy evaluates always on a 1m window.
+        explanation_gate = ("and on() (day_of_week() == 0 and ((hour() == 14 and minute() >= 30)"
+                            " or (hour() >= 15 and hour() < 17)))")
+        for uid in ("report-explanation-not-included", "report-explanation-none-included"):
+            explanation = next(rule for rule in rules if rule["uid"] == uid)
+            assert explanation["expr"].endswith(" " + explanation_gate) and "[30m]" in explanation["expr"]
+            assert explanation.get("noDataState") == "OK", "outside the window the gate returns no data"
+            explanation["expr"] = (explanation["expr"].replace(explanation_gate, "and on() vector(1)")
+                                   .replace("[30m]", "[1m]"))
         values = {"prometheus": {"rabbitmqDlqMetrics": {"enabled": True}},
                   "grafana": {"alerting": {"enabled": True, "discordSecretName": "issue187-test",
                                            "interval": "10s", "groupWait": "1s", "groupInterval": "10s",
@@ -204,11 +222,14 @@ def main():
         bundle = root / "bundle.json"
         bundle.write_text(json.dumps({
             "alerting": provisioning, "datasource_text": datasource, "dlq_job": dlq_job,
+            "explanation_gate": explanation_gate,
             "titles": {"target": next(r["title"] for r in rules if "up{" in r["expr"]), "backlog": backlog["title"],
                        **{key: next(r["title"] for r in rules if r["uid"] == uid) for key, uid in (
                            ("dlq", "rabbitmq-dlq-depth"), ("budget", "llm-budget-80"), ("unpriced", "llm-unpriced-calls"),
                            ("missing", "app-metrics-missing"), ("auth_errors", "http-auth-errors"),
-                           ("auth_latency", "http-auth-latency"))}}}), encoding="utf-8")
+                           ("auth_latency", "http-auth-latency"),
+                           ("explanation_ratio", "report-explanation-not-included"),
+                           ("explanation_none", "report-explanation-none-included"))}}}), encoding="utf-8")
         subprocess.run([sys.executable, str(Path(__file__).with_name("verify.py")), "--chart-bundle", str(bundle)], check=True)
 
 

@@ -22,7 +22,10 @@ def serve():
         for q, n in (("report.report.generate", 5), ("report.report.generate.retry.1", 1), (DLQ, 0)))
     state = {"ready": 0, "empty": False, "received": [], "dlq": 0, "detailed": detailed, "detailed_query": None,
              "cost": 1.0, "unpriced": 0, "errors": False, "slow": False,
-             "ok": 0, "fast": 0, "failed": 0, "learning": 0}
+             "ok": 0, "fast": 0, "failed": 0, "learning": 0,
+             # #1031 report-worker explanation decisions added per scrape, and their cumulative totals.
+             "explain": {"INCLUDED": 1, "NOT_INCLUDED": 0, "NO_TARGET": 1},
+             "explained": {"INCLUDED": 0, "NOT_INCLUDED": 0, "NO_TARGET": 0}}
 
     def app_metrics():
         # Cumulative counters shaped like the OTel Java agent export; 5 requests per scrape.
@@ -46,7 +49,12 @@ def serve():
                   "# TYPE llm_usage_month_to_date_priced_cost gauge",
                   f'llm_usage_month_to_date_priced_cost{{exported_job="core-service"}} {state["cost"]}',
                   "# TYPE llm_usage_month_to_date_unpriced_calls gauge",
-                  f'llm_usage_month_to_date_unpriced_calls{{exported_job="core-service"}} {state["unpriced"]}']
+                  f'llm_usage_month_to_date_unpriced_calls{{exported_job="core-service"}} {state["unpriced"]}',
+                  "# TYPE report_explanation_state_total counter"]
+        for name, added in state["explain"].items():
+            state["explained"][name] += added
+            lines.append(f'report_explanation_state_total{{exported_job="report-worker",state="{name}"}} '
+                         f'{state["explained"][name]}')
         return "\n".join(lines) + "\n"
 
     class Handler(BaseHTTPRequestHandler):
@@ -281,6 +289,28 @@ def integration(chart_bundle, faults_only=False, scrape_only=False):
                 time.sleep(30)
                 assert rule("unpriced")["state"] == "inactive", "month start reset to zero must not fire"
                 print("PASS month start reset of the unpriced total does not fire", flush=True)
+                # #1031 Monday window gate at fixed UTC times: Sun 14:30-17:00 UTC is Sun 23:30-Mon 02:00 KST.
+                gate = urllib.parse.quote("vector(1) " + chart["explanation_gate"])
+                for at, inside in (("2026-11-29T14:29:59Z", False), ("2026-11-29T14:30:00Z", True),
+                                   ("2026-11-29T16:59:59Z", True), ("2026-11-29T17:00:00Z", False),
+                                   ("2026-11-29T15:30:00Z", True), ("2026-11-30T15:30:00Z", False),
+                                   ("2026-11-28T15:30:00Z", False)):
+                    result = local_request("http://" + prefix + "-prom:9090/api/v1/query?query=" + gate
+                                           + "&time=" + at)["data"]["result"]
+                    assert bool(result) == inside, "explanation window gate at " + at
+                print("PASS explanation rules evaluate only Sun 23:30-Mon 02:00 KST", flush=True)
+                # Accelerated copy on a 1m window. NO_TARGET is excluded: 3 of 4 decided is 75%,
+                # while counting NO_TARGET would give 3 of 24 and stay quiet.
+                local_request(fixture_url + "/control", {"explain": {"INCLUDED": 1, "NOT_INCLUDED": 3, "NO_TARGET": 20}})
+                eventually(lambda: rule("explanation_ratio")["state"] == "firing",
+                           "NOT_INCLUDED ratio without NO_TARGET fires", 150)
+                assert rule("explanation_none")["state"] == "inactive", "INCLUDED decisions exist"
+                local_request(fixture_url + "/control", {"explain": {"INCLUDED": 0, "NOT_INCLUDED": 1, "NO_TARGET": 0}})
+                eventually(lambda: rule("explanation_none")["state"] == "firing",
+                           "no INCLUDED explanation in the window fires", 150)
+                local_request(fixture_url + "/control", {"explain": {"INCLUDED": 1, "NOT_INCLUDED": 0, "NO_TARGET": 1}})
+                eventually(lambda: rule("explanation_ratio")["state"] == "inactive"
+                           and rule("explanation_none")["state"] == "inactive", "explanation alerts recover", 150)
                 # The 5-minute rate window keeps these firing for minutes; recovery is not awaited here.
                 local_request(fixture_url + "/control", {"errors": True})
                 eventually(lambda: rule("auth_errors")["state"] == "firing", "authentication 5xx ratio fires", 150)

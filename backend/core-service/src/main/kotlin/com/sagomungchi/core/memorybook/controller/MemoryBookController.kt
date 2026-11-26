@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -48,6 +49,11 @@ class MemoryBookController(private val service: MemoryBookService) {
     @GetMapping("/api/v1/children/{childId}/memory-books/{bookId}/download")
     fun download(@PathVariable childId: UUID, @PathVariable bookId: UUID): ResponseEntity<MemoryBookDownload> =
         noStore(HttpStatus.OK, service.download(childId, bookId))
+
+    /** "같이 읽었어요" 표시(#1025). 본문 없음, 멱등(이미 있으면 처음 시각), 취소 없음 */
+    @PutMapping("/api/v1/children/{childId}/memory-books/{bookId}/read-together")
+    fun readTogether(@PathVariable childId: UUID, @PathVariable bookId: UUID): ResponseEntity<MemoryBookView> =
+        noStore(HttpStatus.OK, service.readTogether(childId, bookId))
 
     /** 1차는 회차 1개(D3). 묶음은 길이 상한만 풀면 된다 */
     private fun round(request: CreateMemoryBookRequest?): MemoryBookRound {

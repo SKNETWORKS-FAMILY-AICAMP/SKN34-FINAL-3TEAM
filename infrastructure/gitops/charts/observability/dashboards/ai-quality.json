@@ -1,0 +1,241 @@
+{
+  "uid": "ai-quality",
+  "title": "AI 품질 신호",
+  "description": "ai-service 판정 보류율·결과 분포, 분석 대체 응답률, 가드 차단율. 지표 ai.judgment.results(result·held_reason·prompt_version)·ai.analysis.fallbacks(reason)·ai.guard.blocked(guard), #1030. 주간 비교는 Prometheus 보존(prod 3d)을 넘으므로 learning_db judgment 조회(docs/report/ai.md)로 본다",
+  "tags": [
+    "ai",
+    "quality"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "판정 보류율 (프롬프트 버전별)",
+      "description": "HELD / 판정 응답. LLM 전 보류(TOO_SHORT·UNVERIFIED_SCOPE)는 prompt_version=none이라 빼고 보류 이유별 건수에서 본다. 해당 판정이 0건이면 0. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum by (prompt_version) (increase(ai_judgment_results_total{result=\"HELD\",prompt_version!=\"none\"}[24h])) or 0 * sum by (prompt_version) (increase(ai_judgment_results_total{prompt_version!=\"none\"}[24h]))) / sum by (prompt_version) (increase(ai_judgment_results_total{prompt_version!=\"none\"}[24h]))",
+          "legendFormat": "{{prompt_version}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "판정 결과 분포 (결과·프롬프트 버전별)",
+      "description": "결과별 판정 / 같은 프롬프트 버전의 판정 응답. none은 LLM 전 보류. 503(AI_UNAVAILABLE)은 판정 결과가 아니라 세지 않는다. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (result, prompt_version) (increase(ai_judgment_results_total[24h])) / ignoring(result) group_left sum by (prompt_version) (increase(ai_judgment_results_total[24h]))",
+          "legendFormat": "{{result}} {{prompt_version}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "보류 이유별 건수",
+      "description": "보류(HELD) 판정 건수, held_reason별. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (held_reason) (increase(ai_judgment_results_total{result=\"HELD\"}[24h]))",
+          "legendFormat": "{{held_reason}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "분석 대체 응답률 (이유별)",
+      "description": "대체 응답(규칙 템플릿) / 분석 대화 요청(POST /internal/analysis/stream 200). 기록 부족·미지원 안내는 대체 응답이 아니라 세지 않는다. 대체 응답이 0건이면 전체 선만 0. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum (increase(ai_analysis_fallbacks_total[24h])) or 0 * sum (increase(http_server_request_duration_seconds_count{exported_job=\"ai-service\",http_route=\"/internal/analysis/stream\",http_response_status_code=\"200\"}[24h]))) / sum (increase(http_server_request_duration_seconds_count{exported_job=\"ai-service\",http_route=\"/internal/analysis/stream\",http_response_status_code=\"200\"}[24h]))",
+          "legendFormat": "전체"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (reason) (increase(ai_analysis_fallbacks_total[24h])) / on() group_left sum(increase(http_server_request_duration_seconds_count{exported_job=\"ai-service\",http_route=\"/internal/analysis/stream\",http_response_status_code=\"200\"}[24h]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "가드 차단율 (가드별)",
+      "description": "followup_leak: 누출로 버린 질문 / 되묻기 요청(POST /internal/followups 200). 재생성까지 누출이면 요청 하나에 2건이라 100%를 넘을 수 있다. judgment_quote: 인용 대조 실패 보류 / 판정 응답. 해당 차단이 0건이면 0. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum (increase(ai_guard_blocked_total{guard=\"followup_leak\"}[24h])) or 0 * sum (increase(http_server_request_duration_seconds_count{exported_job=\"ai-service\",http_route=\"/internal/followups\",http_response_status_code=\"200\"}[24h]))) / sum (increase(http_server_request_duration_seconds_count{exported_job=\"ai-service\",http_route=\"/internal/followups\",http_response_status_code=\"200\"}[24h]))",
+          "legendFormat": "followup_leak"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum (increase(ai_guard_blocked_total{guard=\"judgment_quote\"}[24h])) or 0 * sum (increase(ai_judgment_results_total[24h]))) / sum (increase(ai_judgment_results_total[24h]))",
+          "legendFormat": "judgment_quote"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "가드 차단 건수 (가드별)",
+      "description": "가드가 막은 학생 응답 수. 관리자 초안 검사(mission_draft·theme_draft)는 학생 응답이 아니라 세지 않는다. 24시간 이동 창(increase[24h]). local Prometheus 보존은 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(prod 보존 3d)",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (guard) (increase(ai_guard_blocked_total[24h]))",
+          "legendFormat": "{{guard}}"
+        }
+      ]
+    }
+  ]
+}

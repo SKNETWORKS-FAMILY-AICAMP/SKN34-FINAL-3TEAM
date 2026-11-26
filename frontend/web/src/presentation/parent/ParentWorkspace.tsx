@@ -20,6 +20,7 @@ import { ParentSettings } from './ParentSettings.tsx'
 import { ParentPayments } from './ParentPayments.tsx'
 import { ParentSharingNotice } from './ParentSharingNotice.tsx'
 import { parentNavigation } from './parentNavigation.tsx'
+import { ParentGuideGate } from './ParentGuide.tsx'
 
 const ServiceContent = lazy(() => import('../service/ServiceCenter.tsx').then(m => ({ default: m.ServiceContent })))
 const SupportResults = lazy(() => import('../support/SupportResults.tsx').then(m => ({ default: m.SupportResults })))
@@ -60,6 +61,8 @@ export function ParentWorkspace() {
   const insightsMode = params.get('view') === 'chat' ? 'chat' : 'report'
   return <Workspace title="학부모 공간" nav={parentNavigation} variant="parent" fullScreen={page === 'report' && insightsMode === 'chat'} actions={consentReady && <ChildPicker items={children.data?.items ?? []} selectedId={child?.id} loading={children.isPending} failed={!!children.error} disabled={page === 'billing' && params.get('checkout') === '1'} onSelect={c => select(c)} />}>
     {consentReady && <QueryFeedback query={children} />}
+    {/* 첫 사용 안내(#1037): 동의·자녀 등록(READY)을 마친 뒤 학습 현황에서만 */}
+    {page === 'journal' && (session?.nextAction ?? 'READY') === 'READY' && <ParentGuideGate />}
     {child?.guardianConsentRequired && <p role="alert">자녀 이용을 위해 법정대리인 동의가 필요합니다. 계정·자녀 설정의 공개·동의에서 확인해 주세요.</p>}
     {hasPeriod && child && (page !== 'report' || !validPeriod(scope)) && <details ref={periodFilter} className="parent-scope"><summary>조회 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
       const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)

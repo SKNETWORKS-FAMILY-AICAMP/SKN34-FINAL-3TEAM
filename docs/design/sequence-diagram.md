@@ -989,7 +989,7 @@ sequenceDiagram
 
 - 상태 전이·조건은 [상태 3.7](state-diagram.md). 여러 레플리카가 같은 주기에 돌아도 선점한 행만 처리
 
-### 3.11 추억 그림책 발급·받기 (FN-RPT-18, 구현 #966, 계약 #975)
+### 3.11 추억 그림책 발급·받기·같이 읽기 (FN-RPT-18, 구현 #966, 계약 #975, 같이 읽음 #1025)
 
 ```mermaid
 sequenceDiagram
@@ -1045,10 +1045,20 @@ sequenceDiagram
   RA-->>C: {url, expiresAt} (TTL 300초, attachment)
   C->>CDB: memory_book_download 기록
   C-->>P: {url, expiresAt} → web이 그 주소로 이동
+  P->>C: PUT /children/{childId}/memory-books/{bookId}/read-together
+  C->>C: 연결·동의·현재 원문 공개 확인, 다른 자녀·없음 404, QUEUED·FAILED 409 (만료 READY는 허용)
+  C->>CDB: read_together_at = COALESCE(read_together_at, now) (처음 시각 유지)
+  C-->>P: 200 그림책 {…, readTogetherAt}
+  Note over C,CDB: 매주 토요일 19:30 KST (ShedLock core-memory-book-read-reminder)
+  C->>CDB: 지난 7일 안 READY·같이 읽음 없음·보관 기간 안 책이 있는 자녀 목록
+  loop 자녀마다 (자녀별 트랜잭션)
+    C->>CDB: 학생 행 잠금, ACTIVE·원문 공개·조건 재확인 → 알림 받을 학부모마다 notification MEMORY_BOOK_READ_REMINDER (원천 ID = 자녀 + 그 주 월요일, 수신 끈 학부모 제외)
+  end
 ```
 
 - 일시 장애(learning·core 5xx, S3 오류)는 report-worker가 예외로 올려 큐 재시도(1·5·15분, DLQ). 영구 실패만 FAILED 이벤트(`STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`). 그림은 받지 못한 장만 빈 칸으로 두되, 그림 주소가 있는데 한 장도 받지 못하면 `ASSET_UNAVAILABLE`로 실패한다(사용 예약 미사용, 한도 안 씀)
 - 같은 명령이 다시 오면 저장된 파일이 있을 때 다시 만들지 않고 완료만 다시 알린다
+- 토요일 같이 읽기 알림(#1025)은 한 자녀가 실패해도 다른 자녀를 계속 처리하고, 같은 토요일에 다시 돌아도 원천 ID가 같아 자녀·학부모마다 1건이다. 원문 비공개 자녀는 받기가 403이라 알리지 않는다
 - 자녀 삭제 확정은 core가 같은 트랜잭션에서 작업 행을 지우고(받기 기록은 FK CASCADE), report가 `reports/{studentId}/`와 `reports/memory-books/{studentId}/` 아래 파일을 지운다(10.1)
 
 ---

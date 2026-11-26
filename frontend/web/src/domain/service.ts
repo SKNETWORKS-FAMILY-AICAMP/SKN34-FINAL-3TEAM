@@ -14,6 +14,8 @@ export const notificationLabels = {
   DAILY_REPORT_COMPLETED: '일일 리포트 생성 완료', DAILY_REPORT_FAILED: '일일 리포트 생성 실패',
   // 3월 학년 자동 진급 안내(#432, 설정 1~9개).
   GRADE_PROMOTED: '학년 진급',
+  // 토요일 저녁 같이 읽기 알림(#1025, 설정 1~10개).
+  MEMORY_BOOK_READ_REMINDER: '그림책 같이 읽기',
 } as const
 export type NotificationType = keyof typeof notificationLabels
 export type NotificationItem = { id: string; childId: string | null; type: NotificationType; title: string; link: string; readAt: string | null; createdAt: string }
