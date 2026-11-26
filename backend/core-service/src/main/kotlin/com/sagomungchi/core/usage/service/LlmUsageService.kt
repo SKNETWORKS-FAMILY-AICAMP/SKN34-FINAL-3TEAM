@@ -11,6 +11,7 @@ import java.util.UUID
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.usage.domain.CallType
 import com.sagomungchi.core.usage.domain.MonthToDateCost
+import com.sagomungchi.core.usage.domain.UsageGroupBy
 import com.sagomungchi.core.usage.domain.UsageSummary
 import org.springframework.http.HttpStatus
 import java.time.Instant
@@ -23,15 +24,17 @@ import java.time.temporal.ChronoUnit
 class LlmUsageService(
     private val repository: LlmUsageRepository,
     private val properties: AppProperties,
+    private val callMetrics: LlmCallMetrics,
 ) {
-    fun summarize(from: LocalDate, to: LocalDate, callType: CallType?): List<UsageSummary> {
+    fun summarize(from: LocalDate, to: LocalDate, callType: CallType?,
+                  groupBy: UsageGroupBy = UsageGroupBy.CALL_TYPE): List<UsageSummary> {
         if (from.year !in 1..9999 || to.year !in 1..9999 || from > to ||
             ChronoUnit.DAYS.between(from, to) >= MAX_QUERY_DAYS) {
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "조회 기간은 0001~9999 연도에서 양 끝 포함 최대 366일이어야 합니다.")
         }
         val zone = ZoneId.of("Asia/Seoul")
         return repository.summarize(from.atStartOfDay(zone).toOffsetDateTime(),
-            to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name)
+            to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name, groupBy.name)
     }
 
     /** KST 달력 월 1일 00:00부터 now까지 (P13 월 예산 기준) */
@@ -41,10 +44,10 @@ class LlmUsageService(
         return repository.monthToDate(monthStart.toOffsetDateTime(), now.atOffset(ZoneOffset.UTC))
     }
 
-    /** 같은 이벤트 재전달은 event_id UK로 무시 */
+    /** 같은 이벤트 재전달은 event_id UK로 무시하고, 처음 저장한 때만 호출 지표를 남긴다(#1028) */
     fun record(envelope: EventEnvelope<LlmUsageRecorded>) {
         val data = envelope.data
-        repository.insertIfAbsent(
+        val inserted = repository.insertIfAbsent(
             LlmUsage(
                 id = UUID.randomUUID(),
                 eventId = UUID.fromString(envelope.id),
@@ -62,6 +65,7 @@ class LlmUsageService(
                 occurredAt = data.occurredAt,
             ),
         )
+        if (inserted == 1) callMetrics.record(data)
     }
 
     /**

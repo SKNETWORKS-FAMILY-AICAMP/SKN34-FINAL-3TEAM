@@ -415,7 +415,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
           ) : (
             <>
               <button type="button" className="st-room-btn" onClick={() => onCustomize('friend')}>캐릭터·옷 꾸미기</button>
-              <button type="button" className="st-room-btn st-room-go" disabled={!framesReady} onClick={() => startEdit()}>{slots.isPending ? '방을 불러오고 있어요' : '방 꾸미기'}</button>
+              <button type="button" className="st-room-btn st-room-go" disabled={!framesReady} onClick={() => startEdit()} data-tour="room-decor">{slots.isPending ? '방을 불러오고 있어요' : '방 꾸미기'}</button>
             </>
           )}
         </div>

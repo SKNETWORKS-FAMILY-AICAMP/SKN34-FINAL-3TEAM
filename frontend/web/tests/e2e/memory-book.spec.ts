@@ -3,13 +3,16 @@ import { expect, test } from '@playwright/test'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { loginStudent, studentMenu } from './support/student.ts'
-import { bookStatus, pastRound, premiumShared, setSharing, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
+import { bookStatus, pastRound, premiumShared, readTogetherOf, setSharing, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
+
+/** 오늘 KST 날짜: 화면 표시(MM/DD)와 DB(YYYY-MM-DD) */
+const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
 
 // 추억 그림책 (docs/proposals/memory-book.md 13.2·13.3, #975).
 // 학부모만 발급(2026-11-23 결정): 리포트 화면 회차 목록 → core 생성 명령 → report-worker가 learning 회차 조립·MinIO 테마 그림으로
 // PDF 저장 → 완료 이벤트 → 학부모 받기. 학생 회차 화면에는 그림책 칸이 없다.
 // 공용 E2E 스택(compose.e2e.yaml)에 learning 그림 버킷·report-worker 그림 받기 주소가 있어 원격 CI에서도 돈다.
-test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 실제 PDF 받기, 학생 화면에는 칸 없음, 비공개로 바꾸면 막힘',
+test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 실제 PDF 받기 → 같이 읽었어요, 학생 화면에는 칸 없음, 비공개로 바꾸면 막힘',
   async ({ browser, context, page: parentPage }, testInfo) => {
     const nickname = `책${Date.now().toString(36)}`
     const title = 'E2E 사라진 등대 불빛'
@@ -51,6 +54,13 @@ test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 
     // 테마 그림 7장(JPEG)이 들어가 표본(단색 PNG)보다 훨씬 크다
     expect(body.length).toBeGreaterThan(200_000)
     await testInfo.attach('memory-book.pdf', { path: file, contentType: 'application/pdf' })
+
+    // 같이 읽었어요(#1026, core #1025): 단추가 사라지고 표지에 오늘(KST) 날짜, core에 처음 시각 저장
+    const today = kstToday()
+    await row.getByRole('button', { name: '같이 읽었어요' }).click()
+    await expect(row.getByText(`같이 읽음 ${today.slice(5, 7)}/${today.slice(8, 10)}`, { exact: true })).toBeVisible()
+    await expect(row.getByRole('button', { name: '같이 읽었어요' })).toHaveCount(0)
+    expect(readTogetherOf(studentId)).toBe(today)
 
     // 원문 비공개로 바꾸면 발급·받기 모두 막힌다(D2)
     setSharing(studentId, false)

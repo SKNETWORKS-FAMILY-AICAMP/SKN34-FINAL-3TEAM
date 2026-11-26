@@ -3,11 +3,13 @@ package com.sagomungchi.core.memorybook.service
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.messaging.ProcessedEventRepository
 import com.sagomungchi.core.guardianship.service.StudentAccessService
+import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.memorybook.domain.MemoryBookCompleted
 import com.sagomungchi.core.memorybook.domain.MemoryBookJob
 import com.sagomungchi.core.memorybook.domain.MemoryBookStatus
 import com.sagomungchi.core.memorybook.messaging.MemoryBookGenerateWriter
 import com.sagomungchi.core.memorybook.repository.MemoryBookRepository
+import com.sagomungchi.core.notification.service.NotificationService
 import com.sagomungchi.core.payment.service.ProductEntitlementService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -38,6 +41,8 @@ class MemoryBookJobService(
     private val students: StudentAccessService,
     private val processed: ProcessedEventRepository,
     private val entitlements: ProductEntitlementService,
+    private val learningContext: StudentLearningContextService,
+    private val notifications: NotificationService,
     @Qualifier("memoryBookClock") private val clock: Clock,
 ) {
     fun now(): OffsetDateTime = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)
@@ -77,6 +82,27 @@ class MemoryBookJobService(
 
     @Transactional
     fun recordDownload(job: MemoryBookJob, user: UUID, role: String) = repository.download(job.id, job.studentId, user, role, now())
+
+    /** "같이 읽었어요" 표시(#1025). 이미 있으면 처음 시각 그대로. 그 사이 학생 삭제로 행이 지워졌으면 null */
+    @Transactional
+    fun readTogether(job: MemoryBookJob): MemoryBookJob? = repository.readTogether(job.id, job.studentId, now())
+
+    /**
+     * 토요일 같이 읽기 알림(#1025) 한 자녀분. 자녀마다 따로 트랜잭션이라 한 자녀가 실패해도 다른 자녀는 그대로 남는다.
+     * 학생 행을 잠그고 ACTIVE·현재 원문 공개·조건을 다시 확인한 뒤, 알림 받을 학부모(연결 + 필수 동의 + 법정대리인 동의)마다 1건.
+     * 같은 주에 다시 돌아도 원천 ID가 같아 1건이다. 새로 만든 알림 수를 돌려준다
+     */
+    @Transactional
+    fun remindReadTogether(studentId: UUID, weekStart: LocalDate, since: OffsetDateTime, at: OffsetDateTime): Int {
+        if (students.lockStatus(studentId) != "ACTIVE") return 0
+        // 받기가 403이라 원문 비공개 자녀에게는 알리지 않는다
+        if (!learningContext.sharingEnabled(studentId)) return 0
+        if (!repository.hasUnread(studentId, since, at)) return 0
+        return students.notificationParents(studentId).count { parent ->
+            val nickname = students.linkedStudents(parent).firstOrNull { it.id == studentId }?.nickname ?: return@count false
+            notifications.memoryBookReadReminder(parent, studentId, nickname, weekStart)
+        }
+    }
 
     /** 학생 삭제(P09)와 같은 트랜잭션에서만 */
     @Transactional(propagation = Propagation.MANDATORY)

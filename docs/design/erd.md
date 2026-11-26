@@ -88,6 +88,7 @@ erDiagram
     varchar display_name "NULL 허용"
     varchar status "ACTIVE|WITHDRAWAL_REQUESTED|WITHDRAWN"
     boolean is_demo "시연 계정"
+    timestamptz onboarding_completed_at "NULL 허용, 학부모 첫 사용 안내 완료 시각 (#1035, V58)"
     timestamptz created_at
     timestamptz updated_at
     timestamptz withdrawn_at "NULL 허용"
@@ -125,6 +126,7 @@ erDiagram
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
     varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul|snow|yarn|star|foam|paper|petal|ice], 학생 꾸미기 (#234), 동행 캐릭터 12종 (#697, V49)"
     timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
+    timestamptz onboarding_completed_at "NULL 허용, 학생 첫 사용 안내 완료 시각 (#1035, V58)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
@@ -224,6 +226,7 @@ erDiagram
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
+- #1035(V58): `user_account.onboarding_completed_at`(학부모)·`student.onboarding_completed_at`(학생)은 첫 사용 안내 완료 시각. NULL이 미완료이고 처음 기록한 시각을 유지하며 지우는 경로가 없다(학생 삭제·탈퇴 때도 그대로). 학생은 `user_account` 행이 없어(V7) `student`에 둔다
 - P22(#389, V35): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.5.1). 잠금 적용 전 저장된 값은 V35가 해금 행으로 옮김
 - P26(#432, V41): `ck_student_grade`를 3~9로 넓혔다(초3~중3, 새 등록은 앱에서 3~6). `grade_changed_at`은 학부모 수정에서 학년이 바뀔 때와 자동 진급 때 기록하며, 3월 진급은 `COALESCE(grade_changed_at, created_at)`이 그 학년도 2월 1일(KST) 전인 활성·비시연 학생(3~8)만 올린다. `student_grade_promotion`은 학년도마다 한 줄(PK `(student_id, school_year)`)이라 같은 3월에 다시 돌아도 한 번만 오른다. 프로필 삭제(`PROFILE`) 때 진급 이력도 지우고 `grade_changed_at`을 비운다
 
@@ -490,7 +493,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED|GRADE_PROMOTED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED|GRADE_PROMOTED|MEMORY_BOOK_READ_REMINDER"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -572,7 +575,7 @@ erDiagram
   }
 ```
 
-- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). #432: V41이 학년 자동 진급 안내 `GRADE_PROMOTED`를 추가한다(P26). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). #432: V41이 학년 자동 진급 안내 `GRADE_PROMOTED`를 추가한다(P26). #1025: V59가 토요일 저녁 추억 그림책 같이 읽기 알림 `MEMORY_BOOK_READ_REMINDER`를 추가한다(notification·notification_setting 두 CHECK, V41과 같은 방식). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - `correction` UK `uq_correction_request (request_key)`, 부분 UK `uq_correction_report_request (error_report_id) WHERE request_key IS NOT NULL` → 정정 요청 키 중복과 신고당 요청 키 정정 2건 이상 방지. `request_key`가 NULL인 V16 이전 이력은 신고당 여러 건이어도 보존 (V16)
@@ -968,7 +971,7 @@ erDiagram
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
 
-### 3.5.3 추억 그림책 (V57, #966)
+### 3.5.3 추억 그림책 (V57, #966 · 같이 읽음 V59, #1025)
 
 학부모가 자녀의 추억 앨범 회차를 그림책 PDF로 발급받는 기능의 core 저장 구조([제안 문서](../proposals/memory-book.md) 8.1, [결정 기록](../proposals/memory-book-decisions.md)). PR #966으로 develop에 합쳐졌고 11/24에 도입이 정해졌다(#975).
 
@@ -990,6 +993,7 @@ erDiagram
     timestamptz created_at
     timestamptz completed_at "NULL 허용"
     timestamptz expires_at "보관 기한(생성 + 30일), 읽을 때 판정"
+    timestamptz read_together_at "NULL 허용 · 처음 같이 읽음 표시 시각, READY만(CHECK)"
   }
   memory_book_download {
     uuid id PK
@@ -1002,6 +1006,7 @@ erDiagram
 ```
 
 - `memory_book_job`: 회차 1개 = 작업 1행. 같은 회차를 만드는 중(`QUEUED`)인 작업은 자녀당 하나(부분 UNIQUE, 6장). 발급 1회는 `payment_premium_usage.kind = MEMORY_BOOK`(`source_id` = 그림책 ID)로 남긴다. 조회 인덱스 `ix_memory_book_job_student_created (student_id, created_at DESC)`.
+- `read_together_at`(#1025 V59): 학부모가 처음 "같이 읽었어요"를 누른 시각. 다시 눌러도 바꾸지 않고(`COALESCE`) 취소는 없다. 누가 눌렀는지는 저장하지 않는다. CHECK `ck_memory_book_job_read_together (read_together_at IS NULL OR status = 'READY')`: 상태는 QUEUED → READY·FAILED로 한 번만 바뀌고 READY는 다시 바뀌지 않으므로 표시는 READY에만 있다. 토요일 같이 읽기 알림 조회(`status='READY' AND completed_at ≥ 실행 − 7일 AND read_together_at IS NULL AND expires_at > 실행`)는 주 1회이고 행 수가 자녀당 하루 최대 3권이라 새 인덱스를 두지 않는다
 - `memory_book_download`: 받기 주소를 내줄 때마다 남기는 감사 기록. `role`은 발급 주체가 학부모로 정해진 뒤 `PARENT`만 쓰인다.
 - 학생 삭제 확정(P09): 같은 트랜잭션에서 자녀의 `memory_book_job`을 지우고 `memory_book_download`는 CASCADE로 지워진다. PDF 파일은 report가 학생 삭제 때 `reports/{studentId}/`와 함께 `reports/memory-books/{studentId}/`도 지운다.
 - PDF 파일은 DB에 두지 않고 report `reports` 버킷의 키 규칙 `reports/memory-books/{studentId}/{bookId}/pdf`로 찾는다(#975 C3, 처음 키 `reports/{studentId}/memory-books/{bookId}/pdf`에서 옮김). S3 수명 주기 규칙(접두어 `reports/memory-books/`, 35일)이 보관 기간이 지난 파일을 지운다([infra 9.21](../report/infra.md#921-s3-수명-주기-추억-그림책-975-2026-11-24)). `expires_at`이 지난 작업은 읽을 때 `EXPIRED`로 보여 준다.
@@ -1949,7 +1954,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V55(V10·V11 결번), learning Flyway V1~V27, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 113개 테이블·980개 컬럼(core 63/537, learning 42/377, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V59(V10·V11 결번), learning Flyway V1~V27, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 113개 테이블·980개 컬럼(core 63/537, learning 42/377, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

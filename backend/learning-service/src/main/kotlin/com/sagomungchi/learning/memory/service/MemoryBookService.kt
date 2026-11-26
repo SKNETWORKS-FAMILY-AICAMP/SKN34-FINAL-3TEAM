@@ -57,7 +57,8 @@ class MemoryBookService(
                         completedAt = row.completedAt,
                         answers = answers[row.attemptId].orEmpty().sortedBy { it.version }.map {
                             MemoryBookAnswer(it.version, it.text.orEmpty(),
-                                it.followupQuestion?.let { question -> MemoryBookFollowup(it.followupType.orEmpty(), question) })
+                                it.followupQuestion?.let { question -> MemoryBookFollowup(it.followupType.orEmpty(), question) },
+                                it.result)
                         },
                         reflection = reflections[row.attemptId]?.let { MemoryBookReflection(it.difficulty, it.text) },
                     )

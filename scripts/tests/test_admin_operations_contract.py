@@ -122,9 +122,19 @@ class AdminOperationsContracts(unittest.TestCase):
                     callback['responses']={'200':{'description':'정상 처리','content':{'application/json':{'schema':{'type':'object'}}}},
                         '400':{'description':'유효하지 않은 입력'},'401':{'description':'인증 실패'},
                         '403':{'description':'권한/재인증 실패'},'409':{'description':'정책/상태 충돌'}}
-                if section=='paths' and name=='/auth/refresh':
-                    self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
-                    reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
+                if section == 'paths' and name == '/auth/refresh':
+                    post = reviewed['post']
+                    self.assertIn('PARENT_SESSION_LOCKED', post['responses']['401']['description'])
+                    post['responses']['401'] = {'$ref': '#/components/responses/Unauthenticated'}
+                    # #1055 documents revocation of guardian-entered student sessions.
+                    self.assertEqual(post['description'], (
+                        '부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. '
+                        '재사용 시 해당 세션과 그 세션에서 동석으로 진입한 학생 세션을 함께 폐기한다. 학생은 access만 발급받는다.'
+                    ))
+                    post['description'] = (
+                        '부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. '
+                        '재사용은 해당 세션을 폐기한다. 학생 세션은 refresh를 발급하지 않으며 이 경로를 사용할 수 없다.'
+                    )
                 # #317 documents STUDENT_RECORDS_PRIVATE on the parent record/conversation/report evidence 403s.
                 # Remove only that approved suffix or the added 403 entry before default.
                 if section=='paths':
@@ -206,12 +216,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('problems','themeSummary','correctionNotice'):
                         reviewed['allOf'][1]['properties'].pop(field)
                 if section=='schemas' and name=='NotificationType':
-                    # #432 adds only the GRADE_PROMOTED type (described in the same sentence).
-                    self.assertIn('GRADE_PROMOTED',reviewed.pop('description'))
-                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED'):
+                    # #432 adds only the GRADE_PROMOTED type, #1025 only MEMORY_BOOK_READ_REMINDER (described in the same sentence).
+                    description=reviewed.pop('description')
+                    self.assertIn('GRADE_PROMOTED',description); self.assertIn('MEMORY_BOOK_READ_REMINDER',description)
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED','MEMORY_BOOK_READ_REMINDER'):
                         reviewed['enum'].remove(value)
                 if section=='schemas' and name=='NotificationSettings':
-                    self.assertEqual(reviewed['properties']['items']['maxItems'],9)
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],10)
                     reviewed['properties']['items']['maxItems']=6
                 # #432 stores grades up to middle school third grade (9); only the upper bound changed.
                 if section=='schemas' and name in ('StudentDeviceToken','ChildListItem','DashboardChild','Child'):
@@ -273,6 +284,23 @@ class AdminOperationsContracts(unittest.TestCase):
                         content=reviewed[method]['responses'][status]['content']['application/json']
                         self.assertEqual(content['schema'],{'$ref':'#/components/schemas/'+ref})
                         content['schema']={'type':'object'}
+                # #1051 adds the groupBy parameter, group key and p50/p95 latency only; callType becomes null outside CALL_TYPE grouping.
+                if section=='paths' and name=='/admin/ai-usage':
+                    params=reviewed['get']['parameters']
+                    added=[q for q in params if q.get('name')=='groupBy']
+                    self.assertEqual([q['schema'] for q in added],[{'$ref':'#/components/schemas/UsageGroupBy'}])
+                    reviewed['get']['parameters']=[q for q in params if q.get('name')!='groupBy']
+                    ok=reviewed['get']['responses']['200']
+                    self.assertIn('묶음별 집계',ok['description'])
+                    ok['description']='기간 내 호출이 있는 종류별 집계. 빈 기간은 items 빈 배열.'
+                if section=='schemas' and name=='AiUsageResponse':
+                    self.assertEqual(reviewed['properties'].pop('groupBy'),{'$ref':'#/components/schemas/UsageGroupBy'})
+                    reviewed['required'].remove('groupBy')
+                if section=='schemas' and name=='UsageSummary':
+                    for added in ['key','p50LatencyMs','p95LatencyMs']:
+                        reviewed['properties'].pop(added); reviewed['required'].remove(added)
+                    self.assertIn({'type':'null'},reviewed['properties']['callType'].pop('oneOf'))
+                    reviewed['properties']['callType']={'$ref':'#/components/schemas/CallType'}
                 # #764 separates externally billed calls from unpriced ones; retain the original usage fingerprints.
                 if section=='paths' and name=='/admin/ai-usage':
                     original,added=reviewed['get']['description'].split(' 서비스 밖에서 따로 청구되는')

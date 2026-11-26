@@ -28,6 +28,22 @@ export async function waitForStudentHome(page: Page) {
   await expect(page).toHaveURL(/\/student\/home/)
   // 홈 제목은 이번 주 테마 조회 뒤에 그려진다. 여러 시험이 함께 돌 때 5초가 모자란 적이 있어 10초(2026-11-16)
   await expect(page.locator('.sh-title')).toBeVisible({ timeout: 10_000 })
+  await skipStudentTour(page)
+}
+
+/**
+ * 첫 홈 진입의 화면 둘러보기(#1038)를 [그만 볼래]로 넘긴다. 홈이 자동 시작을 판단할 때까지(data-tour-home ≠ wait) 기다린 뒤,
+ * 시작했으면 닫는다. 목업 완료 기록은 sessionStorage라 같은 시험 안에서는 다시 뜨지 않는다
+ */
+export async function skipStudentTour(page: Page) {
+  const home = page.locator('[data-tour-home]')
+  await expect(home).toHaveAttribute('data-tour-home', /^(start|none)$/, { timeout: 10_000 })
+  const tour = page.getByRole('dialog', { name: /화면 둘러보기$/ })
+  if ((await home.getAttribute('data-tour-home')) === 'start') await expect(tour).toBeVisible()
+  if (await tour.isVisible()) {
+    await tour.getByRole('button', { name: '그만 볼래', exact: true }).click()
+    await expect(tour).toBeHidden()
+  }
 }
 
 /**

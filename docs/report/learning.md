@@ -1675,3 +1675,19 @@ PR #965(#964)로 구현한 관리자 주간 테마 검수 목록과 버리기 �
 
 - 코드 변경 없음. 문서 문구는 `ThemeDraftMapper.xml`(`reviewScope`·`reviewWeek`·`reviewStage`)·`ThemeDraftService.discard`·`AdminThemeDraftController.reviewList`·`ThemeDraftMediaService.history`와 대조
 - 기존 시험: `ThemeDraftMediaServiceTest`("a ready partial recovery of a failed original remains available for adoption" 등), `AdminThemeDraftControllerTest`, `AdminOperationsIntegrationTest`(core), `scripts/tests/test_theme_drafts_contract.py`
+
+## 47. 그림책 회차 조립 답변 판정 결과 칸 (#1024, 2026-11-25)
+
+추억 그림책 같이 읽기 보강([report 32](report.md#32-추억-그림책-같이-읽기-보강-1024-2026-11-25))에서 report가 "이번 주 가장 많이 자란 날"을 고르려면 답변마다 판정 결과가 필요해, learning 회차 조립 내부 API `GET /internal/students/{studentId}/memory-book/{themeId}/{weekStart}`의 `attempt.answers[]`에 `result`를 더했다. 계약은 `contracts/openapi/learning-service.yaml` `MemoryBookRound`, 설계는 [api-spec 4장](../design/api-spec.md)·[추억 그림책 7.2](../proposals/memory-book.md#72-내부-api).
+
+### 정한 것
+
+- 값: `CORRECT`·`PARTIAL`·`RETHINK`·`HELD` 또는 null(판정 전·실패·판정 행 없음). 판정은 답변당 1행(`uq_judgment_answer_id`)이고 결과는 `DONE`일 때만 있다(`ck_judgment_result_when_done`).
+- 판정 정정(#80)은 `judgment.result`를 고치지 않고 `judgment_correction`에 쌓인다. 그래서 `j.result`만 읽으면 정정 전 결과가 나온다. 학부모·지원 화면이 보는 "지금 결과"와 같도록 기존 조회(`JudgmentMapper.findStored`·`findSupportTarget`, `CorrectionMapper.findTarget`)와 같은 규칙으로 읽는다: 가장 늦은 정정(`created_at DESC, id DESC`)이 있으면 그 값, 없으면 `j.result`(`MemoryBookRepository.answers`의 `LEFT JOIN judgment` + `LEFT JOIN LATERAL` 정정 1건).
+- 쓰임: report가 가장 많이 자란 날을 고르는 데만 쓰고 그림책에는 싣지 않는다. report는 모르는 값을 요일·생각 유형처럼 계약 오류(`INVALID_ROUND`)로 본다.
+- 도메인 `MemoryBookAnswer.result`는 `JudgmentResult?`(JSON은 이름 문자열). `memory` 도메인이 이미 다른 기능의 도메인 값(`ThinkingType`·`ThemeDay`)을 쓰는 것과 같은 방식이다.
+- 조회만 바꿨고 migration은 없다.
+
+### 검증
+
+- `MemoryBookTest` "답변마다 판정의 지금 결과(최신 정정 반영), 판정 전·판정 없음은 null": 처음 답 RETHINK, 보완 답 PARTIAL을 두 번 정정(마지막 CORRECT) → `[RETHINK, CORRECT]`, 보류 → `HELD`, 판정 전(PENDING) → null, 판정 행 없음 → null.

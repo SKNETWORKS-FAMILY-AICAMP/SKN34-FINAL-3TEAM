@@ -17,6 +17,7 @@ import type {
   ErrorReport,
   CommunityReviewResult,
   Usage,
+  UsageGroupBy,
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
 import type { AchievementStandard, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
@@ -120,8 +121,9 @@ export const adminApi = {
       `/admin/model-versions/${p(id)}/${action}`,
       json({ reason, scopes, reanalysisPlanned, ...(action === 'activate' ? { approved: true } : {}) }),
     ),
-  usage: (period: Period, callType: string, signal?: AbortSignal) =>
-    apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType })}`, { signal }),
+  /** 묶음 기준 groupBy(#1051): 기본 CALL_TYPE */
+  usage: (period: Period, callType: string, groupBy: UsageGroupBy = 'CALL_TYPE', signal?: AbortSignal) =>
+    apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType, groupBy })}`, { signal }),
   errors: (signal?: AbortSignal, status='', page=0) => apiFetch<Page<ErrorReport>>(`/admin/error-reports?${operationFilters({ status, page:String(page), size:'20' })}`, { signal }),
   /** 표현 검토 목록 (#728): 열람은 core가 감사 기록 */
   expressionReviews: (filter: ExpressionReviewFilter, signal?: AbortSignal) =>

@@ -986,3 +986,148 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 ### 한계
 
 - 웹 책장 잠금 안내·비교표 연결은 #1000
+
+## 36. 추억 그림책 같이 읽음 표시·토요일 저녁 알림 (#1025, 2026-11-25)
+
+core 몫. 웹 표시(책장 "같이 읽었어요" 단추·알림 설정 이름)는 #1026, learning·report PDF는 #1024.
+
+### API
+
+- 새 경로 `PUT /api/v1/children/{childId}/memory-books/{bookId}/read-together`. 본문 없음 → 200 그림책 응답(`MemoryBook`). 모든 응답 `Cache-Control: no-store`
+- `MemoryBook`에 `readTogetherAt`(date-time, 없으면 null, required) 추가. 발급(POST)·발급 목록(`GET …/memory-books`)·책장(`GET …/memory-books/rounds`의 `book`)·같이 읽음 응답 모두 같은 칸을 싣는다. 기존 칸은 그대로라 기존 호출은 바뀌지 않는다(웹은 모르는 칸을 무시함)
+- 권한·확인 순서는 받기와 같다: 학부모 세션(403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 현재 원문 공개(403 `STUDENT_RECORDS_PRIVATE`) → 없거나 다른 자녀 책 404 `MEMORY_BOOK_NOT_FOUND` → 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`
+- 앱 안 알림 새 유형 `MEMORY_BOOK_READ_REMINDER`. 수신 설정(`GET·PUT /notification-settings`)에 기본 켜짐으로 나오고, 설정 PUT 개수 상한이 9 → 10개
+- 계약 `contracts/openapi/core-service.yaml`: 새 경로(`markMemoryBookReadTogether`, 200·401·403·404·409), `MemoryBook.readTogetherAt`, `NotificationType` enum·설명, `NotificationSettings.items.maxItems` 10
+
+### 정한 것 (수빈 11/25 확인, 이슈의 "구현 전 확인")
+
+| 항목 | 정한 값 | 근거 |
+|---|---|---|
+| 시각 | 매주 토요일 19:30 KST, `@Scheduled(cron = "0 30 19 * * SAT", zone = "Asia/Seoul")`, ShedLock `core-memory-book-read-reminder`(최대 30분·최소 1분) | 11/24 시안. 기존 `GradePromotionScheduler`와 같은 방식 |
+| 대상 | 그 자녀의 `StudentAccessService.notificationParents`(연결 + 필수 동의 + 법정대리인 동의) 모두 | 학년 진급 알림과 같은 수신자 규칙 |
+| 조건 | `status = 'READY'` AND `completed_at ≥ 실행 − 7일` AND `read_together_at IS NULL` AND `expires_at > 실행`인 책이 그 자녀에게 1권 이상 | "이번 주 나온 책을 아직 같이 읽지 않음". 받을 수 없는 만료 책은 알리지 않음 |
+| 원문 비공개 자녀 | 보내지 않음 | 받기가 403이라 알림을 눌러도 읽을 수 없음 |
+| 중복 방지 | 원천 ID `UUID.nameUUIDFromBytes("memory-book-read-reminder:{studentId}:{그 주 월요일 KST}")` + 기존 `ON CONFLICT(user_id,type,source_event_id) DO NOTHING` | 같은 토요일에 다시 돌아도(재시작·잠금 만료) 1건. 학년 진급(학생·학년도)과 같은 방식 |
+| 수신 거부 | 기존 `NotificationMapper.insert`가 수신을 끈 유형을 거름 | 다른 유형과 같음 |
+| 문구 | "이번 주 {별명}의 그림책이 나왔어요. 오늘 저녁 같이 읽어 보세요." | 시안의 "하린이"는 이름 뒤 '이'라 별명에 자동으로 붙일 수 없어 "{별명}의" |
+| 링크 | `/parent/report?childId={childId}` | 책장이 리포트 화면 아래에 있음 |
+| 같이 읽음 멱등 | `UPDATE … SET read_together_at = COALESCE(read_together_at, ?) … AND status = 'READY' RETURNING *`. 취소 API 없음 | 처음 시각을 지킴. 한 문장이라 동시에 눌러도 처음 값 하나 |
+| 만료 책 | READY인데 보관 기간이 지나 `EXPIRED`로 보이는 책도 표시 허용 | 파일이 없어도 읽은 기록은 맞음 |
+| 유료 판정 | 하지 않음 | 발급 목록·받기도 하지 않음. 무료로 바뀐 학부모도 이미 받은 책은 표시 가능 |
+| 저장 | 시각 하나만(누가 눌렀는지 없음) | 이슈에 없음. 자녀 하나에 연결된 학부모는 한 명(V26 `uq_guardianship_one_current_parent`) |
+
+### 구조 (architecture 2.1·2.2)
+
+- `MemoryBookController.readTogether` → `MemoryBookService.readTogether`(권한·상태 확인, 받기와 같은 `readyBook`) → `MemoryBookJobService.readTogether`(`@Transactional`) → `MemoryBookRepository.readTogether`
+- `memorybook/scheduler/MemoryBookReadReminderScheduler` → `MemoryBookReadReminderService.remind`(트랜잭션 없음, 대상 자녀 목록) → 자녀마다 `MemoryBookJobService.remindReadTogether`(`@Transactional`, 자녀별): `StudentAccessService.lockStatus`(학생 행 잠금, ACTIVE만) → `StudentLearningContextService.sharingEnabled` → 조건 다시 확인 → `notificationParents` → 별명은 `StudentAccessService.linkedStudents` → `NotificationService.memoryBookReadReminder`(`Propagation.MANDATORY`)
+- 한 자녀가 실패해도 다른 자녀를 계속 처리하고, 실패가 있으면 끝에 예외로 알린다(`ReportScheduleService`와 같음). 로그에는 확인한 자녀 수·만든 알림 수·실패 수와 오류 코드만 남기고 학생 ID·별명·글은 남기지 않는다
+
+### 같이 읽은 비율 조회 SQL (관리자 화면 없음)
+
+읽기 전용. core 앱 계정으로 core_db에 접속해 psql로 실행한다. 기간은 책이 완성된(READY가 된) KST 날짜 `[from, to)`. 결과는 건수와 비율 한 줄이고 학생 ID·이름은 나오지 않는다. 시연 학생(`student.is_demo`)은 `scripts/retention_metrics/core.sql`처럼 기본 제외, `-v include_demo=1`이면 포함. 학생 삭제 확정 때 작업 행이 함께 지워지므로 삭제된 자녀의 책은 세지 않는다.
+
+```sql
+-- psql -X -d core_db -v from=2026-11-23 -v to=2026-12-07 [-v include_demo=1] -f read_together.sql
+\set ON_ERROR_STOP on
+\if :{?include_demo}
+\else
+  \set include_demo 0
+\endif
+BEGIN TRANSACTION READ ONLY;
+SELECT count(*) AS ready_books,
+       count(*) FILTER (WHERE j.read_together_at IS NOT NULL) AS read_together_books,
+       round(100.0 * count(*) FILTER (WHERE j.read_together_at IS NOT NULL) / NULLIF(count(*), 0), 1) AS read_together_pct
+FROM memory_book_job j
+JOIN student s ON s.id = j.student_id
+WHERE j.status = 'READY'
+  AND (j.completed_at AT TIME ZONE 'Asia/Seoul')::date >= :'from'::date
+  AND (j.completed_at AT TIME ZONE 'Asia/Seoul')::date < :'to'::date
+  AND (:'include_demo'::int = 1 OR NOT s.is_demo);
+ROLLBACK;
+```
+
+- 분모는 기간 안에 완성된 READY 책(보관 기간이 지난 책 포함), 분자는 그중 `read_together_at`이 있는 책. 같은 회차를 다시 발급한 책도 한 권으로 센다
+- 책이 없으면 `read_together_pct`는 NULL
+- 확인(2026-11-25): 임시 PostgreSQL 16 컨테이너에 합성 행(시연 아닌 자녀 READY 3권 중 KST 기간 안 2권·그중 1권 같이 읽음, FAILED 1권, 시연 자녀 READY 1권 같이 읽음)을 넣고 실행해 기본 `2 | 1 | 50.0`, `include_demo=1` `3 | 2 | 66.7`, 빈 기간 `0 | 0 | NULL`을 확인했다(KST 기간 경계 밖·FAILED 제외). 실제 core_db에서는 실행하지 않았다
+
+### 검증
+
+- `MemoryBookIntegrationTest` 13개(새 4개): 같이 읽음 저장 → 발급 목록·책장 `book.readTogetherAt` 반영, 두 번 눌러도 처음 시각, 보관 기간이 지난 책·구독 끝난 학부모도 표시 가능 / 연결 안 된 학부모 403 `CHILD_NOT_LINKED`, 학생 세션 403, 다른 자녀 책·없는 책 404, QUEUED·FAILED 409, 비공개 자녀 403 `STUDENT_RECORDS_PRIVATE`(값 안 바뀜) / 토요일 알림: 같은 토요일 두 번 실행해도 자녀마다 1건(한 학부모의 두 자녀는 각 1건), 제목·링크·원천 ID, 같이 읽은 책만·7일 지난 책만·보관 기간이 지난 책만·비공개 자녀는 없음, 다음 주에는 새로 1건 / 수신 설정에 새 유형 기본 true, 끄면 알림 없음
+- `NotificationIntegrationTest`: 설정 유형 수 9 → 10
+- 계약 시험: `test_memory_book_contract`(경로 4 → 5), `test_admin_operations_contract`(NotificationType·maxItems 지문), `test_core_migration_versions`(local `revision: v59`)
+
+### 한계
+
+- 웹 화면 표시는 #1026. 그 전까지 웹 알림 설정 화면에 새 유형이 이름 없이 보일 수 있다
+- "학부모 2명이면 각 1건"은 자녀당 연결 학부모가 한 명이라(V26) 시험 데이터로 만들 수 없다. 코드는 `notificationParents`가 돌려준 학부모마다 1건을 만든다
+
+## 37. 관리자 AI 사용량 LLMOps 지표 (#1051, 2026-11-26)
+
+관리자 AI 사용량 화면(`/admin/usage`, FN-ADM-19)에 실패율·지연 p50·p95와 묶음 기준을 더했다. Grafana `LLM 호출`(#1028)과 같은 `llm_usage` 원천이지만 Prometheus 보존(3일)을 넘는 주간 추세·프롬프트 교체 전후 비교를 DB 기간 집계로 본다. 실시간 지연·오류율·경보는 그대로 Grafana가 맡는다(화면 안내 한 줄).
+
+### API
+
+- `GET /admin/ai-usage?from&to&callType&groupBy`: `groupBy`는 `CALL_TYPE`(기본)·`MODEL`·`PROMPT_VERSION`·`ERROR_CODE`·`DAY`(KST 달력 일)만 받는다. 그 밖의 값(소문자 포함)은 enum 변환 실패로 400 `VALIDATION_FAILED`
+- 응답 `{period, groupBy, items:[{key, callType, ..., p50LatencyMs, p95LatencyMs, ...}]}`. `callType`은 `CALL_TYPE` 묶음에서만 값이 있고, 기록되지 않은 프롬프트 버전·오류 코드(성공 호출 포함)는 `key: null` 한 묶음(목록 끝). 기존 평균 지연·토큰·비용·미산정·별도 청구 필드는 그대로
+- 실패율은 응답에 두지 않고 화면에서 `failures / calls`로 계산한다
+- 묶음 식은 매퍼 `<choose>`의 고정 식에서 고르며 요청 문자열을 SQL에 넣지 않는다. `callType` 필터·366일 제한은 묶음과 함께 그대로
+
+### 정한 것 (동섭 11/26 확인, 이슈의 "확인 필요")
+
+1. `groupBy`는 별도 엔드포인트가 아니라 기존 엔드포인트 파라미터. 기본값이면 기존 호출과 같은 묶음이고 권한·기간 검사·KST 처리를 한 곳에서 쓴다
+2. p50·p95는 정확값(`percentile_cont`)을 유지하고 새 인덱스·설정을 더하지 않는다. 근거는 아래 실측
+
+### 366일 `percentile_cont` 실측
+
+임시 컨테이너 `postgres:17.11-alpine`(시험과 같은 이미지, 기본 설정 work_mem 4MB·병렬 작업자 2), 365일 × 하루 20,000건 = 730만 건(1.8GB), 인덱스는 `ix_llm_usage_occurred_call (occurred_at, call_type)`만. `EXPLAIN ANALYZE` 실행 시간 3회.
+
+| 쿼리 | 실행 시간(ms) | 계획 |
+|---|---|---|
+| 366일, 기존(평균만) | 471~511 | Parallel Seq Scan |
+| 366일, CALL_TYPE + p50·p95 | 4,339~5,575 | Seq Scan(병렬 꺼짐), 정렬 디스크 182MB |
+| 366일, MODEL + p50·p95 | 4,357~4,897 | 같음 |
+| 366일, DAY + p50·p95 | 4,346~4,381 | 같음 |
+| 366일, callType=JUDGMENT + p50·p95 | 680~851 | Seq Scan |
+| 90일, CALL_TYPE + p50·p95 | 815~819 | |
+| 30일, CALL_TYPE + p50·p95 | 341~351 | |
+| 7일, CALL_TYPE·DAY + p50·p95 | 102~115 | Index Scan |
+
+- 1년 전체는 인덱스가 있어도 전체를 훑는다. 느려지는 원인은 순서 집계가 병렬 실행을 끄고 정렬이 디스크로 넘치는 것이라 인덱스로 풀리지 않는다. work_mem 16·64·256MB에서도 3.2~3.9초
+- 하루 2만 건은 현재 서비스 규모보다 크게 잡은 가정이다. 관리자 화면 한 번 조회의 최악값으로 받아들이고, 규모가 커지면 일별 사전 집계 표를 검토한다
+
+### 화면 (web `AdminOperations.tsx` `Usage`)
+
+- 묶음 기준 선택(호출 종류·모델·프롬프트 버전·오류 코드·일별)과 기존 호출 종류 필터, 열: 묶음 값 · 호출/실패 · 실패율 · 평균 · p50 · p95 지연 · 토큰 · 비용. 일별은 KST 날짜(요일)별 표. 차트 라이브러리는 더하지 않음
+- 안내 "실시간 지연·경보는 Grafana, 이 화면은 DB 기록 기간 집계입니다."
+- MSW 목업은 날짜 씨앗의 합성 `llm_usage` 행을 core와 같은 규칙(키 오름차순·null 끝, 연속 백분위, 토큰·비용 null 전파)으로 묶는다. 빈 시나리오는 빈 목록
+- 원문·학생 ID·업무 ID는 응답·화면·목업 어디에도 없다(NFR-SEC-05)
+
+### 검증
+
+- core `LlmUsageQueryTest` 18개(새 3개): p50·p95 값(5건 300·880, 1건 50·50), 묶음 기준 5종별 키·호출·실패와 KST 일 경계, `callType` 필터 조합·다른 묶음의 `callType` null, HTTP 기본 `CALL_TYPE`·`DAY` 응답, 허용 외 `groupBy`(`day`·`call_type`·`WEEK`·`occurred_at`·`MODEL;DROP TABLE llm_usage`) 400. `ModelVersionHttpTest` 15개 통과
+- web 단위 시험(`tests/adminOperations.test.ts` 새 3개: 쿼리의 `groupBy`, 열·묶음 값 표시·실패율, 목업 집계·400), 타입 검사, lint, 빌드
+- 계약 시험 `test_admin_operations_contract`: 새 `groupBy`·`key`·p50·p95만 걷어 내고 나머지 지문 유지
+- MSW 개발 서버에서 1440·390px, 호출 종류·일별 화면 확인(페이지 가로 넘침 없음, 표는 영역 안에서 가로 스크롤)
+- Playwright `admin-contrast`·`admin-workspace-design` 35개 통과. 8열이 되어 1024px에서도 표가 영역 안에서 가로로 밀리므로 넘침 기대를 `390px만` → `1440px 미만`으로 바꿨다
+
+### 로컬 kind 대조 (2026-11-26)
+
+이 브랜치 core 이미지를 kind에 임시로 올리고, ai-service가 LLM stub(지연 0.2~1.7초)을 부르게 임시로 바꾼 뒤 되묻기(FOLLOWUP) 26건과 추억 검색 질의 변환(MEMORY_QUERY) 8건을 호출했다. MEMORY_QUERY는 stub이 응답 형식을 지원하지 않아 모두 `LLM_BAD_REQUEST`로 실패했다. 관리자 화면 기간은 2026-11-26 하루다. 처음 1건은 ai-service가 실제 OpenAI를 부르는 설정이라 실제 호출이었고 26건에 들어 있다.
+
+| 값 | 관리자 화면(DB 정확값) | Prometheus·Grafana `LLM 호출` |
+|---|---|---|
+| FOLLOWUP 호출·실패 | 26 / 0 | 누적 26 / 0 |
+| MEMORY_QUERY 호출·실패 | 8 / 8 (`LLM_BAD_REQUEST`) | 누적 8 / 8 (`LLM_BAD_REQUEST`) |
+| FOLLOWUP 평균 | 1,019ms | 1,019ms (`sum / count`) |
+| FOLLOWUP p50 | 841ms | 875ms (버킷 근사) |
+| FOLLOWUP p95 | 1,613ms | 1,970ms (버킷 1~2초 안 보간) |
+| MEMORY_QUERY 평균·p50·p95 | 744 / 535 / 1,514ms | 744 / 500 / 1,867ms |
+
+- 건수·실패·오류 코드·평균은 같다. p50·p95는 Grafana가 히스토그램 버킷(0.25·0.5·1·2·3초…)으로 어림하므로 한 버킷 폭 안에서 다르다. 정확값이 필요한 기간 비교는 이 화면, 실시간 추세·경보는 Grafana로 나눈 근거다
+- 묶음 기준별 화면(호출 종류·오류 코드·프롬프트 버전·일별)은 같은 34건을 각 기준으로 나눠 합이 맞았다(일별 34 / 8, 실패율 23.5%)
+- Grafana 패널은 `rate`·`increase`라 새 속성 조합이 처음 나타난 값은 그래프에 덜 잡힌다(#1028 한계와 같음). 누적 값은 Prometheus에서 직접 확인했다
+
+### 한계
+
+- Grafana p95는 히스토그램 버킷 근사라 이 화면의 정확값과 다를 수 있다(위 표)
+- 브라우저 회귀 `parent-admin-browser.mjs`의 AI 사용량 기대(빈 안내 → 판정 행·p95 열)를 고쳤다. 이 스크립트와 `admin-model-browser.mjs`·`admin-completion-browser.mjs`는 AI 사용량에 닿기 전 다른 화면 단계(자녀 등록 안내·모델 평가 근거·문의 답변)에서 멈춰 AI 사용량 부분은 이 스크립트들로 확인하지 못했다

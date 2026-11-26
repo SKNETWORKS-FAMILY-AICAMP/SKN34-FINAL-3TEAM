@@ -526,8 +526,9 @@ try {
       .getByRole('button', { name: '이 버전으로 되돌리기' })
       .click()
     await nav(p, 'AI 사용량')
-    // 계약(api-spec 4.6): 호출이 있는 종류만 반환. 목업은 호출 기록이 없어 빈 목록을 0건으로 바꾸지 않고 안내
-    await p.getByText('이 기간에 기록된 AI 호출이 없습니다.', { exact: true }).waitFor()
+    // 계약(api-spec 4.6): 호출이 있는 묶음만 반환. 목업 합성 기록(#1051)으로 판정 행과 p95 열이 보인다
+    await p.getByRole('region', { name: 'AI 사용량 표' }).getByText('판정', { exact: true }).waitFor()
+    await p.getByRole('columnheader', { name: 'p95 지연', exact: true }).waitFor()
     await nav(p, '오류 신고')
     await p.getByRole('button', { name: '신고 상세·연결 기록 열람' }).click()
     await p.getByText('신고 연결 답변 v1', { exact: true }).waitFor()

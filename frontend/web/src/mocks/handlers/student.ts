@@ -203,7 +203,7 @@ async function missionForContext(owner: Child, missionId: string, context?: Atte
   if (!day) throw new ApiError({ status: 409, code: 'MISSION_NOT_AVAILABLE', title: '이번 주 테마의 미션을 찾을 수 없어요.' })
   return day.mission
 }
-function studentOnly() {
+export function studentOnly() {
   if (mockRole !== 'STUDENT' || !child)
     throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
   return child

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.account.repository.OnboardingMapper">
+  <select id="parent" resultType="java.time.OffsetDateTime" useCache="false" flushCache="true">
+    SELECT onboarding_completed_at FROM user_account WHERE id=#{id} AND status='ACTIVE'
+  </select>
+  <!-- 기록이 있으면 0행: 다시 기록해도 처음 시각을 유지한다. -->
+  <update id="completeParent">
+    UPDATE user_account SET onboarding_completed_at=#{now} WHERE id=#{id} AND status='ACTIVE' AND onboarding_completed_at IS NULL
+  </update>
+  <select id="student" resultType="java.time.OffsetDateTime" useCache="false" flushCache="true">
+    SELECT onboarding_completed_at FROM student WHERE id=#{id} AND status='ACTIVE'
+  </select>
+  <update id="completeStudent">
+    UPDATE student SET onboarding_completed_at=#{now} WHERE id=#{id} AND status='ACTIVE' AND onboarding_completed_at IS NULL
+  </update>
+</mapper>

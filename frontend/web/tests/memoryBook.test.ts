@@ -22,6 +22,7 @@ import {
   readMemoryBookDownload,
   readMemoryBookPage,
   readMemoryBookRoundPage,
+  readTogetherLabel,
 } from '../src/domain/memoryBook.ts'
 
 // 추억 그림책 (docs/proposals/memory-book.md): 학부모만 발급. 응답 읽기·오류 문구와 목업 계약. 가상 값만 쓴다.
@@ -65,8 +66,25 @@ test('오류 문구는 학부모 말로', () => {
   const err = (code: string) => new ApiError({ status: 403, code, title: 'x' })
   assert.match(memoryBookFailure(err('PREMIUM_REQUIRED'))!, /프리미엄/)
   assert.match(memoryBookFailure(err('STUDENT_RECORDS_PRIVATE'))!, /아이가 답 보여 주기를 켜야/)
+  assert.equal(memoryBookFailure(err('MEMORY_BOOK_NOT_FOUND')), '그림책을 찾을 수 없습니다. 목록을 다시 불러와 주세요.')
   assert.equal(memoryBookFailure(err('SOMETHING_ELSE')), null)
   assert.equal(memoryBookFailure(new Error('x')), null)
+})
+
+test('같이 읽음 시각(#1026): 있으면 그대로, 없으면(#1025 전 서버) null, 시각이 아니면 계약 오류', () => {
+  assert.equal(readMemoryBook(book({ readTogetherAt: '2026-11-28T10:00:00Z' })).readTogetherAt, '2026-11-28T10:00:00Z')
+  assert.equal(readMemoryBook(book({ readTogetherAt: null })).readTogetherAt, null)
+  assert.equal(readMemoryBook(book()).readTogetherAt, null)
+  for (const bad of ['yesterday', 3, ''])
+    assert.throws(() => readMemoryBook(book({ readTogetherAt: bad })), /확인하지 못/)
+})
+
+test('같이 읽음 표시는 KST 날짜(UTC 15:00에 날이 바뀜), 월·일 두 자리', () => {
+  assert.equal(readTogetherLabel('2026-11-28T14:59:59Z'), '같이 읽음 11/28')
+  assert.equal(readTogetherLabel('2026-11-28T15:00:00Z'), '같이 읽음 11/29')
+  assert.equal(readTogetherLabel('2026-11-28T15:30:00Z'), '같이 읽음 11/29')
+  assert.equal(readTogetherLabel('2026-12-31T15:00:00Z'), '같이 읽음 01/01')
+  assert.equal(readTogetherLabel('2026-03-04T09:00:00+09:00'), '같이 읽음 03/04')
 })
 
 // ---------------------------------------------------------------- 목업 계약
@@ -91,11 +109,11 @@ test('책장 잠금 안내: 숨긴 회차가 있으면 그 수, 없으면 프리
   assert.equal(memoryBookLockedNotice(0), '그림책 만들기와 지난 그림책 모아 보기는 프리미엄에서 할 수 있어요.')
 })
 
-async function call(path: string, body?: unknown) {
+async function call(path: string, body?: unknown, method?: string) {
   const response = await getResponse(
     handlers,
     new Request('http://localhost/api/v1' + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: method ?? (body === undefined ? 'GET' : 'POST'),
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
@@ -188,4 +206,47 @@ test('목업 책장(#999 계약): 유료는 전체·lockedCount 0·canCreate tru
   assert.equal(readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).lockedCount, 5)
   setMockSubscription(childId, 'PREMIUM')
   assert.equal(readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).lockedCount, 0)
+})
+
+test('목업 같이 읽었어요(core #1025와 같게): 만드는 중 409, 처음 시각 유지, 회차 목록에 반영, 다른 자녀 책·없는 책 404, 비공개 403', async (t) => {
+  const readTogether = (child: string, bookId: string) => call(`/children/${child}/memory-books/${bookId}/read-together`, undefined, 'PUT')
+  const target = (({ themeId, weekStart }) => ({ themeId, weekStart }))(
+    readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).items[0])
+  const bookId = (await call(`/children/${childId}/memory-books`, { rounds: [target] })).data.bookId as string
+  assert.equal((await readTogether(childId, bookId)).data.code, 'MEMORY_BOOK_NOT_READY')
+
+  // 목업은 만들고 4초 뒤 완성: 시계를 앞당긴다
+  const start = Date.now()
+  let now = start + 5_000
+  t.mock.method(Date, 'now', () => now)
+  const first = await readTogether(childId, bookId)
+  assert.equal(first.status, 200)
+  const marked = readMemoryBook(first.data)
+  assert.equal(marked.status, 'READY')
+  assert.equal(marked.readTogetherAt, new Date(start + 5_000).toISOString())
+  now += 60_000
+  const again = await readTogether(childId, bookId)
+  assert.equal(again.status, 200)
+  assert.equal(readMemoryBook(again.data).readTogetherAt, marked.readTogetherAt)
+  const shelf = readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data)
+  assert.equal(shelf.items.find((r) => r.themeId === target.themeId && r.weekStart === target.weekStart)?.book?.readTogetherAt, marked.readTogetherAt)
+
+  const other = ((await call('/children')).data.items as { childId: string }[]).find((c) => c.childId !== childId)!.childId
+  saveSharing(other, true)
+  assert.equal((await readTogether(other, bookId)).status, 404)
+  assert.equal((await readTogether(other, bookId)).data.code, 'MEMORY_BOOK_NOT_FOUND')
+  assert.equal((await readTogether(childId, 'no-such-book')).data.code, 'MEMORY_BOOK_NOT_FOUND')
+  saveSharing(childId, false)
+  const hidden = await readTogether(childId, bookId)
+  assert.deepEqual([hidden.status, hidden.data.code], [403, 'STUDENT_RECORDS_PRIVATE'])
+})
+
+test('목업 같이 읽었어요: 만들지 못한 책은 409 MEMORY_BOOK_FAILED', async (t) => {
+  const target = (({ themeId, weekStart }) => ({ themeId, weekStart }))(
+    readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).items[0])
+  storage.set(MOCK_MEMORY_BOOK_SCENARIO_KEY, 'FAIL')
+  const bookId = (await call(`/children/${childId}/memory-books`, { rounds: [target] })).data.bookId as string
+  const later = Date.now() + 5_000
+  t.mock.method(Date, 'now', () => later)
+  assert.equal((await call(`/children/${childId}/memory-books/${bookId}/read-together`, undefined, 'PUT')).data.code, 'MEMORY_BOOK_FAILED')
 })

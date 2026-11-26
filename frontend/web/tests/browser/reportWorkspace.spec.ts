@@ -1,4 +1,36 @@
 import {test,expect} from '@playwright/test'
+import demoData from '../../src/mocks/fixtures/structuredReportSamples.json' with { type: 'json' }
+
+test('shows cached RunPod details for the matching mock answer', async ({ page }) => {
+  const [library, phone] = demoData.samples
+  const detail = JSON.stringify({
+    analysis: '도서관 글에 이동 시간과 이용 목적이 담겨 있어요.',
+    improvement_points: null,
+    next_steps: ['도서관에서 함께 하고 싶은 일을 물어보세요.'],
+  })
+  await page.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({
+    json: {
+      model: 'explain',
+      promptVersion: 'structured-report-detail@2',
+      items: [{
+        attemptId: library.attemptId,
+        answerVersion: library.texts.length,
+        sourceText: library.texts.at(-1),
+        text: detail,
+      }],
+    },
+  }))
+
+  await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5&reportId=demo-report-grade5-2026-11-09')
+  const picker = page.getByRole('combobox', { name: '주간 리포트 활동 선택' })
+  const explanation = page.getByRole('region', { name: '대표 답변 설명' })
+  await picker.selectOption(library.attemptId)
+  await expect(explanation).toContainText('도서관 글에 이동 시간과 이용 목적이 담겨 있어요.')
+  await expect(explanation).toContainText('도서관에서 함께 하고 싶은 일을 물어보세요.')
+  await picker.selectOption(phone.attemptId)
+  await expect(explanation).toContainText('이 활동의 답변에 연결된 대표 답변 설명이 없습니다.')
+})
+
 test('opens the weekly report inline before opening history or chat @responsive', async ({ page }, info) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

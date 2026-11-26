@@ -9,7 +9,7 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** 추억 그림책 작업·내려받기 기록 (V57, docs/proposals/memory-book.md 8.1) */
+/** 추억 그림책 작업·내려받기 기록 (V57, 같이 읽음 V59, docs/proposals/memory-book.md 8.1) */
 @Repository
 class MemoryBookRepository(private val jdbc: JdbcTemplate) {
     private val row = RowMapper { r, _ ->
@@ -19,7 +19,7 @@ class MemoryBookRepository(private val jdbc: JdbcTemplate) {
             MemoryBookStatus.valueOf(r.getString("status")), r.getString("failure_code"), r.getObject("size_bytes") as Long?,
             r.getObject("theme_version_id", UUID::class.java), r.getObject("usage_reservation_id", UUID::class.java),
             r.getObject("created_at", OffsetDateTime::class.java), r.getObject("completed_at", OffsetDateTime::class.java),
-            r.getObject("expires_at", OffsetDateTime::class.java),
+            r.getObject("expires_at", OffsetDateTime::class.java), r.getObject("read_together_at", OffsetDateTime::class.java),
         )
     }
 
@@ -64,6 +64,30 @@ class MemoryBookRepository(private val jdbc: JdbcTemplate) {
                WHERE id=? AND status='QUEUED'""",
             status.name, failureCode, sizeBytes, themeVersionId, at, id,
         ) == 1
+
+    /**
+     * "같이 읽었어요" 표시(#1025). READY만, 이미 있으면 처음 시각을 그대로 둔다(멱등).
+     * 바뀐(또는 그대로인) 행을 돌려주고, 그 사이 지워졌거나 READY가 아니면 null
+     */
+    fun readTogether(id: UUID, student: UUID, at: OffsetDateTime): MemoryBookJob? = jdbc.query(
+        """UPDATE memory_book_job SET read_together_at=COALESCE(read_together_at,?)
+           WHERE id=? AND student_id=? AND status='READY' RETURNING *""",
+        row, at, id, student,
+    ).singleOrNull()
+
+    /** 토요일 같이 읽기 알림 대상 자녀: [since] 이후 READY가 됐고 같이 읽음 표시가 없으며 아직 보관 기간 안인 책이 있는 자녀 */
+    fun unreadStudents(since: OffsetDateTime, now: OffsetDateTime): List<UUID> = jdbc.queryForList(
+        """SELECT DISTINCT student_id FROM memory_book_job
+           WHERE status='READY' AND completed_at>=? AND read_together_at IS NULL AND expires_at>?""",
+        UUID::class.java, since, now,
+    )
+
+    /** 한 자녀에 대해 위 조건을 다시 확인(알림 트랜잭션 안) */
+    fun hasUnread(student: UUID, since: OffsetDateTime, now: OffsetDateTime): Boolean = jdbc.queryForObject(
+        """SELECT EXISTS(SELECT 1 FROM memory_book_job WHERE student_id=? AND status='READY' AND completed_at>=?
+           AND read_together_at IS NULL AND expires_at>?)""",
+        Boolean::class.java, student, since, now,
+    )!!
 
     fun download(book: UUID, student: UUID, user: UUID, role: String, at: OffsetDateTime) {
         check(jdbc.update("INSERT INTO memory_book_download(id,book_id,student_id,user_id,role,created_at) VALUES(?,?,?,?,?,?)",

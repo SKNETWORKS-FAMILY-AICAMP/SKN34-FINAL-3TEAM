@@ -155,6 +155,21 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         assertFailsWith<BusinessException> { auth.authenticate(next.accessToken) }
         assertFailsWith<BusinessException> { auth.refresh(next.refreshToken) }
     }
+    @Test fun `refresh reuse revokes only student entries linked to that parent session`() {
+        val first = login()
+        val accountId = first.identity.account.id
+        consent(accountId)
+        val studentId = child(accountId)
+        val rotated = auth.refresh(first.refreshToken)
+        val linked = auth.enterStudent(studentId, rotated.identity)
+        val other = auth.enterStudent(studentId, login().identity)
+
+        assertEquals("REFRESH_REUSED", assertFailsWith<BusinessException> { auth.refresh(first.refreshToken) }.code)
+        assertEquals("UNAUTHENTICATED", assertFailsWith<BusinessException> { auth.authenticate(linked.accessToken) }.code)
+        assertEquals("UNAUTHENTICATED", assertFailsWith<BusinessException> { auth.renewStudent(linked.accessToken) }.code)
+        assertEquals(other.identity.session.id, auth.authenticate(other.accessToken).session.id)
+    }
+
     @Test fun `two concurrent rotations cannot both succeed and replay ends that session`() {
         val first = login()
         val executor = Executors.newFixedThreadPool(2)

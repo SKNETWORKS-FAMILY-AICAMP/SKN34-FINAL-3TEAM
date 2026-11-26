@@ -30,7 +30,7 @@ data class MemoryBookCreated(val view: MemoryBookView, val created: Boolean)
 /**
  * 추억 그림책 공개 API 흐름 (docs/proposals/memory-book.md 6·7·10장).
  * 발급은 학부모만(2026-11-23 결정, D1 변경): 연결된 자녀의 보유 액자 회차를 골라 만들고 받는다. 학생 경로는 없다.
- * 원문 공개 자녀만(D2): 회차 목록·생성·목록·내려받기 모두 지금 `parentSharingEnabled`가 false면 403 `STUDENT_RECORDS_PRIVATE`.
+ * 원문 공개 자녀만(D2): 회차 목록·생성·목록·내려받기·같이 읽음 표시 모두 지금 `parentSharingEnabled`가 false면 403 `STUDENT_RECORDS_PRIVATE`.
  * 생성 순서: 공개 확인 → 같은 회차 재사용 → learning 보유 확인(외부 호출, 트랜잭션 밖) → 하루 한도 → 유료 판정·사용 예약
  * → 작업 행·명령 저장(실패하면 예약을 미사용으로 마감)
  */
@@ -98,13 +98,8 @@ class MemoryBookService(
     fun download(childId: UUID, bookId: UUID): MemoryBookDownload {
         val parent = verifiedParent(childId)
         learningContext.requireShared(childId)
-        val job = repository.find(bookId)?.takeIf { it.studentId == childId }
-            ?: throw BusinessException(HttpStatus.NOT_FOUND, "MEMORY_BOOK_NOT_FOUND", "그림책을 찾을 수 없어요.")
-        when {
-            job.status == MemoryBookStatus.QUEUED -> throw BusinessException(HttpStatus.CONFLICT, "MEMORY_BOOK_NOT_READY", "그림책을 만들고 있어요.")
-            job.status == MemoryBookStatus.FAILED -> throw BusinessException(HttpStatus.CONFLICT, "MEMORY_BOOK_FAILED", "그림책을 만들지 못했어요.", job.failureCode)
-            job.expired(jobs.now()) -> expired()
-        }
+        val job = readyBook(childId, bookId)
+        if (job.expired(jobs.now())) expired()
         val download = when (val result = report.fileUrl(childId, bookId)) {
             is MemoryBookFileResult.Url -> result.download
             MemoryBookFileResult.Missing -> expired()
@@ -113,6 +108,31 @@ class MemoryBookService(
         jobs.recordDownload(job, parent, "PARENT")
         return download
     }
+
+    /**
+     * "같이 읽었어요" 표시(#1025). 권한·확인 순서와 오류는 받기와 같다(연결·동의 → 현재 원문 공개 → 404 → 만드는 중·실패 409).
+     * 보관 기간이 지난 책도 표시할 수 있다(파일이 없어도 읽은 기록은 맞음). 유료 판정은 하지 않는다.
+     * 이미 표시했으면 처음 시각을 그대로 돌려준다(취소 없음)
+     */
+    fun readTogether(childId: UUID, bookId: UUID): MemoryBookView {
+        verifiedParent(childId)
+        learningContext.requireShared(childId)
+        val marked = jobs.readTogether(readyBook(childId, bookId)) ?: notFound()
+        return MemoryBookView.of(marked, jobs.now())
+    }
+
+    /** 이 자녀의 완성된 그림책. 없거나 다른 자녀 것이면 404, 만드는 중·실패면 409 */
+    private fun readyBook(childId: UUID, bookId: UUID): MemoryBookJob {
+        val job = repository.find(bookId)?.takeIf { it.studentId == childId } ?: notFound()
+        when (job.status) {
+            MemoryBookStatus.QUEUED -> throw BusinessException(HttpStatus.CONFLICT, "MEMORY_BOOK_NOT_READY", "그림책을 만들고 있어요.")
+            MemoryBookStatus.FAILED -> throw BusinessException(HttpStatus.CONFLICT, "MEMORY_BOOK_FAILED", "그림책을 만들지 못했어요.", job.failureCode)
+            MemoryBookStatus.READY -> Unit
+        }
+        return job
+    }
+
+    private fun notFound(): Nothing = throw BusinessException(HttpStatus.NOT_FOUND, "MEMORY_BOOK_NOT_FOUND", "그림책을 찾을 수 없어요.")
 
     private fun paging(page: Int?, size: Int?): Pair<Int, Int> {
         val p = page ?: 0

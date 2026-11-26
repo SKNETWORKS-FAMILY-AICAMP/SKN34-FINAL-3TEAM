@@ -1802,6 +1802,9 @@ kind에 `sllm-server`(llm-stub 대역)를 잠시 올리고 ai-service를 이 브
 
 학생이 답변 작성 화면에서 모르는 낱말을 물으면 동행 캐릭터가 국립국어원 사전 뜻을 쉬운 말로 답한다(FN-LRN-21, [API 2.2.1·4.2.8](../design/api-spec.md#227-낱말-물어보기-fn-lrn-21-599)). 경로는 web → core(그대로 전달) → learning(미션 글·학년·교과, 마무리 전이면 유출 검사 값) → ai `app/word_help/`.
 
+- #1052에서 learning 토큰의 허용 목록에 `/internal/word-helps`를 추가했다. 서로 다른 호출자 토큰의 통과·거부와 등록된 내부 경로의 허용 목록을 테스트한다.
+- #1053에서 FastAPI의 문서·스키마 HTTP 경로를 비활성화했다. API 계약은 [ai-service OpenAPI](../../contracts/openapi/ai-service.yaml)에서 확인한다.
+
 ### 26.1 정한 내용
 
 - 뜻은 사전에서만 온다. 표준국어대사전 `search.do`와 온용어 `search.do`의 표제어가 같은 항목만 후보로 쓰고, LLM은 후보 번호 고르기와 쉬운 말·예문 쓰기만 한다. 맞는 후보가 없으면 `NOT_FOUND`
@@ -2479,3 +2482,79 @@ A+C 실측 뒤 "문제를 풀수록 정답에 가까워지게" 하려고 B안(�
 - 수학 지문의 수가 답이 되는 `LEAK`가 최종 40건에서도 2건 남음(코드 검사로 줄거리 단계에서 미리 막을 수 있는지는 재지 않음)
 - `ACT_NAME`·수사 연결 문장 `CLUE_EARLY`를 넣은 뒤의 실측(다시 생성·시간), 자동 성취기준 25개를 뺀 요청으로의 실측 — 40건 나란히 실측으로 볼 일(측정 도구 `requests_auto.py`에도 같은 목록을 넣어야 함)
 - 모든 판정이 모델 판정이다. 사람이 직접 판단하는 검토지(실측 미션을 develop과 나란히)를 만들어 두었다
+
+## 28. AI 품질 신호 지표와 주간 판정 비교 (#1030, 2026-11-25)
+
+에픽 #1027의 ai 품질 부분이다. 프롬프트·모델을 바꾼 뒤 판정 보류가 늘었는지, 분석 대화가 대체 응답으로 자주 떨어지는지, 가드가 학생에게 갈 출력을 얼마나 막는지를 Grafana에서 바로 보게 한다. 지표 이름·속성·세지 않는 것은 [architecture 4.6](../design/architecture.md#46-관측), 구성·검증은 [infra 9.32](infra.md#932-ai-품질-신호-대시보드-1030-2026-11-25).
+
+### 28.1 정한 내용
+
+| 항목 | 내용 | 까닭 |
+|---|---|---|
+| 카운터 범위 | 이슈의 셋(`ai.judgment.results`·`ai.analysis.fallbacks`·`ai.guard.blocked`)만 | 리포트 서술·설명 `checks.py` 제거 건수는 report-service에서 세야 해 계측 위치가 다르다(이슈 확인 필요 3, 기본안) |
+| 판정 세는 곳 | `JudgmentService.judge()`가 본문 `_judge()`의 응답을 받아 한 번 센다 | 돌려주는 곳이 다섯 군데라 바깥에서 세야 빠뜨리지 않는다. 503은 예외로 올라가 세지 않는다 |
+| LLM 전 보류의 `prompt_version` | 응답 값 그대로(`none`). 대시보드 보류율 패널에서만 `none`을 뺀다 | TOO_SHORT·UNVERIFIED_SCOPE는 프롬프트를 쓰지 않아 `none` 선은 늘 100%다. 건수는 보류 이유별 패널에 남는다 |
+| 분석 대체 응답 | 템플릿이 대조를 통과해 `result`가 만들어졌을 때만 | 대조에 실패하면 대체 응답이 아니라 `FINAL_RESPONSE_VERIFICATION_FAILED` 오류로 나간다 |
+| 되묻기 누출 | 누출로 버린 질문마다 1회(재생성까지 누출이면 2회). 빈 질문은 세지 않음 | 버린 질문 수가 프롬프트 품질 신호다. 빈 질문은 누출이 아니다 |
+| 인용 대조 실패 | `QUOTE_MISMATCH` 보류면 `guard=judgment_quote`도 1회 | 학생에게 지어낸 인용이 가지 않게 막은 경우라 가드 차단으로도 본다 |
+| 낱말 물어보기 | 이번에는 세지 않음 | `_leaks`가 학생 질문 검사(질문 그대로), 표제어(학생 질문이거나 LLM 출력), LLM 설명과 사전 뜻풀이를 합친 글, 사전 뜻풀이만을 한 함수로 검사해 "AI 출력을 막은 경우"만 가르기가 복잡하다 |
+| 프롬프트 버전별 선 | 판정 패널(보류율·결과 분포)만 | 이슈 속성 목록에서 `prompt_version`은 판정 카운터에만 있다 |
+
+### 28.2 주간 판정 결과 분포 비교 조회
+
+Prometheus 보존(prod 3d, local 1d)으로는 주 단위 비교를 할 수 없어 learning_db `judgment`(V2)를 읽는다. KST 월요일 시작 주(PostgreSQL `date_trunc('week')`는 월요일 시작)·프롬프트 버전별로 본다.
+
+- `process_status = 'DONE'`만: 진행 중·실패 행은 결과가 없다(`ck_judgment_result_when_done`)
+- `method = 'LLM'`만: `RULE`은 고르기·수학 최종 답 규칙 판정(learning `Judged.kt`)이라 모델 출력 품질과 상관없다
+- 정정(`judgment_correction`)은 쓰지 않는다: 모델이 낸 원래 결과를 보는 비교라 사람이 정정하기 전 `judgment.result` 기준이다. 정정이 많은 주는 따로 정정 건수로 본다
+- `prompt_version`이 NULL이면 `none`(LLM 전 보류). 대시보드와 같은 표기다
+
+```sql
+-- 최근 8주, 주·프롬프트 버전·결과별 건수와 같은 주·버전 안의 비율
+WITH done AS (
+    SELECT date_trunc('week', completed_at AT TIME ZONE 'Asia/Seoul')::date AS week_kst,
+           coalesce(prompt_version, 'none') AS prompt_version,
+           result,
+           held_reason
+    FROM judgment
+    WHERE process_status = 'DONE'
+      AND method = 'LLM'
+      AND completed_at >= (date_trunc('week', now() AT TIME ZONE 'Asia/Seoul') - interval '7 weeks')
+                          AT TIME ZONE 'Asia/Seoul'
+)
+SELECT week_kst,
+       prompt_version,
+       result,
+       count(*) AS judgments,
+       round(count(*)::numeric / sum(count(*)) OVER (PARTITION BY week_kst, prompt_version), 3) AS share
+FROM done
+GROUP BY week_kst, prompt_version, result
+ORDER BY week_kst, prompt_version, result;
+
+-- 같은 범위의 보류 이유 분포 (보류 안에서의 비율)
+WITH done AS (
+    SELECT date_trunc('week', completed_at AT TIME ZONE 'Asia/Seoul')::date AS week_kst,
+           coalesce(prompt_version, 'none') AS prompt_version,
+           held_reason
+    FROM judgment
+    WHERE process_status = 'DONE'
+      AND method = 'LLM'
+      AND result = 'HELD'
+      AND completed_at >= (date_trunc('week', now() AT TIME ZONE 'Asia/Seoul') - interval '7 weeks')
+                          AT TIME ZONE 'Asia/Seoul'
+)
+SELECT week_kst,
+       prompt_version,
+       held_reason,
+       count(*) AS held,
+       round(count(*)::numeric / sum(count(*)) OVER (PARTITION BY week_kst, prompt_version), 3) AS share
+FROM done
+GROUP BY week_kst, prompt_version, held_reason
+ORDER BY week_kst, prompt_version, held_reason;
+```
+
+읽는 법: 프롬프트 버전이 바뀐 주에 같은 주 안의 두 버전 `share`를 나란히 보고, 그 전 주들의 같은 버전 `share`와 비교한다. 학생·답변 ID는 고르지 않는다.
+
+### 28.3 남은 확인
+
+- 1주 실측 값(보류율·대체 응답률·가드 차단율)과 경보 필요 여부: prod 배포 뒤 [infra 9.32.3](infra.md#9323-1주-실측-배포-뒤)에 기록

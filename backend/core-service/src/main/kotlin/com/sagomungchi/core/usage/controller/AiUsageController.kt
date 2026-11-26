@@ -1,6 +1,7 @@
 package com.sagomungchi.core.usage.controller
 
 import com.sagomungchi.core.usage.domain.CallType
+import com.sagomungchi.core.usage.domain.UsageGroupBy
 import com.sagomungchi.core.usage.domain.UsageSummary
 import com.sagomungchi.core.usage.service.LlmUsageService
 import org.springframework.web.bind.annotation.GetMapping
@@ -12,9 +13,11 @@ import java.time.LocalDate
 class AiUsageController(private val service: LlmUsageService) {
     @GetMapping("/api/v1/admin/ai-usage")
     fun usage(@RequestParam from: LocalDate, @RequestParam to: LocalDate,
-              @RequestParam(required = false) callType: CallType?): AiUsageResponse =
-        AiUsageResponse(UsagePeriod(from, to), service.summarize(from, to, callType))
+              @RequestParam(required = false) callType: CallType?,
+              @RequestParam(defaultValue = "CALL_TYPE") groupBy: UsageGroupBy): AiUsageResponse =
+        AiUsageResponse(UsagePeriod(from, to), groupBy, service.summarize(from, to, callType, groupBy))
 }
 
 data class UsagePeriod(val from: LocalDate, val to: LocalDate)
-data class AiUsageResponse(val period: UsagePeriod, val items: List<UsageSummary>)
+/** 허용 외 groupBy는 enum 변환 실패로 400 VALIDATION_FAILED (#1051) */
+data class AiUsageResponse(val period: UsagePeriod, val groupBy: UsageGroupBy, val items: List<UsageSummary>)

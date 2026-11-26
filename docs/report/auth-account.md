@@ -8,7 +8,7 @@
 - access JWT는 HS256(Spring Security JOSE), 부모·관리자 기본 15분·프론트 메모리 보관. 학생은 #995에서 기본 미사용 30분·탭 sessionStorage 보관 및 유효 Bearer 갱신으로 변경(18장). refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
 - 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`, 학부모 ID·비밀번호 가입·로그인은 12장 `parent_credential`)
-- 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
+- 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적으로 1회 소비한다. 재사용을 감지하면 해당 세션과 그 세션에서 동석으로 들어간 학생 세션을 같이 폐기한다(#1055).
 - 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 다시 로그인(Google 또는 아이디, 12장)
 - 키: JWT 키는 base64 32바이트 이상 난수, core에만 Secret으로 주입. 단일 HS256 키라 교체 시 기존 access·OAuth 상태 토큰이 무효화됨. Google 키가 없으면 로그인 시작은 명시적 503(가짜 로그인 없음)
 - Google SSO가 보호자 본인 재확인을 보장하지는 않음(추가 본인 확인은 별도 제품 정책)
@@ -264,6 +264,7 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 - `parent_credential`(V38)은 `admin_credential`과 같은 모양. 검사·잠금은 `PasswordCredentialService` 하나로 공유. 탈퇴 완료 시 행 삭제, `login_id`는 `withdrawn:<id>`로 바뀌어 아이디가 풀림
 - 가입 `POST /auth/parent/signup {loginId,password,name}`: 409 `LOGIN_ID_TAKEN`, 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`, 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애 503 `SIGNUP_UNAVAILABLE`). 성공하면 Google 신규 가입과 같은 `startSession`. `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`
 - 로그인 `POST /auth/parent/login`: 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성은 같은 401 `INVALID_CREDENTIALS`. 5회째 실패에 15분 잠금(423 `LOGIN_LOCKED`)
+- #1054에서 관리자·학부모 비밀번호 로그인에 Redis IP 한도를 도입했다. 기본 15분에 실패·처리 중 요청 4건까지 허용하고 성공하면 자리를 돌려준다. 한도 초과와 Redis 장애는 각각 429 `LOGIN_RATE_LIMITED`, 503 `LOGIN_UNAVAILABLE`로 응답한다.
 - 비밀번호 재확인 `POST /me/reauth/password {purpose,childId?,scope?,password}`: 맞으면 `reauth_challenge`와 `reauth_grant`를 한 번에 만들어 `{reauthToken,expiresAt}` 반환. 기존 사용처의 consume 검사는 불변. 틀리면 403 `REAUTH_PASSWORD_INVALID`, Google 계정은 409 `REAUTH_METHOD_MISMATCH`
 - `GET /me`에 `authMethod`(`PASSWORD`·`GOOGLE`)와 `loginId` 추가. 비밀번호 학부모의 `email`은 null
 - 별도 경로로 둔 이유: `/me/reauth`에 `password`를 더하면 Google 시작 응답과 바로 발급 응답이 한 경로에 섞임
@@ -372,3 +373,22 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 - 로컬 실제 서버 추가 확인(2026-11-24): #995 core/web·기존 PostgreSQL/Redis에 별도 검증용 학부모·자녀를 등록하고, API 목업과 시계 변경 없이 Chromium에서 `AUTH_STUDENT_ACCESS_TTL=2m`으로 검사했다. 실제 PIN 로그인, 새로고침, 동일 출처 `window.open`의 sessionStorage 복사와 동일 세션 복원, 빈 새 탭의 PIN 요구, 탭 하나 닫기, 명시적 로그아웃의 동일 세션 전파와 다른 세션 보존을 통과했다. 첫 발급 후 약 62초·124초의 실제 클릭·키 입력으로 갱신 및 다른 탭 반영을 확인했고, 별도 세션은 API 조회·새로고침에도 연장되지 않아 약 122초 뒤 401과 다음 조작 시 PIN 화면 복귀를 확인했다.
 - 동석 확인: 현재 학부모 화면에는 동석 진입 버튼이 없어 실제 학부모 로그인 후 기존 프론트 gateway로 실제 학생 세션 발급 API를 호출했다. 이후 학생 화면 로그아웃과 보호자 비밀번호 복귀 폼, 기존 학생 토큰 거부를 확인했다. UI 로그아웃과 별개로 실제 API에서 학생 갱신 후 보호자 복귀만으로 학생 조회·갱신 모두 401이 되는 것도 확인했다. 동석 진입 버튼부터 끝까지의 사용자 동선 검증은 아니다.
 - 검증 뒤 학생 로그인·갱신 기본값을 30분으로 복원하고 실제 응답의 `expiresIn=1800`, 학부모의 기존 `expiresIn=900`을 재확인했다. 기존 자녀·학습 데이터는 유지했다. AWS 배포 환경, 브라우저 메뉴의 직접 탭 복제·닫은 탭 복원, 학습 답안 작성부터 제출까지의 전체 동선은 이번 로컬 인증 검증에 포함하지 않는다.
+
+## 19. 첫 사용 안내 완료 기록 (#1035, 2026-11-25)
+
+에픽 #1034의 core 부분. 제안 [onboarding 7.1 B안](../proposals/onboarding.md)대로 학부모·학생이 첫 사용 안내를 끝냈는지 서버에 남긴다. DB 변경 근거는 [infra 9.29](infra.md#929-첫-사용-안내-완료-기록-migration-v58-1035-2026-11-25).
+
+### API·권한·저장
+
+- 추가 API: `GET·PUT /api/v1/me/onboarding`(학부모), `GET·PUT /api/v1/students/me/onboarding`(학생). 응답은 모두 `{completedAt: string | null}`, 200·`Cache-Control: no-store`. PUT 본문 없음
+- PUT은 멱등. 이미 기록이 있으면 처음 시각을 그대로 돌려준다. 기록을 지우는 API는 없다(다시 보기는 web이 서버 기록을 지우지 않고 그 자리에서 재생)
+- 학부모 경로는 PARENT 세션만. 학생 세션은 기존 `PublicAuthFilter`의 `/me/*` 차단으로, 관리자 세션은 서비스 역할 확인으로 403 `FORBIDDEN`
+- 학생 경로는 `StudentLookService`와 같은 확인(역할 STUDENT·`studentScope` 1개·`requireLinked`). 학부모·관리자 세션은 기존 `/students/*` 필터 차단으로 403. 형제 학생은 학생별로 따로 남는다
+- 학부모 안내는 `READY` 뒤에만 뜨므로 동의 전 허용 경로에 넣지 않았다(필수 동의가 없으면 기존 규칙대로 403 `CONSENT_REQUIRED`)
+- 저장: `user_account.onboarding_completed_at`, `student.onboarding_completed_at`(V58). 코드는 `account` 패키지 `OnboardingController`·`OnboardingService`·`OnboardingRepository`
+
+### 검증 결과
+
+- core `OnboardingIntegrationTest` 4개 통과: 두 역할의 미완료 null·기록·재기록 시 처음 시각 유지, 형제·학부모/학생 기록 분리, 학생 세션 `/me/onboarding`·학부모 세션 `/students/me/onboarding`·관리자 세션 두 경로 403(GET·PUT), 필수 동의 전 학부모 403 `CONSENT_REQUIRED`
+- core 전체 `test`: 784개(동의 전 시험 추가 전 783개 실행 뒤 새 시험만 재실행), 실패 0·건너뜀 3
+- `python -O -m unittest discover -s scripts/tests`: local `migration.revision` v58 갱신 뒤 통과

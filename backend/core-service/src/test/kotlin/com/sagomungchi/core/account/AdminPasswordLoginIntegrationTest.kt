@@ -47,6 +47,8 @@ class AdminPasswordLoginIntegrationTest : IntegrationTestSupport() {
         user, hasher.hash(password), OffsetDateTime.now(), OffsetDateTime.now())
     private fun failedCount() = jdbc.queryForObject("SELECT failed_count FROM admin_credential WHERE user_id=?", Int::class.java, admin)
     private fun code(block: () -> Unit) = assertFailsWith<BusinessException> { block() }.code
+    private fun login(id: String, password: String, previousRefresh: String? = null) =
+        auth.adminLogin(id, password, "2001:db8::${UUID.randomUUID().toString().take(4)}", previousRefresh)
 
     @Test fun `HTTP login sets refresh cookie and starts at admin home with permissions`() {
         val response = mvc.post("/api/v1/auth/admin/login") {
@@ -57,7 +59,7 @@ class AdminPasswordLoginIntegrationTest : IntegrationTestSupport() {
             jsonPath("$.accessToken") { isString() }
         }.andReturn().response
         assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("${AuthCookies.REFRESH}=") && it.contains("HttpOnly") && it.contains("SameSite=Strict") })
-        val issued = auth.adminLogin(loginId, PASSWORD, null)
+        val issued = login(loginId, PASSWORD)
         assertEquals(setOf("CONTENT"), auth.authenticate(issued.accessToken).permissions)
         assertEquals("FORBIDDEN", code { auth.renewStudent(issued.accessToken) })
         assertEquals(issued.identity.session.expiresAt, auth.authenticate(issued.accessToken).session.expiresAt)
@@ -76,36 +78,36 @@ class AdminPasswordLoginIntegrationTest : IntegrationTestSupport() {
     }
 
     @Test fun `unknown ID wrong password non admin and withdrawn accounts give the same 401`() {
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin("nobody-${UUID.randomUUID()}", PASSWORD, null) })
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin(loginId, "wrong-password", null) })
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin(loginId, "x".repeat(129), null) })
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin("", PASSWORD, null) })
+        assertEquals("INVALID_CREDENTIALS", code { login("nobody-${UUID.randomUUID()}", PASSWORD) })
+        assertEquals("INVALID_CREDENTIALS", code { login(loginId, "wrong-password") })
+        assertEquals("INVALID_CREDENTIALS", code { login(loginId, "x".repeat(129)) })
+        assertEquals("INVALID_CREDENTIALS", code { login("", PASSWORD) })
         val parentId = "parent-${UUID.randomUUID()}"
         credential(account(parentId, "PARENT"), PASSWORD)
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin(parentId, PASSWORD, null) })
+        assertEquals("INVALID_CREDENTIALS", code { login(parentId, PASSWORD) })
         val withdrawnId = "withdrawn-${UUID.randomUUID()}"
         credential(account(withdrawnId, "ADMIN", "WITHDRAWN"), PASSWORD)
-        assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin(withdrawnId, PASSWORD, null) })
+        assertEquals("INVALID_CREDENTIALS", code { login(withdrawnId, PASSWORD) })
     }
 
     @Test fun `fifth failure locks for fifteen minutes and success resets the counter`() {
-        repeat(2) { code { auth.adminLogin(loginId, "wrong-password", null) } }
+        repeat(2) { code { login(loginId, "wrong-password") } }
         assertEquals(2, failedCount())
-        auth.adminLogin(loginId, PASSWORD, null)
+        login(loginId, PASSWORD)
         assertEquals(0, failedCount())
-        repeat(4) { assertEquals("INVALID_CREDENTIALS", code { auth.adminLogin(loginId, "wrong-password", null) }) }
-        assertEquals("ADMIN_LOGIN_LOCKED", code { auth.adminLogin(loginId, "wrong-password", null) })
-        assertEquals("ADMIN_LOGIN_LOCKED", code { auth.adminLogin(loginId, PASSWORD, null) })
+        repeat(4) { assertEquals("INVALID_CREDENTIALS", code { login(loginId, "wrong-password") }) }
+        assertEquals("ADMIN_LOGIN_LOCKED", code { login(loginId, "wrong-password") })
+        assertEquals("ADMIN_LOGIN_LOCKED", code { login(loginId, PASSWORD) })
         val until = requireNotNull(jdbc.queryForObject("SELECT locked_until FROM admin_credential WHERE user_id=?", OffsetDateTime::class.java, admin))
         assertTrue(until.isAfter(OffsetDateTime.now().plusMinutes(14)) && until.isBefore(OffsetDateTime.now().plusMinutes(16)))
         jdbc.update("UPDATE admin_credential SET locked_until=? WHERE user_id=?", OffsetDateTime.now().minusSeconds(1), admin)
-        auth.adminLogin(loginId, PASSWORD, null)
+        login(loginId, PASSWORD)
         assertNull(jdbc.queryForObject("SELECT locked_until FROM admin_credential WHERE user_id=?", OffsetDateTime::class.java, admin))
     }
 
     @Test fun `new login revokes the previous refresh session`() {
-        val first = auth.adminLogin(loginId, PASSWORD, null)
-        val second = auth.adminLogin(loginId, PASSWORD, first.refreshToken)
+        val first = login(loginId, PASSWORD)
+        val second = login(loginId, PASSWORD, first.refreshToken)
         assertFailsWith<BusinessException> { auth.authenticate(first.accessToken) }
         assertEquals("ADMIN", auth.authenticate(second.accessToken).session.role)
     }
