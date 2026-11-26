@@ -95,6 +95,7 @@
           "operator": "gt",
           "threshold": 240,
           "for": "1m",
+          "noDataState": "OK",
           "summary": "KST month-to-date priced LLM cost exceeds 240 USD (80% of the 300 USD monthly budget)."
         },
         {
@@ -104,6 +105,7 @@
           "operator": "gt",
           "threshold": 0,
           "for": "1m",
+          "noDataState": "OK",
           "summary": "New LLM calls without a stored cost appeared in the last hour (unregistered model or missing tokens), so the budget total is a lower bound. Find the model in llm_usage and register its price or external billing."
         },
         {
