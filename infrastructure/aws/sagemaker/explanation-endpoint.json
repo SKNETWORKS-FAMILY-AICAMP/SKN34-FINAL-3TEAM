@@ -13,7 +13,7 @@
   "executionRole": "sagomungchi-demo-sagemaker-explanation-role",
   "imageComment": "#777 model-check/Dockerfile (vLLM DLC server-sagemaker-cuda-v2.8.2 + startup sha256 check). Pushed by hand per account; set imageDigest to the pushed digest",
   "imageRepository": "sagomungchi/sagemaker-explanation",
-  "imageDigest": "sha256:3e5aacfc62a9f512a9e3bb48efa8d067fa89fec41c4c407186c51b43a922687a",
+  "imageDigest": "sha256:02b233dd387acfd78dbf6bc1b1b8959e3a9450504d7544b228e2cfcf36f364d9",
   "image": "{account}.dkr.ecr.{region}.amazonaws.com/sagomungchi/sagemaker-explanation@{imageDigest}",
   "subnetNames": ["sagomungchi-demo-subnet-private1-ap-northeast-2a", "sagomungchi-demo-subnet-private2-ap-northeast-2b"],
   "securityGroup": "sagomungchi-demo-sagemaker-explanation-sg",
