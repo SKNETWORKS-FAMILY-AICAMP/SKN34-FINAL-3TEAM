@@ -14,7 +14,7 @@ test('닫힌 결제 탭을 같은 주문 키와 자녀로 다시 연다', async 
   await page.getByRole('button', {name:'시연 계정으로 로그인',exact:true}).click()
   await expect(page).toHaveURL(/parent\/journal/)
   await page.goto('/parent/billing?childId=demo-doyun')
-  await page.getByRole('radio', {name:/프리미엄/}).check()
+  await expect(page.getByRole('region', {name:'프리미엄 이용권',exact:true})).toBeVisible()
   const opened = page.waitForEvent('popup')
   await page.getByRole('button', {name:'결제수단 선택',exact:true}).click()
   const tab = await opened

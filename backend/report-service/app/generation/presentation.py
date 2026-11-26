@@ -42,6 +42,7 @@ def assemble(metadata: dict, items: list[tuple[str, str | None, dict]]) -> dict:
             # Daily items stored before #803 have no answerTimes; read them as [].
             value.setdefault("answerTimes", [])
             value.setdefault("scheduledDay", None)
+            value.setdefault("theme", None)
         if kind == ItemType.QUOTE and not value.get("verified", False):
             value["text"] = None
         if identifier is not None:

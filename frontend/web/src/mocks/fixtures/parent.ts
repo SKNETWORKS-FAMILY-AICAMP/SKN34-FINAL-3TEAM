@@ -160,6 +160,8 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
 }
 /** 주간 테마 요약(FN-RPT-17): 목업은 그 주 기록의 유형별 첫 시도를 요일 문제로 본다. 테마 미참여 주는 NO_RECORD. */
 function themeSummary(rows: PublicAttempt[]): WeeklyReport['themeSummary'] {
+  // Shared writing samples are not assigned to a story theme, including on regeneration.
+  if (rows.some(row => row.attemptId.startsWith('structured-report-demo-'))) return null
   const days = ['MON', 'TUE', 'WED', 'THU', 'FRI'] as const
   const picked = Object.keys(thinkingLabels).map((type) => rows.find((a) => a.mission.thinkingType === type)).filter((a): a is PublicAttempt => !!a)
   if (!picked.length) return { state: 'NO_RECORD', themeId: null, title: null, days: [], completed: false, reviewRetries: [] }

@@ -14,15 +14,15 @@ const SHELF_COLUMNS = 4
 /** 무료·프리미엄 비교표 자리(#998, 이용권·결제 화면 섹션 id). 책장 잠금 안내가 여기로 간다(user-flow #997) */
 const comparePath = (childId: string) => `/parent/billing?childId=${encodeURIComponent(childId)}#plan-compare`
 
-/** 책 표지: 회차 시작 그림이 있으면 그 그림, 없으면 테마 이름 첫 글자를 둔 빈 표지(꾸밈이라 읽지 않음) */
+/** Use the supplied image, or a readable title cover when no illustration exists. */
 function Cover({ round, lockedIssue }: { round: MemoryBookRoundItem; lockedIssue: boolean }) {
   const title = round.title || '이름 없는 테마'
   // 책처럼: 왼쪽 책등 띠, 아래쪽에 제목을 얹는다(제목은 화면 읽기에도 그대로 읽힘)
-  return <span className="memory-shelf-cover-wrap">
+  return <span className={`memory-shelf-cover-wrap${round.imageUrl ? '' : ' memory-shelf-text-cover'}`}>
     {round.imageUrl
       ? <img className="memory-shelf-cover" src={round.imageUrl} alt="" loading="lazy" />
-      : <span className="memory-shelf-cover memory-shelf-cover-blank" aria-hidden="true">{title.slice(0, 1)}</span>}
-    <strong className="memory-shelf-title">{title}</strong>
+      : <span className="memory-shelf-cover memory-shelf-cover-blank"><BookOpen size={28} aria-hidden="true" /><strong>{title}</strong></span>}
+    {round.imageUrl && <strong className="memory-shelf-title">{title}</strong>}
     {/* 무료라 발급이 잠긴 책: 책마다 문장을 반복하지 않고 표지 모서리 표시 하나로(화면 읽기는 "발급은 프리미엄") */}
     {lockedIssue && <span className="memory-shelf-badge"><Lock size={13} aria-hidden="true" /><span className="memory-shelf-sr">발급은 </span>프리미엄</span>}
     {/* 같이 읽은 책(#1026): 왼쪽 위, 자물쇠도 있으면(무료·보관 기간 지남) 한 줄 아래. 보관 기간이 지나도(EXPIRED) 이미 남긴 날짜는 보인다 */}

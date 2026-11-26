@@ -60,11 +60,18 @@ data class ReflectionRow(val attemptId: UUID, val difficulty: Difficulty, val te
 /** 답변의 판정 모델 점수 JSON 원문 (judgment.model_scores, 없으면 null) */
 data class ModelScoresRow(val answerId: UUID, val modelScores: String?)
 
-data class ScheduledDayRow(val attemptId: UUID, val day: com.sagomungchi.learning.theme.domain.ThemeDay)
+data class DailyThemeRow(
+    val attemptId: UUID,
+    val day: com.sagomungchi.learning.theme.domain.ThemeDay,
+    val themeId: UUID?,
+    val versionId: UUID?,
+    val title: String?,
+    val sourceTopic: String?,
+)
 
 @Mapper
 interface RecordMapper {
-    fun findScheduledDays(@Param("attemptIds") attemptIds: List<UUID>): List<ScheduledDayRow>
+    fun findDailyThemes(@Param("attemptIds") attemptIds: List<UUID>): List<DailyThemeRow>
     fun findCompleted(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<UUID>
     fun findEligible(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<EligibleAttempt>
     fun findAnswerPairs(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<AnswerPair>

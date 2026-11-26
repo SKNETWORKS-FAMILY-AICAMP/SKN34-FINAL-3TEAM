@@ -69,6 +69,7 @@ test('Gemma 시연: 결과 누락·원문 변경에는 합성 설명으로 대�
       { attemptId: attempt.attemptId, answerVersion: answer.version, sourceText: answer.text, text },
     ] })
     const regenerated = makeWeekly(structuredReportChild, structuredReportPeriod, 2)
+    assert.equal(regenerated.themeSummary, null)
     assert.equal(regenerated.explanations?.items.length, 1)
     assert.equal(regenerated.explanations?.items[0].text, text)
     const changed = fixtureStore.snapshot()

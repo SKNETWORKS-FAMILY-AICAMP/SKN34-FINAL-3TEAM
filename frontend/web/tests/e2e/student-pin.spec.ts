@@ -9,6 +9,7 @@ test('Google 로그인 보호자는 추가 재인증 없이 선택한 자녀 PIN
   const reauth: string[] = []
   page.on('request', request => { if (new URL(request.url()).pathname.includes('/me/reauth')) reauth.push(request.url()) })
   await page.getByRole('link', { name: '기기·PIN', exact: true }).click()
+  await page.getByRole('button', { name: `${nickname} PIN 관리`, exact: true }).click()
   const form = page.getByRole('form', { name: `${nickname} PIN`, exact: true })
   await form.getByLabel(`${nickname} 새 PIN`, { exact: true }).fill('4831')
   await form.getByLabel(`${nickname} 새 PIN 확인`, { exact: true }).fill('4831')

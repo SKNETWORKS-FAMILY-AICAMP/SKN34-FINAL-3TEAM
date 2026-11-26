@@ -1,0 +1,92 @@
+import { test, expect } from '@playwright/test'
+import demoData from '../../src/mocks/fixtures/structuredReportSamples.json' with { type: 'json' }
+
+const cache = { model: 'explain', promptVersion: 'structured-report-detail@2', items: demoData.samples.map((sample, index) => ({
+  attemptId: sample.attemptId, answerVersion: sample.texts.length, sourceText: sample.texts.at(-1),
+  text: JSON.stringify({ analysis: `${sample.title} 답변에 연결된 분석입니다.`, improvement_points: index ? '구체적인 까닭을 덧붙여 보세요.' : null, next_steps: ['글에 적은 경험을 함께 이야기해 보세요.'] }),
+})) }
+
+test('local report examples stay separate from the selected report and use the shared explanation design @responsive', async ({ page, context }, info) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ json: cache }))
+  await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5&reportId=demo-report-grade5-2026-11-09')
+  const report = page.getByRole('region', { name: '리포트 내용', exact: true })
+  await expect(report.locator('.report-narrative-text')).toBeVisible()
+  await expect(report.locator('.report-explanation-copy').first()).toContainText('답변에 연결된 분석입니다.')
+  const original = await report.innerText()
+  const url = page.url()
+  const apiRequests: string[] = []
+  const watch = (request: { url(): string }) => {
+    if (request.url().includes('/api/v1/')) apiRequests.push(request.url())
+  }
+  const trigger = page.getByRole('button', { name: '주간 리포트 예시 보기' })
+  page.on('request', watch)
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: '주간 리포트 예시', exact: true })
+  await expect(dialog.getByRole('note')).toContainText('해당 답변으로 생성한 Gemma 결과')
+  await expect(dialog.getByRole('heading', { name: '한 주의 기록', exact: true })).toBeVisible()
+  const activities = dialog.getByRole('navigation', { name: '예시 활동 선택', exact: true })
+  const library = activities.getByRole('button', { name: /우리 동네에 필요한 시설/ })
+  const phone = activities.getByRole('button', { name: /스마트폰 사용 시간을 정할까요/ })
+  const pencil = activities.getByRole('button', { name: /내가 아끼는 물건/ })
+  const back = dialog.getByRole('button', { name: '뒤로 가기', exact: true })
+  const forward = dialog.getByRole('button', { name: '앞으로 가기', exact: true })
+  await expect(back).toBeDisabled()
+  await expect(forward).toBeDisabled()
+  await expect(activities.getByRole('button')).toHaveCount(3)
+  await expect(library).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: '보완할 지점', exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('우리 동네에 필요한 시설을 고르고, 그렇게 생각한 까닭을 써 보세요.', { exact: true })).toBeVisible()
+  await dialog.getByText('처음 답변과 비교하기', { exact: true }).click()
+  await expect(dialog.locator('.report-example-source details blockquote')).toContainText('버스를 타고 멀리')
+  await phone.focus()
+  await page.keyboard.press('Enter')
+  await expect(phone).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByRole('heading', { name: '보완할 지점', exact: true })).toBeVisible()
+  await expect(dialog.locator('.report-example-source')).toContainText('스마트폰 사용 시간을 정하는 것에 대한')
+  await expect(dialog.locator('.report-example-source')).not.toContainText('도서관')
+  await pencil.click()
+  await expect(dialog.locator('.report-example-source')).toContainText('가장 아끼는 물건의 모습')
+  await expect(dialog.locator('.report-explanation-copy')).toHaveCount(3)
+  await back.click()
+  await expect(phone).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.locator('.report-reader-document')).toContainText('스마트폰 사용 시간을 정하는 것에 대한')
+  await forward.click()
+  await expect(pencil).toHaveAttribute('aria-pressed', 'true')
+  await expect(forward).toBeDisabled()
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  expect(await dialog.locator('..').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await dialog.getByRole('heading', { name: '상세 분석', exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: info.outputPath('report-example-explanation.png') })
+  await back.click()
+  await library.click()
+  await expect(forward).toBeDisabled()
+  await dialog.getByRole('note').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: info.outputPath('report-example-preview.png') })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  expect(page.url()).toBe(url)
+  expect(await report.innerText()).toBe(original)
+  page.off('request', watch)
+  expect(apiRequests).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('preview never substitutes a manual explanation for missing or stale output', async ({ page, context }) => {
+  await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ json: {
+    ...cache, items: cache.items.map(item => ({ ...item, sourceText: '다른 답변' })),
+  } }))
+  await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5')
+  await page.getByRole('button', { name: '주간 리포트 예시 보기' }).click()
+  const dialog = page.getByRole('dialog', { name: '주간 리포트 예시', exact: true })
+  await expect(dialog.getByRole('status')).toHaveText('이 답변으로 생성된 설명을 불러오지 못했어요.')
+  await expect(dialog.getByRole('heading', { name: '상세 분석', exact: true })).toHaveCount(0)
+  await expect(dialog.locator('.report-reader-document')).toContainText(demoData.samples[0].texts.at(-1)!)
+  await page.keyboard.press('Escape')
+  await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ status: 404 }))
+  await page.getByRole('button', { name: '주간 리포트 예시 보기' }).click()
+  await expect(dialog.getByRole('status')).toHaveText('이 답변으로 생성된 설명을 불러오지 못했어요.')
+})

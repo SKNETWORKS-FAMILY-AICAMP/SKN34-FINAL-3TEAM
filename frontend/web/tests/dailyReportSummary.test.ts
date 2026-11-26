@@ -25,7 +25,9 @@ test('counts activities, not follow-up messages or repeated element labels; pres
   assert.deepEqual(result.reviewIndices, [2])
   assert.deepEqual(result.elements, [{ label: '근거', indices: [0, 1] }])
   assert.deepEqual(result.difficulties.map(d => d.count), [1, 1, 1])
+  assert.deepEqual(result.difficulties.map(d => d.indices), [[0], [1], [2]])
   assert.equal(result.difficultyMissing, 2)
+  assert.deepEqual(result.difficultyMissingIndices, [3, 4])
 })
 
 test('private text fields do not turn into zero activity counts; public difficulty and judgment stay available', () => {
@@ -35,6 +37,7 @@ test('private text fields do not turn into zero activity counts; public difficul
   assert.equal(result.total, 1)
   assert.equal(result.reflections, 1)
   assert.equal(result.difficulties[0].count, 1)
+  assert.deepEqual(result.difficulties[0].indices, [0])
 })
 
 test('missing details and no-record reports are distinct; unwritten reflections are not difficulty choices', () => {
@@ -48,4 +51,5 @@ test('missing details and no-record reports are distinct; unwritten reflections 
   const invalidReflection = dailyReportSummary({ metrics: [], problems: [problem({ reflection: { written: false, difficulty: 'EASY', text: null } })] })
   assert.equal(invalidReflection.difficultyRecorded, 0)
   assert.equal(invalidReflection.difficultyMissing, 1)
+  assert.deepEqual(invalidReflection.difficultyMissingIndices, [0])
 })

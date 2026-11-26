@@ -2,14 +2,21 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sagomungchi.learning.record.repository.RecordMapper">
     <!-- #845: 완료일이나 현재 학생 학년이 아니라 시도에 저장된 테마·주·미션으로 조회. #906: 시도 고정 버전(V27) 우선, 없으면 게시본 -->
-    <select id="findScheduledDays" resultType="com.sagomungchi.learning.record.repository.ScheduledDayRow">
+    <select id="findDailyThemes" resultType="com.sagomungchi.learning.record.repository.DailyThemeRow">
         SELECT a.id AS attempt_id,
                CASE d.day_of_week WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED'
-                    WHEN 4 THEN 'THU' WHEN 5 THEN 'FRI' END AS day
+                    WHEN 4 THEN 'THU' WHEN 5 THEN 'FRI' END AS day,
+               pinned.theme_id, pinned.id AS version_id, pinned.title,
+               (SELECT draft.input ->> 'topic'
+                  FROM theme_draft draft
+                 WHERE draft.theme_id = pinned.theme_id AND draft.status = 'ADOPTED'
+                   AND draft.created_at &lt;= pinned.created_at) AS source_topic
         FROM attempt a
         JOIN weekly_theme t ON t.id = a.theme_id AND t.week_start &lt;= a.theme_week_start
         JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(a.theme_version_id, t.published_version_id, t.current_version_id)
                                AND d.mission_id = a.mission_id
+        <!-- 제목은 풀이 당시 고정 버전에서만 가져온다. 이전 기록에 현재 게시본의 이름을 추측해 붙이지 않는다. -->
+        LEFT JOIN weekly_theme_version pinned ON pinned.id = a.theme_version_id AND pinned.theme_id = a.theme_id
         WHERE a.context IN ('THEME_DAY', 'THEME_REVIEW') AND a.id IN
         <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>

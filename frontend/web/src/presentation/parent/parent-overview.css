@@ -255,7 +255,7 @@
 #class-journal .ws-parent .pd-overview .pd-card-head{margin:0 0 14px}
 #class-journal .ws-parent .pd-overview .pd-card-head h2{font-size:18px;font-weight:600;line-height:1.5}
 #class-journal .ws-parent .pd-overview .pd-types ul{display:block;margin:0;padding:0;list-style:none;border-top:1px solid var(--pd-line)}
-#class-journal .ws-parent .pd-overview .pd-types li{display:grid;grid-template-columns:140px minmax(0,1fr) 100px;align-items:center;gap:16px;min-height:90px;padding:20px 0;border:0;border-bottom:1px solid var(--pd-line);border-radius:0;background:none}
+#class-journal .ws-parent .pd-overview .pd-types li{display:grid;grid-template-columns:140px minmax(0,1fr) max-content;align-items:center;gap:16px;min-height:90px;padding:20px 0;border:0;border-bottom:1px solid var(--pd-line);border-radius:0;background:none}
 #class-journal .ws-parent .pd-overview .pd-type{display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;font-weight:500;color:var(--type-ink)}
 #class-journal .ws-parent .pd-type-icon{display:grid;place-items:center;flex-shrink:0;width:42px;height:42px;border-radius:12px;background:var(--type-soft);color:var(--type-ink);border:0}
 #class-journal .ws-parent .pd-recent-missions{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0;min-height:36px}
@@ -278,6 +278,7 @@
   background: transparent;
   font-size: 13px;
   padding: 4px;
+  white-space: nowrap;
 }
 #class-journal .ws-parent .pd-empty-actions {
   display: flex;
@@ -286,7 +287,7 @@
   gap: 4px 16px;
 }
 #class-journal .ws-parent .pd-type-actions{display:flex;align-items:center;justify-content:flex-end;align-self:center}
-#class-journal .ws-parent .pd-overview .pd-type-actions .pd-chip{font-size:11px;font-weight:400;background:none;border-radius:0;padding:0;color:#586b61;text-align:right;white-space:normal;line-height:1.7}
+#class-journal .ws-parent .pd-overview .pd-type-actions .pd-chip{font-size:14px;font-weight:500;background:none;border-radius:0;padding:0;color:#586b61;text-align:right;white-space:nowrap;line-height:1.7}
 #class-journal .pd-observation-note{font-size:12px;color:var(--pd-muted);line-height:1.7;margin:14px 0 0}
 #class-journal .ws-parent .pd-overview .pd-report{min-width:0;align-self:start;margin:0;padding:26px 24px;border:0;border-radius:14px;background:#253a30;color:#fff;display:flex;flex-direction:column;gap:20px;box-shadow:none}
 #class-journal .ws-parent .pd-overview .pd-report-title{display:flex;gap:10px;align-items:center;color:#e0ede3}
@@ -331,7 +332,7 @@
  #class-journal .pd-metric-definition{grid-column:1/-1}
  #class-journal .ws-parent .pd-overview .pd-split{grid-template-columns:1fr;gap:28px}
  #class-journal .ws-parent .pd-overview .pd-types li{grid-template-columns:minmax(0,1fr) auto;gap:12px;min-height:78px;padding:18px 0}
- #class-journal .ws-parent .pd-type-actions{grid-column:2;grid-row:1;max-width:110px}
+ #class-journal .ws-parent .pd-type-actions{grid-column:2;grid-row:1}
  #class-journal .ws-parent .pd-recent-missions{grid-column:1/-1;grid-row:2}
  #class-journal .ws-parent .pd-recent-missions:empty{display:none}
  #class-journal .ws-parent .pd-recent-missions>:is(button,span){max-width:calc(100% - 8px)}

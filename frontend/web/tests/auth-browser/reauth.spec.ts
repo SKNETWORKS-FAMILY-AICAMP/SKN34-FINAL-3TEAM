@@ -44,6 +44,7 @@ for (const guardian of [true]) {
   test(`${guardian ? '보호자 비밀번호' : '자녀 PIN'}: 새 탭 확인 후 입력을 보존하고 자동으로 저장 가능해진다`, async ({ page, context }) => {
     const state = await reauthServer(context)
     await page.goto('/parent/devices')
+    await page.getByRole('button', { name: guardian ? '설정하기' : '합성 자녀 PIN 관리', exact: true }).click()
     const form = page.getByRole('form', { name: guardian ? '보호자 비밀번호 설정' : '합성 자녀 PIN', exact: true })
     const inputs = form.locator('input[type="password"]')
     await inputs.nth(0).fill('5090'); await inputs.nth(1).fill('5090')
@@ -86,6 +87,7 @@ test('계정 관리 공통 Google 재확인도 원래 탭에서 자동 완료하
 test('자녀 PIN은 Google 팝업 없이 보호자 세션으로 저장한다', async ({ page, context }) => {
   const state = await reauthServer(context)
   await page.goto('/parent/devices')
+  await page.getByRole('button', { name: '합성 자녀 PIN 관리', exact: true }).click()
   const form = page.getByRole('form', { name: '합성 자녀 PIN', exact: true })
   await form.getByLabel('합성 자녀 새 PIN', { exact: true }).fill('5090')
   await form.getByLabel('합성 자녀 새 PIN 확인', { exact: true }).fill('5090')

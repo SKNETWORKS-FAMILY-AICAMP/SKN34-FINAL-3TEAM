@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { KeyRound, Smartphone, ScanLine } from 'lucide-react'
+import { KeyRound, Smartphone, ScanLine, ShieldCheck, Monitor, LockKeyhole, CheckCircle2, CircleAlert, ChevronRight, Plus, MoreHorizontal } from 'lucide-react'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
-import { useParentMutation } from '../../data/parent/queries.ts'
+import { useParentMutation, useParentQuery } from '../../data/parent/queries.ts'
+import { parentApi } from '../../data/parent/api.ts'
+import { FamilyPortraitButton } from './FamilyProfiles.tsx'
 import { useReauthReturn } from '../../data/reauthReturn.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { PasswordRecheck } from '../service/PasswordRecheck.tsx'
@@ -17,9 +19,10 @@ import {
   remaining,
 } from '../../domain/studentDevice.ts'
 import type { Pairing } from '../../domain/studentDevice.ts'
-import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import '../student/pinpad.css'
+import './parent-devices.css'
 
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '아직 사용 전'
@@ -38,14 +41,42 @@ function useNow(active: boolean) {
  * 학부모: 자녀 기기 등록·PIN·기기 목록 (FN-ACC-14, API 명세 3.11).
  * 자녀 기기에 학부모 Google 세션이 남지 않도록, 코드는 이 화면(학부모 기기)에서 발급해 자녀 기기에 입력한다.
  */
-export function StudentDevices({ items, selectedChildId }: { items: Child[]; selectedChildId?: string }) {
+export function StudentDevices({ items }: { items: Child[]; selectedChildId?: string }) {
+  const me = useParentQuery(['me'], () => parentApi.me())
+  const guardian = useGuardianPassword()
+  const byPassword = useSession().session?.authMethod === 'PASSWORD'
+  const [pinChildId, setPinChildId] = useState<string | null>(null)
+  const [guardianOpen, setGuardianOpen] = useState(false)
+  const [pairingOpen, setPairingOpen] = useState(false)
+  const pinChild = items.find(child => child.id === pinChildId)
+  const guardianState = guardian.error ? '확인하지 못했어요' : !guardian.data ? '확인 중' : guardian.data.locked ? '비밀번호 잠김' : guardian.data.set ? '비밀번호 설정 완료' : '비밀번호 미설정'
   return (
-    <section className="parent-devices"><header className="parent-page-head"><h1>기기·PIN</h1><p>자녀의 PIN을 정하고 학습할 기기를 연결하세요.</p></header><div className="parent-device-grid">
-      <PinSettings key={selectedChildId} items={items} selectedChildId={selectedChildId} />
-      <GuardianPasswordSettings />
-      <PairingIssue items={items} />
-      <DeviceList />
-    </div></section>
+    <section className="parent-devices device-settings-sheet">
+      <header className="parent-page-head"><div><h1>기기 및 PIN</h1><p>안전한 학습 환경을 위한 접근 권한 관리</p></div><span className="device-header-art" aria-hidden="true"><Monitor size={70} strokeWidth={1.3} /><LockKeyhole size={38} /></span></header>
+      <section className="device-settings-section" aria-labelledby="pin-h">
+        <div className="device-section-intro"><KeyRound size={22} aria-hidden="true" /><h2 id="pin-h">자녀 PIN</h2><p>등록된 학습 기기에서 로그인할 때 사용하는 번호입니다.</p></div>
+        <div className="device-section-content"><ul className="device-child-list">{items.map(child => <li key={child.id}>
+          {me.data && !me.error && <FamilyPortraitButton parentId={me.data.userId} child={child} />}
+          <div className="device-child-info"><strong>{child.nickname}</strong><span data-state={child.pinLocked ? 'warning' : child.pinSet ? 'ready' : 'unknown'}>{child.pinLocked ? <><CircleAlert size={14} />PIN 잠김</> : child.pinSet ? <><CheckCircle2 size={14} />PIN 설정 완료</> : child.pinSet === false ? 'PIN 미설정' : 'PIN 상태 확인 필요'}</span></div>
+          <button className="device-text-action" aria-label={`${child.nickname} PIN 관리`} onClick={() => setPinChildId(child.id)}>PIN 관리<ChevronRight size={18} aria-hidden="true" /></button>
+        </li>)}</ul>{!items.length && <p>계정·자녀 설정에서 자녀를 먼저 등록해 주세요.</p>}</div>
+      </section>
+      <section className="device-settings-section" aria-labelledby="guardian-section-h">
+        <div className="device-section-intro"><ShieldCheck size={22} aria-hidden="true" /><h2 id="guardian-section-h">보호자 비밀번호</h2><p>학생 화면에서 보호자 화면으로 전환할 때 사용합니다.</p></div>
+        <div className="device-section-content"><div className="device-section-heading"><h3>보호자 인증</h3><button className="device-text-action" onClick={() => setGuardianOpen(true)}>{guardian.data?.set ? '변경하기' : '설정하기'}<ChevronRight size={18} aria-hidden="true" /></button></div>
+          <p className="device-guardian-state" data-state={guardian.data?.set && !guardian.data.locked ? 'ready' : 'warning'}>{guardian.data?.set && !guardian.data.locked ? <CheckCircle2 size={16} aria-hidden="true" /> : <CircleAlert size={16} aria-hidden="true" />}{guardianState}</p>
+          <p className="device-section-note">{byPassword ? '로그인 비밀번호로 본인 확인 후 보호자 비밀번호를 설정합니다.' : 'Google 본인 확인을 통해 보호자 비밀번호를 설정합니다.'}</p><QueryFeedback query={guardian} />
+        </div>
+      </section>
+      <section className="device-settings-section" aria-labelledby="learning-device-h">
+        <div className="device-section-intro"><Monitor size={22} aria-hidden="true" /><h2 id="learning-device-h">학습 기기</h2><p>자녀가 학습에 사용하는 기기를 관리합니다.</p></div>
+        <div className="device-section-content"><div className="device-section-heading"><h3>연결된 기기</h3><button className="device-text-action" disabled={!items.length} onClick={() => setPairingOpen(true)}><Plus size={17} aria-hidden="true" />기기 연결</button></div><DeviceList /></div>
+      </section>
+      <p className="device-security-note"><LockKeyhole size={15} aria-hidden="true" />PIN과 비밀번호는 안전한 학습 환경을 위해 사용됩니다.</p>
+      {pinChild && <Modal scrollIndicator title={`${pinChild.nickname} PIN 관리`} onClose={() => setPinChildId(null)}><div className="device-settings-dialog"><p>숫자 4~6자리로 정해 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p><ChildPin child={pinChild} /></div></Modal>}
+      {guardianOpen && <Modal scrollIndicator title="보호자 비밀번호 설정" onClose={() => setGuardianOpen(false)}><div className="device-settings-dialog"><GuardianPasswordSettings /></div></Modal>}
+      {pairingOpen && <Modal scrollIndicator title="새 학습 기기 연결" onClose={() => setPairingOpen(false)}><div className="device-settings-dialog"><PairingIssue items={items} /></div></Modal>}
+    </section>
   )
 }
 
@@ -140,26 +171,6 @@ function GuardianPasswordSettings() {
   )
 }
 
-function PinSettings({ items, selectedChildId }: { items: Child[]; selectedChildId?: string }) {
-  const [selected, setSelected] = useState(selectedChildId ?? items[0]?.id ?? '')
-  const child = items.find(item => item.id === selected) ?? items[0]
-  return <section className="ws-card parent-pin-settings" aria-labelledby="pin-h">
-    <h2 id="pin-h">자녀 PIN</h2><span className="device-purpose">등록된 기기에서 매번 로그인할 때</span>
-    <p>PIN을 정할 자녀를 골라 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p>
-    <div className="parent-child-pills" role="tablist" aria-label="PIN 설정할 자녀">
-      {items.map((item, index) => <button key={item.id} type="button" role="tab" id={`pin-tab-${item.id}`}
-        aria-selected={child?.id === item.id} aria-controls={`pin-panel-${item.id}`} tabIndex={child?.id === item.id ? 0 : -1}
-        onClick={() => setSelected(item.id)} onKeyDown={event => {
-          const next = event.key === 'ArrowRight' ? (index + 1) % items.length : event.key === 'ArrowLeft' ? (index + items.length - 1) % items.length : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null
-          if (next === null) return
-          event.preventDefault(); setSelected(items[next].id); document.getElementById(`pin-tab-${items[next].id}`)?.focus()
-        }}>{item.nickname}</button>)}
-    </div>
-    {child ? <div role="tabpanel" id={`pin-panel-${child.id}`} aria-labelledby={`pin-tab-${child.id}`}><ChildPin key={child.id} child={child} /></div>
-      : <p>계정·자녀 설정에서 자녀를 먼저 등록해 주세요.</p>}
-  </section>
-}
-
 function ChildPin({ child }: { child: Child }) {
   const [pin, setPin] = useState(''), [again, setAgain] = useState(''), [notice, setNotice] = useState(''), [problem, setProblem] = useState<string | null>(null)
   const { setPin: save } = useDeviceAdmin()
@@ -212,8 +223,7 @@ function PairingIssue({ items }: { items: Child[] }) {
     }
   }, [pairing, registrationUrl])
   return (
-    <section className="ws-card" aria-labelledby="pairing-h">
-      <h2 id="pairing-h">새 학습 기기 연결</h2>
+    <section className="ws-card" aria-label="기기 연결 방법">
       <ol className="device-setup-steps"><li><KeyRound size={24} strokeWidth={1.5} aria-hidden="true"/><strong>등록 코드 만들기</strong><span>이 화면에서 공부할 자녀를 선택해요.</span></li><li><ScanLine size={24} strokeWidth={1.5} aria-hidden="true"/><strong>자녀 기기로 열기</strong><span>QR을 찍거나 등록 코드를 입력해요.</span></li><li><Smartphone size={24} strokeWidth={1.5} aria-hidden="true"/><strong>기기 이름 정하기</strong><span>등록 후에는 자녀 PIN으로 로그인해요.</span></li></ol>
       <p>
         자녀 태블릿의 기본 카메라로 QR을 찍어 주세요. 열린 화면에서 기기 이름을 적고 등록하면,
@@ -288,67 +298,25 @@ function PairingIssue({ items }: { items: Child[] }) {
 function DeviceList() {
   const devices = useStudentDevices()
   const { revoke } = useDeviceAdmin()
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
-  const now = useNow(false) // 만료 표시는 목록을 받은 시점 기준. 1분 단위 갱신은 필요하지 않다.
-  return (
-    <section className="ws-card" aria-labelledby="devices-h">
-      <h2 id="devices-h">등록된 기기</h2>
-      <QueryFeedback query={devices} />
-      {devices.data && !devices.data.length && <p>아직 등록된 기기가 없습니다.</p>}
-      {!!devices.data?.length && (
-        <div className="ws-table-wrap">
-          <table className="ws-table">
-            <thead>
-              <tr>
-                <th scope="col">기기 이름</th>
-                <th scope="col">자녀</th>
-                <th scope="col">마지막 사용</th>
-                <th scope="col">만료</th>
-                <th scope="col">관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {devices.data.map((d) => (
-                <tr key={d.deviceId}>
-                  <td>{d.label}</td>
-                  <td>{d.children.map((c) => c.nickname).join(', ')}</td>
-                  <td>{when(d.lastUsedAt)}</td>
-                  <td>
-                    {when(d.expiresAt)}
-                    {deviceExpired(d, now) && <strong> · 만료됨</strong>}
-                  </td>
-                  <td>
-                    {confirming === d.deviceId ? (
-                      <span role="group" aria-label={`${d.label} 해제 확인`}>
-                        <button
-                          className="cj-primary"
-                          disabled={revoke.isPending}
-                          onClick={() => revoke.mutate(d.deviceId, { onSettled: () => setConfirming(null) })}
-                        >
-                          해제
-                        </button>{' '}
-                        <button className="cj-secondary" onClick={() => setConfirming(null)}>
-                          취소
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        className="cj-secondary"
-                        aria-label={`${d.label} 등록 해제`}
-                        onClick={() => setConfirming(d.deviceId)}
-                      >
-                        등록 해제
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p>해제한 기기에서는 PIN이 맞아도 들어올 수 없습니다. 이미 열려 있던 학습 화면은 로그인 시간이 끝날 때까지 유지됩니다.</p>
-      <ErrorNotice error={revoke.error} />
-    </section>
-  )
+  const now = useNow(false)
+  return <div className="device-list">
+    <QueryFeedback query={devices} />
+    {devices.data && !devices.data.length && <p className="device-empty">아직 연결된 기기가 없습니다.</p>}
+    {!!devices.data?.length && <ul className="device-records">{devices.data.map(d => <li key={d.deviceId} className="device-record">
+      <div className="device-record-main"><Monitor aria-hidden="true" />
+        <div className="device-record-info"><strong>{d.label}</strong><span>{d.children.map(c => c.nickname).join(', ') || '연결된 자녀 없음'}{deviceExpired(d, now) && ' · 만료됨'}</span></div>
+        <button className="device-more" aria-label={`${d.label} 기기 관리`} aria-expanded={expanded === d.deviceId} aria-controls={`device-${d.deviceId}`} onClick={() => { setExpanded(expanded === d.deviceId ? null : d.deviceId); setConfirming(null) }}><MoreHorizontal size={20} aria-hidden="true" /></button>
+      </div>
+      {expanded === d.deviceId && <div id={`device-${d.deviceId}`} className="device-record-details">
+        <dl><div><dt>마지막 사용</dt><dd>{when(d.lastUsedAt)}</dd></div><div><dt>등록 만료</dt><dd>{when(d.expiresAt)}{deviceExpired(d, now) && ' · 만료됨'}</dd></div></dl>
+        {confirming === d.deviceId ? <div className="device-revoke-confirm" role="group" aria-label={`${d.label} 해제 확인`}>
+          <p>해제하면 이 기기에서 PIN으로 다시 로그인할 수 없습니다. 이미 열린 학습 화면은 로그인 시간이 끝날 때까지 유지됩니다.</p>
+          <div><button className="cj-primary" disabled={revoke.isPending} onClick={() => revoke.mutate(d.deviceId, { onSuccess: () => { setConfirming(null); setExpanded(null) } })}>{revoke.isPending ? '해제 중…' : '해제'}</button><button className="cj-secondary" disabled={revoke.isPending} onClick={() => setConfirming(null)}>취소</button></div>
+        </div> : <button className="cj-secondary" aria-label={`${d.label} 등록 해제`} onClick={() => setConfirming(d.deviceId)}>등록 해제</button>}
+      </div>}
+    </li>)}</ul>}
+    <ErrorNotice error={revoke.error} />
+  </div>
 }

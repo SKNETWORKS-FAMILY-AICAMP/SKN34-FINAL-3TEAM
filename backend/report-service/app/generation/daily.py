@@ -65,6 +65,9 @@ class DailyReportBuilder:
                 "attemptId": str(attempt.id),
                 "title": attempt.mission_title,
                 "context": attempt.context,
+                "theme": attempt.theme.payload()
+                if attempt.theme and attempt.context in ("THEME_DAY", "THEME_REVIEW")
+                else None,
                 "scheduledDay": attempt.scheduled_day
                 if attempt.context in ("THEME_DAY", "THEME_REVIEW")
                 else None,

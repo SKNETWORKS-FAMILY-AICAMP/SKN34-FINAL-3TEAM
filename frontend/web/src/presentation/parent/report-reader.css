@@ -1,0 +1,94 @@
+/* Grammarly Editor reference: a white document beside a separate feedback rail.
+   Only report dialogs use this layout; summary dashboards retain their design. */
+#class-journal .ws-parent .report-dialog-topline { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:0 0 20px; }
+#class-journal .ws-parent .report-dialog-topline > :is(.daily-problems-date,.report-example-period) { margin:0; }
+#class-journal .ws-parent .report-dialog-navigation { display:flex; gap:4px; }
+#class-journal .ws-parent .report-dialog-navigation button { display:grid; place-items:center; width:36px; height:36px; min-height:36px; padding:0; border:0; border-radius:6px; box-shadow:none; background:transparent; color:#374151; }
+#class-journal .ws-parent .report-dialog-navigation button:hover:not(:disabled) { background:#edf0f4; }
+#class-journal .ws-parent .report-dialog-navigation button:disabled { color:#a1a8b2; opacity:1; cursor:default; }
+#class-journal .ws-parent .report-dialog-navigation button:focus-visible { outline:2px solid #245f3d; outline-offset:2px; }
+#class-journal .ws-parent .report-reader-heading { display:flex; align-items:flex-start; gap:18px; padding:24px 26px; margin:0 0 24px; border:0; border-radius:12px; background:#f0f5f1; color:#244b36; }
+#class-journal .ws-parent .report-reader-heading > svg { flex-shrink:0; margin-top:6px; color:#49755a; }
+#class-journal .ws-parent .report-reader-heading .daily-navigation-heading { margin:0; color:inherit; font-size:25px; font-weight:700; line-height:1.55; letter-spacing:-.02em; text-wrap:pretty; }
+#class-journal .ws-parent .report-reader-layout {
+  --reader-ink:#303744;
+  --reader-muted:#626a78;
+  display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr);
+  gap:0;
+  margin:20px 0 0;
+  padding:0;
+  border:1px solid #e4e7ec;
+  border-radius:12px;
+  overflow:hidden;
+  background:#fff;
+  color:var(--reader-ink);
+  font-size:15px;
+  line-height:1.85;
+  overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+#class-journal .ws-parent .report-reader-layout > :is(.report-reader-document,.report-reader-feedback) { min-width:0; margin:0; padding:28px; }
+#class-journal .ws-parent .report-reader-document { background:#fff; }
+#class-journal .ws-parent .report-reader-feedback { display:flex; flex-direction:column; gap:16px; background:#f6f7fa; border-left:1px solid #e4e7ec; }
+#class-journal .ws-parent .report-reader-layout :is(h4,h5) { margin:0 0 12px; color:var(--reader-ink); font-size:16px; line-height:1.5; font-weight:650; }
+#class-journal .ws-parent .report-reader-layout p { margin:0 0 12px; font-size:15px; line-height:1.85; }
+#class-journal .ws-parent .report-reader-layout p:last-child { margin-bottom:0; }
+#class-journal .ws-parent .report-reader-layout blockquote { margin:0; padding:0; border:0; background:none; border-radius:0; font-size:16px; line-height:1.9; color:var(--reader-ink); white-space:pre-wrap; }
+#class-journal .ws-parent .report-reader-document > * + * { margin-top:28px; }
+#class-journal .ws-parent .report-reader-document .report-reader-document-title { margin:0 0 28px; color:var(--reader-ink); font-size:24px; line-height:1.5; }
+#class-journal .ws-parent .report-reader-document > .report-final-answer { margin:0; padding:0; border:0; border-radius:0; background:none; }
+#class-journal .ws-parent .report-reader-document .report-reader-followups { margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec; }
+#class-journal .ws-parent .report-reader-document .report-followup { margin:20px 0 0; padding:0; border:0; }
+#class-journal .ws-parent .report-reader-document .report-followup + .report-followup { padding-top:20px; border-top:1px solid #e4e7ec; }
+#class-journal .ws-parent .report-reader-document .report-followup-question { display:block; margin-bottom:12px; }
+#class-journal .ws-parent .report-reader-document .report-step-label { display:inline-block; margin-bottom:8px; padding:2px 8px; font-size:12px; }
+#class-journal .ws-parent .report-reader-document .report-followup-question p { font-weight:500; }
+#class-journal .ws-parent .report-reader-document .report-student-response { margin:0; padding:16px; border:1px solid #e7ebef; border-radius:8px; background:#fafbfc; }
+#class-journal .ws-parent .report-reader-layout .report-reader-empty,
+#class-journal .ws-parent .report-reader-layout blockquote[data-empty=true] { font-size:14px; color:var(--reader-muted); }
+#class-journal .ws-parent .report-reader-layout .report-reader-panel,
+#class-journal .ws-parent .report-reader-layout .report-explanation-section { display:block; margin:0; padding:20px; border:1px solid #e4e7ec; border-radius:10px; background:#fff; }
+#class-journal .ws-parent .report-reader-layout .report-explanations { margin:0; padding:0; border:0; background:none; }
+#class-journal .ws-parent .report-reader-layout .report-explanation-title { margin:0 0 16px; color:var(--reader-muted); font-size:14px; font-weight:600; }
+#class-journal .ws-parent .report-reader-layout .report-explanation-sections { display:grid; gap:16px; margin:0; }
+#class-journal .ws-parent .report-reader-layout .report-explanation-copy,
+#class-journal .ws-parent .report-reader-layout .report-explanation-copy p { font-size:16px; line-height:1.85; }
+#class-journal .ws-parent .report-reader-layout .report-explanation-copy :is(ul,ol) { padding-left:20px; margin:0; }
+#class-journal .ws-parent .report-reader-layout .report-explanation-copy li + li { margin-top:12px; }
+#class-journal .ws-parent .report-reader-layout .report-reader-verdict { display:inline-block; padding:5px 10px; border-radius:6px; background:#eef1f5; font-size:14px; font-weight:650; }
+#class-journal .ws-parent .report-reader-verdict[data-judgment=CORRECT] { color:#14694c; background:#eaf5ef; }
+#class-journal .ws-parent .report-reader-verdict[data-judgment=PARTIAL] { color:#885800; background:#fff4db; }
+#class-journal .ws-parent .report-reader-verdict[data-judgment=RETHINK] { color:#ab3348; background:#fceef1; }
+#class-journal .ws-parent .report-reader-elements { margin:0; padding:0; list-style:none; }
+#class-journal .ws-parent .report-reader-elements li + li { margin-top:8px; }
+#class-journal .ws-parent .report-reader-layout .report-reflection-note h4 { margin-bottom:12px; }
+#class-journal .ws-parent .report-reader-layout .report-difficulty { display:inline-block; margin-bottom:8px; }
+#class-journal .ws-parent .report-difficulty[data-difficulty="쉬웠어요"] { color:#24613e; background:#eaf5ed; border-color:#bfdcc8; }
+#class-journal .ws-parent .report-difficulty[data-difficulty="보통"] { color:#875411; background:#fff3dd; border-color:#ebd4aa; }
+#class-journal .ws-parent .report-difficulty[data-difficulty="어려웠어요"] { color:#a33643; background:#fceef0; border-color:#efc7ce; }
+#class-journal .ws-parent .report-evidence-item + .report-evidence-item { margin-top:32px; padding-top:28px; border-top:1px solid #dce3df; }
+#class-journal .ws-parent .report-evidence-heading { display:flex; align-items:flex-start; gap:12px; padding:18px 20px; border-radius:12px; background:#f0f5f1; color:#244b36; }
+#class-journal .ws-parent .report-evidence-heading > svg { flex-shrink:0; margin-top:3px; }
+#class-journal .ws-parent .report-evidence-heading > h3 { margin:0; font-size:20px; line-height:1.5; color:inherit; }
+#class-journal .ws-parent .report-evidence-meta { display:flex; flex-wrap:wrap; gap:8px 16px; margin:14px 0 28px; color:#68717d; font-size:13px; font-variant-numeric:tabular-nums; }
+#class-journal .ws-parent .report-evidence-response > h4 { margin:0 0 18px; color:#303744; font-size:16px; }
+#class-journal .ws-parent .report-evidence-response > blockquote { margin:0; padding:0; border:0; background:transparent; }
+#class-journal .ws-parent .report-evidence-step + .report-evidence-step { margin-top:22px; padding-top:20px; border-top:1px solid #e6ebef; }
+#class-journal .ws-parent .report-evidence-step .report-evidence-prompt { margin:0 0 8px; color:#3c6682; font-size:14px; font-weight:650; line-height:1.6; }
+#class-journal .ws-parent .report-evidence-step .report-evidence-answer { margin:0; color:#303744; font-size:16px; line-height:1.9; white-space:pre-wrap; overflow-wrap:anywhere; }
+#class-journal .ws-parent .report-evidence-step[data-final=true] { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; padding:14px 18px; border:0; border-radius:10px; background:#f0f5f1; }
+#class-journal .ws-parent .report-evidence-step[data-final=true] > p { margin:0; color:#244b36; font-weight:650; }
+#class-journal .ws-parent .report-reader-layout summary { color:var(--reader-muted); font-size:14px; cursor:pointer; }
+#class-journal .ws-parent .report-reader-layout summary:focus-visible { outline:2px solid #245f3d; outline-offset:4px; }
+#class-journal .ws-parent .report-reader-layout details[open] > summary { margin-bottom:16px; }
+@media(max-width:760px) {
+  #class-journal .ws-parent .report-reader-heading { gap:12px; padding:20px; }
+  #class-journal .ws-parent .report-reader-heading > svg { width:22px; height:22px; margin-top:4px; }
+  #class-journal .ws-parent .report-reader-heading .daily-navigation-heading { font-size:21px; }
+  #class-journal .ws-parent .report-reader-layout { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .report-reader-layout > :is(.report-reader-document,.report-reader-feedback) { padding:20px; }
+  #class-journal .ws-parent .report-reader-feedback { border-left:0; border-top:1px solid #e4e7ec; }
+  #class-journal .ws-parent .report-reader-layout .report-reader-panel,
+  #class-journal .ws-parent .report-reader-layout .report-explanation-section { padding:16px; }
+}

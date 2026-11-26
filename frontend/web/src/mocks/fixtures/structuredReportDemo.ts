@@ -6,6 +6,8 @@ import { fixtureStore, persistFixtureState } from './student.ts'
 import { saveSharing } from './sharing.ts'
 import { generatedReportDetails, makeWeekly, reports } from './parent.ts'
 import demoData from './structuredReportSamples.json' with { type: 'json' }
+import { structuredReportSummary } from './structuredReportSamples.ts'
+export { structuredReportSamples } from './structuredReportSamples.ts'
 
 export const structuredReportChild: Child = { id: 'demo-report-grade5', nickname: '리포트 예시', grade: demoData.grade, birthYear: 2015 }
 export const structuredReportPeriod = { from: '2026-11-09', to: '2026-11-15' }
@@ -50,11 +52,14 @@ export function seedStructuredReportDemo(cache?: GemmaReportCache) {
       ? { ...generated, model: cache.model, prompt: cache.promptVersion } : null)
   }
   const report = makeWeekly(child, structuredReportPeriod)
+  // These shared writing samples have no assigned story theme or scheduled weekdays.
+  // The generic mock theme must not imply that a real themed week was completed.
+  report.themeSummary = null
   const items = report.explanations?.items ?? []
   report.inclusionRule = items.length
     ? '기간 내 학습 기록을 바탕으로 정리한 리포트입니다.'
     : '기간 내 학습 기록을 바탕으로 정리한 리포트입니다. 상세 설명을 아직 불러오지 못했습니다.'
-  report.narrative = { text: '세 글에서 생활 속 경험과 물건의 특징을 살펴봤어요. 도서관 글에는 이동 시간과 이용할 사람을 덧붙였고, 스마트폰 글에는 장점과 시간 약속을 함께 적었어요. 필통 글은 소중한 이유를 더 이야기해 볼 수 있어요.', source: 'TEMPLATE', modelExplanation: null }
+  report.narrative = { text: structuredReportSummary, source: 'TEMPLATE', modelExplanation: null }
   report.generatedAt = report.revisions[0].generatedAt = '2026-11-16T00:00:00+09:00'
   report.versions = { prompt: cache?.promptVersion ?? 'structured-report-detail@2', model: items.length ? cache?.model ?? null : null }
   reports.set(report.reportId, [report])

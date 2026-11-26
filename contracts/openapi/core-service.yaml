@@ -12529,6 +12529,15 @@ components:
           type: [string, "null"]
           enum: [MON, TUE, WED, THU, FRI, null]
           description: "원래 예정 요일. EXTRA·이전 리포트는 null (#845)"
+        theme:
+          type: [object, "null"]
+          description: 풀 당시 고정된 테마 ID·버전·제목과 생성 당시 이야기 종류. EXTRA·이전 리포트는 null 또는 생략. 원문 비공개여도 유지한다.
+          required: [themeId, versionId, title]
+          properties:
+            themeId: {type: string, format: uuid}
+            versionId: {type: string, format: uuid}
+            title: {type: string}
+            storyType: {type: [string, 'null'], description: '생성 당시 이야기 종류 코드. 미분류·이전 저장본은 null 또는 생략.'}
         context:
           enum:
           - THEME_DAY

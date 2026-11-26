@@ -23,15 +23,24 @@ test('다른 날 푼 문제의 예정 요일만 보이며 이전 리포트는 �
     }
   })
   await page.getByRole('list', { name: '리포트 일자' }).getByRole('button').first().click()
-  const questions = page.locator('details.report-answer-comparison > summary')
-  await expect(questions).toHaveCount(5)
-  for (const summary of await questions.all()) await summary.click()
-  await expect(page.getByText('화요일 문제 · 목요일에 풀었어요', { exact: true })).toBeVisible()
-  await expect(page.getByText('월요일 문제 · 목요일에 풀었어요', { exact: true })).toBeVisible()
-  for (const title of ['당일 문제', '추가 문제', '이전 리포트 문제']) {
-    const card = page.locator('details.report-answer-comparison').filter({ has: page.locator('summary').getByText(title, { exact: true }) })
-    await expect(card).toBeVisible()
-    await expect(card.getByText(/에 풀었어요/)).toHaveCount(0)
+  await page.getByRole('button', { name: '전체 5개 보기', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '일일 리포트 전체 보기', exact: true })
+  const seen: number[] = []
+  await expect(page.locator('[data-daily-group]:enabled').first()).toBeVisible()
+  const groups = await dialog.locator('[data-daily-group]:enabled').count()
+  for (let g = 0; g < groups; g++) {
+    await dialog.locator('[data-daily-group]:enabled').nth(g).click()
+    const indices = await dialog.locator('[data-daily-problem-link]').evaluateAll(els => els.map(e => Number(e.getAttribute('data-daily-problem-link'))))
+    for (const index of indices) {
+      await dialog.locator(`[data-daily-problem-link="${index}"]`).click()
+      const card = dialog.locator('[data-daily-problem-index]')
+      if (index < 2) await expect(card.getByText(`${index === 0 ? '화' : '월'}요일 문제 · 목요일에 풀었어요`, { exact: true })).toBeVisible()
+      else await expect(card.getByText(/에 풀었어요/)).toHaveCount(0)
+      seen.push(index)
+      await dialog.getByRole('navigation', { name: '문제 탐색 경로' }).getByRole('button').nth(1).click()
+    }
+    await dialog.getByRole('button', { name: '전체 리포트', exact: true }).click()
   }
+  expect(seen.sort()).toEqual([0, 1, 2, 3, 4])
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })

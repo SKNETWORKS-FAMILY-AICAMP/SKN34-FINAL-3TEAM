@@ -11,8 +11,8 @@ import java.util.UUID
  */
 @Repository
 class RecordRepository(private val mapper: RecordMapper) {
-    fun findScheduledDays(attemptIds: List<UUID>): Map<UUID, com.sagomungchi.learning.theme.domain.ThemeDay> =
-        if (attemptIds.isEmpty()) emptyMap() else mapper.findScheduledDays(attemptIds).associate { it.attemptId to it.day }
+    fun findDailyThemes(attemptIds: List<UUID>): Map<UUID, DailyThemeRow> =
+        if (attemptIds.isEmpty()) emptyMap() else mapper.findDailyThemes(attemptIds).associateBy { it.attemptId }
 
     /** 일일 리포트는 답변 제출일 대신 완료일로 조회한다 (#391). */
     fun findCompleted(studentId: UUID, period: Period): List<UUID> =

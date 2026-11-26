@@ -68,7 +68,7 @@ export function PaymentManagement({ child, section = 'all' }: { child?: Child; s
   const own = subscriptions.data?.items.filter(s => !child || s.childId === child.id) ?? []
   const rows = history.data?.items.filter(p => !child || p.childId === child.id) ?? []
   return <div className="payment-management">
-    {section !== 'history' && <section id="current-subscriptions" aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 이용 가능한 플랜은 아래에서 확인해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} />)}</section>}
+    {section !== 'history' && <section id="current-subscriptions" aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 이용 가능한 이용권 목록에서 선택해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} />)}</section>}
     {section !== 'subscriptions' && <section aria-label="결제 및 환불 내역"><h2>결제·취소·환불 내역</h2><p>현재 선택한 자녀의 거래입니다. 다른 자녀의 내역은 오른쪽 상단에서 자녀를 바꿔 확인해 주세요.</p><QueryFeedback query={history} /><ErrorNotice error={checkError} />
       {history.data && !rows.length && <p>이 페이지에 해당 자녀의 결제 내역이 없습니다.</p>}
       <div className="payment-history">{rows.map(p => <article key={p.orderId} className="payment-panel"><div className="payment-history-heading"><h3>{p.subscription?.product?.name ?? '이용권 결제'}</h3><strong>{won(p.amount)}</strong></div><p>{paymentStateLabel(p)}</p><small>대상 자녀 {childName(p.childId)} · 승인일 {p.approvedAt ? `${date(p.approvedAt)} (한국 시간)` : '승인 전'}</small><details><summary>거래 자세히 보기</summary><p>주문번호 {p.orderId}</p></details>

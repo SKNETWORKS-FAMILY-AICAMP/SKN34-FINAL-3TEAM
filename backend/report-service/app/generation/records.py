@@ -93,6 +93,22 @@ class ReflectionRecord:
 
 
 @dataclass(frozen=True)
+class ThemeReference:
+    theme_id: UUID
+    version_id: UUID
+    title: str
+    story_type: str | None = None
+
+    def payload(self) -> dict:
+        return {
+            "themeId": str(self.theme_id),
+            "versionId": str(self.version_id),
+            "title": self.title,
+            "storyType": self.story_type,
+        }
+
+
+@dataclass(frozen=True)
 class AttemptRecord:
     id: UUID
     student_id: UUID
@@ -108,6 +124,7 @@ class AttemptRecord:
     scheduled_day: str | None = None
     mission_question: str | None = None
     explanation_requirements: dict[UUID, str] = field(default_factory=dict)
+    theme: ThemeReference | None = None
 
 
 @dataclass(frozen=True)

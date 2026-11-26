@@ -157,7 +157,7 @@ test('#915 학습 현황 카드 이름·동의 체크박스 크기·문의 결�
   expect(await back.evaluate(el => getComputedStyle(el).textDecorationLine)).toContain('underline')
   // 자녀 추가의 동의 체크박스는 24×24px 이상(target-size)
   await navigate(page, `/parent/settings${scope}`)
-  await page.getByRole('button', { name: '자녀 추가 등록', exact: true }).click()
+  await page.getByRole('button', { name: /자녀 추가 등록/ }).click()
   const boxes = page.getByRole('dialog', { name: '자녀 프로필 등록' }).getByRole('checkbox')
   await expect(boxes.first()).toBeVisible()
   for (const box of await boxes.all()) {

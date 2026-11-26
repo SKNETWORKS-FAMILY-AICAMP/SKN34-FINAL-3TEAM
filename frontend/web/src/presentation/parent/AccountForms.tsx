@@ -251,7 +251,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     </section>
   )
 }
-export function ProfileSettings({ child }: { child?: Child }) {
+export function ProfileSettings({ child, section }: { child?: Child; section?: 'parent' | 'child' }) {
   const [name, setName] = useState(''),
     [nickname, setNickname] = useState(child?.nickname ?? ''),
     [grade, setGrade] = useState(child?.grade ?? 3),
@@ -263,7 +263,7 @@ export function ProfileSettings({ child }: { child?: Child }) {
     me = useParentQuery(['me'], () => parentApi.me())
   return (
     <div className="ws-grid">
-      <section className="ws-card">
+      {section !== 'child' && <section className="ws-card">
         <h2>보호자 정보</h2>
         <QueryFeedback query={me} />
         <p>현재 이름: {me.data?.name ?? '확인 중'}</p>
@@ -291,8 +291,8 @@ export function ProfileSettings({ child }: { child?: Child }) {
           </button>
           <ErrorNotice error={updateMe.error} />
         </form>
-      </section>
-      {child && <section className="ws-card">
+      </section>}
+      {child && section !== 'parent' && <section className="ws-card">
         <h2>{child.nickname}의 프로필</h2>
         <p>현재 별명: {child.nickname}</p>
 

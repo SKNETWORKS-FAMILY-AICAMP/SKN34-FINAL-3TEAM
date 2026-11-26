@@ -1,14 +1,14 @@
 import {test,expect} from '@playwright/test'
 import demoData from '../../src/mocks/fixtures/structuredReportSamples.json' with { type: 'json' }
 
-test('shows cached RunPod details for the matching mock answer', async ({ page }) => {
+test('shows cached RunPod details for the matching mock answer @responsive', async ({ page, context }, info) => {
   const [library, phone] = demoData.samples
   const detail = JSON.stringify({
     analysis: '도서관 글에 이동 시간과 이용 목적이 담겨 있어요.',
     improvement_points: null,
     next_steps: ['도서관에서 함께 하고 싶은 일을 물어보세요.'],
   })
-  await page.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({
+  await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({
     json: {
       model: 'explain',
       promptVersion: 'structured-report-detail@2',
@@ -22,13 +22,36 @@ test('shows cached RunPod details for the matching mock answer', async ({ page }
   }))
 
   await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5&reportId=demo-report-grade5-2026-11-09')
-  const picker = page.getByRole('combobox', { name: '주간 리포트 활동 선택' })
+  await page.getByRole('button', { name: '돌아보기 기록 3개' }).click()
+  const dialog = page.getByRole('dialog', { name: '주간 리포트 전체 보기' })
+  await dialog.getByRole('button', { name: new RegExp(library.title) }).click()
+  const picker = dialog.locator('.weekly-activity-picker > summary')
   const explanation = page.getByRole('region', { name: '대표 답변 설명' })
-  await picker.selectOption(library.attemptId)
   await expect(explanation).toContainText('도서관 글에 이동 시간과 이용 목적이 담겨 있어요.')
   await expect(explanation).toContainText('도서관에서 함께 하고 싶은 일을 물어보세요.')
-  await picker.selectOption(phone.attemptId)
+  await page.screenshot({ path: info.outputPath('weekly-answer-feedback.png') })
+  await picker.click()
+  await dialog.getByRole('list', { name: '활동 선택 목록' }).getByRole('button', { name: new RegExp(phone.title) }).click()
   await expect(explanation).toContainText('이 활동의 답변에 연결된 대표 답변 설명이 없습니다.')
+})
+
+test('long weekly explanations keep readable paragraphs and no horizontal overflow @responsive', async ({ page, context }, info) => {
+  const library = demoData.samples[0]
+  const sentence = '도서관까지 이동하는 시간과 함께 이용할 사람을 글에 적었어요. 친구들과 숙제를 하고 어른들은 신문을 읽을 수 있다는 까닭을 제시했어요. '
+  await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ json: {
+    model: 'test-only', promptVersion: 'layout-test', items: [{ attemptId: library.attemptId, answerVersion: library.texts.length, sourceText: library.texts.at(-1), text: sentence.repeat(8) }],
+  } }))
+  await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5')
+  await page.getByRole('button', { name: '대표 답변 설명 1개' }).click()
+  const dialog = page.getByRole('dialog', { name: '주간 리포트 전체 보기' })
+  await dialog.getByRole('button', { name: /우리 동네에 필요한 시설/ }).click()
+  const copy = dialog.locator('.report-explanation-copy')
+  await expect(copy.locator('p').nth(1)).toBeAttached()
+  expect((await copy.innerText()).replace(/\s/g, '')).toBe(sentence.repeat(8).replace(/\s/g, ''))
+  const feedback = dialog.locator('.report-reader-feedback')
+  await feedback.scrollIntoViewIfNeeded()
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: info.outputPath('weekly-long-explanation.png') })
 })
 
 test('opens the weekly report inline before opening history or chat @responsive', async ({ page }, info) => {
@@ -39,6 +62,15 @@ test('opens the weekly report inline before opening history or chat @responsive'
   await expect(detail.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
   await expect(detail.locator('.report-narrative-text')).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(detail.locator('.weekly-key-metrics dd').first()).toContainText('3')
+  await expect(detail.locator('.weekly-thinking-chart li')).toHaveCount(5)
+  await expect(detail.getByRole('heading', { name: '이번 주 테마', exact: true })).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('weekly-overview-full.png'), fullPage: true })
+  if (info.project.name === 'laptop') {
+    await page.setViewportSize({ width: 1706, height: 750 })
+    await page.screenshot({ path: info.outputPath('weekly-overview-user-1706.png'), fullPage: true })
+    await page.setViewportSize({ width: 1440, height: 900 })
+  }
   expect(new URL(page.url()).searchParams.has('reportId')).toBe(false)
 
   const period = detail.locator('.report-period-picker > summary')
@@ -50,12 +82,14 @@ test('opens the weekly report inline before opening history or chat @responsive'
   await expect(dates).toBeHidden()
   await expect(period).toBeFocused()
 
-  await expect(detail.getByRole('heading', { name: '활동별 기록' })).toBeVisible()
-  await expect(detail.getByRole('region', { name: '대표 답변 설명' })).toBeVisible()
+  await expect(detail.getByRole('region', { name: '활동별 기록' })).toHaveCount(0)
   const content = detail.getByRole('button', { name: /내용 보기$/ }).first()
   await content.click()
   const modal = page.getByRole('dialog', { name: '리포트 항목 내용' })
   await expect(modal).toBeVisible()
+  await expect(modal.locator('.report-evidence-heading').first()).toBeVisible()
+  await expect(modal.getByRole('heading', { name: '아이의 답변', exact: true }).first()).toBeVisible()
+  await page.screenshot({ path: info.outputPath('report-evidence-reader.png') })
   await expect(modal).toHaveCSS('overflow-y', 'hidden')
   await expect(modal.getByRole('region')).toHaveCSS('scrollbar-width', 'none')
   await expect(modal.locator('.cj-modal-scroll-marker')).toHaveCSS('opacity', '0')
@@ -84,25 +118,45 @@ test('opens the weekly report inline before opening history or chat @responsive'
   expect(errors).toEqual([])
 })
 
-test('weekly records keep reflection and quote in the selected activity @responsive',async({page},info)=>{
+test('weekly records keep reflection and quote in the selected activity @responsive',async({page,context},info)=>{
+ await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ status: 404 }))
  await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5&reportId=demo-report-grade5-2026-11-09')
- const modal=page.getByRole('region',{name:'리포트 내용'})
+ await page.getByRole('button',{name:'돌아보기 기록 3개'}).click()
+ const modal=page.getByRole('dialog',{name:'주간 리포트 전체 보기'})
  await expect(modal).toBeVisible()
- await expect(modal.getByText('계산 근거',{exact:true})).toHaveCount(0)
- await expect(modal.locator('.report-count-list')).toContainText('전체 3건 중')
- const picker=modal.getByRole('combobox',{name:'주간 리포트 활동 선택'})
- await expect(picker.locator('option')).toHaveCount(3)
- await picker.selectOption('structured-report-demo-library')
+ await modal.getByRole('button',{name:/우리 동네에 필요한 시설/}).click()
+ const picker=modal.locator('.weekly-activity-picker > summary')
+ await picker.click()
+ const choices=modal.getByRole('list',{name:'활동 선택 목록'})
+ await expect(choices.getByRole('button')).toHaveCount(3)
+ const buttonBox=(await picker.boundingBox())!
+ const listBox=(await choices.boundingBox())!
+ expect(listBox.y).toBeGreaterThanOrEqual(buttonBox.y+buttonBox.height)
+ await choices.getByRole('button',{name:/우리 동네에 필요한 시설/}).click()
  const pair=modal.locator('.weekly-activity-pair')
  await expect(pair).toContainText('멀리 간다고만 쓰지 않고')
  await expect(pair).toContainText('우리 동네에는 도서관이 필요하다')
  await expect(pair).not.toContainText('밤늦게까지 영상을')
- await picker.selectOption('structured-report-demo-phone')
+ await picker.click()
+ await choices.getByRole('button',{name:/스마트폰 사용 시간을/}).click()
  await expect(pair).toContainText('좋은 점도 있다는 생각')
  await expect(pair).toContainText('밤늦게까지 영상을')
  await expect(pair).not.toContainText('우리 동네에는 도서관')
  await pair.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('weekly-selected-activity.png')})
  expect(await modal.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true)
+ await modal.getByRole('button',{name:'뒤로 가기',exact:true}).click()
+ await expect(pair).toContainText('우리 동네에는 도서관이 필요하다')
+ await modal.getByRole('button',{name:'앞으로 가기',exact:true}).click()
+ await expect(pair).toContainText('밤늦게까지 영상을')
+ await picker.click()
+ await page.keyboard.press('Escape')
+ await expect(choices).toBeHidden()
+ await expect(picker).toBeFocused()
+ await modal.getByRole('button',{name:'창 닫기'}).click()
+ await expect(page.getByRole('button',{name:'돌아보기 기록 3개'})).toBeFocused()
+ await page.getByRole('button',{name:'따져 보기 1개 활동 보기'}).click()
+ await expect(page.getByRole('list',{name:'따져 보기 활동 목록'}).getByRole('button')).toHaveCount(1)
+ await page.screenshot({path:info.outputPath('weekly-category-dialog.png')})
 })
 
 test('switches between completed daily and weekly reports from the title @responsive', async ({ page }) => {

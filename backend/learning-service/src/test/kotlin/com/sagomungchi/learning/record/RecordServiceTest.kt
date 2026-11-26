@@ -112,6 +112,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, records.getValue(attempts[0].id).scheduledDay)
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.TUE, records.getValue(attempts[1].id).scheduledDay)
         assertNull(records.getValue(attempts[2].id).scheduledDay)
+        assertTrue(records.values.all { it.theme == null }) // 고정 버전 없는 이전 기록에 현재 이름을 붙이지 않는다.
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.THU, records.getValue(attempts[3].id).scheduledDay)
         val response = com.sagomungchi.learning.record.controller.RecordAttemptResponse.from(records.getValue(attempts[1].id))
         assertEquals("TUE", ObjectMapper().findAndRegisterModules().valueToTree<com.fasterxml.jackson.databind.JsonNode>(response)["scheduledDay"].asText())
@@ -131,6 +132,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val (moved, removed, unpinned) = (0..2).map { attempt(title = "재게시 $it") }
         val theme = rows.publishedTheme(listOf(moved, removed, unpinned).map { it.missionId }, week.from)
         val v1 = jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, theme)
+        jdbc.update("UPDATE weekly_theme_version SET title='풀 당시 테마' WHERE id=?", v1)
         val v2 = UUID.randomUUID()
         // 재게시: 옮긴 미션은 월→목, 뺀 미션은 없음, 고정 없는 미션은 수→월
         jdbc.update(
@@ -162,6 +164,32 @@ class RecordServiceTest : PostgresRepositoryTest() {
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.THU, records.getValue(after.id))
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.TUE, records.getValue(removed.id))
         assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, records.getValue(unpinned.id))
+        val themed = service.dailyAttempts(student, Period(completed.toLocalDate(), completed.toLocalDate()), 0, 20)
+            .items.associateBy { it.detail.attempt.id }
+        assertEquals("풀 당시 테마", themed.getValue(moved.id).theme?.title)
+        assertEquals("풀 당시 테마", themed.getValue(removed.id).theme?.title)
+        assertEquals(v1, themed.getValue(moved.id).theme?.versionId)
+        assertEquals(theme, themed.getValue(moved.id).theme?.themeId)
+        assertEquals("테마", themed.getValue(after.id).theme?.title)
+        assertEquals(v2, themed.getValue(after.id).theme?.versionId)
+        assertNull(themed.getValue(unpinned.id).theme)
+        assertNull(themed.getValue(moved.id).theme?.storyType)
+        val draftId = UUID.randomUUID()
+        jdbc.update("""INSERT INTO theme_draft(id,grade,week_start,source,status,input,attempts,theme_id,created_at,updated_at)
+            VALUES (?,'G5',?,'ADMIN','READY',?::jsonb,1,?,?,?)""",
+            draftId, week.from, """{"topic":"줄거리: 소리 탐정 / 뭉치 역할: 탐정 / 장소: 학교 / 밝힐 것: 복도에서 들린 소리 / 갈래: 물건"}""",
+            theme, rows.now, rows.now)
+        fun storyType() = service.dailyAttempts(student, Period(completed.toLocalDate(), completed.toLocalDate()), 0, 20)
+            .items.first { it.detail.attempt.id == moved.id }.theme?.storyType
+        assertNull(storyType()) // 채택하지 않은 생성 요청을 분류 근거로 사용하지 않는다.
+        jdbc.update("UPDATE theme_draft SET status='ADOPTED' WHERE id=?", draftId)
+        assertEquals("SOUND", storyType()) // 문제나 테마 제목이 아니라 채택된 생성 주제의 종류.
+        jdbc.update("UPDATE theme_draft SET input='{\"topic\":\"소리 탐정 같은 이야기\"}'::jsonb WHERE id=?", draftId)
+        assertNull(storyType()) // 자유 글을 키워드로 추측해 분류하지 않는다.
+        val response = com.sagomungchi.learning.record.controller.RecordAttemptResponse.from(themed.getValue(moved.id))
+        val json = ObjectMapper().findAndRegisterModules().valueToTree<com.fasterxml.jackson.databind.JsonNode>(response)
+        assertEquals("풀 당시 테마", json["theme"]["title"].asText())
+        assertEquals(v1.toString(), json["theme"]["versionId"].asText())
     }
 
     @Test

@@ -120,12 +120,20 @@ class DailyAnswerTime(Response):
     writing_seconds: int = Field(ge=0)
 
 
+class DailyTheme(Response):
+    theme_id: UUID
+    version_id: UUID
+    title: str
+    story_type: str | None = None
+
+
 class DailyProblem(ItemResponse):
     mission_id: UUID
     attempt_id: UUID
     title: str
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None
     scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
+    theme: DailyTheme | None = None
     judgment: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"] | None
     followups: list[DailyFollowup]
     final_answer: str | None

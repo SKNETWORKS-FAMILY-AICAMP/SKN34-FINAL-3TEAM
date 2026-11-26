@@ -81,14 +81,34 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
 async function openReport(page: Page) {
   await expect(page.getByRole('region', { name: '리포트 내용', exact: true })).toBeVisible()
 }
+
+async function openWeeklyActivity(page: Page, category: string, title: string) {
+  await page.getByRole('navigation', { name: '주간 기록 바로가기' }).getByRole('button', { name: new RegExp(`^${category} `) }).click()
+  const dialog = page.getByRole('dialog', { name: '주간 리포트 전체 보기', exact: true })
+  await dialog.getByRole('list', { name: `${category} 활동 목록` }).getByRole('button').filter({ hasText: title }).click()
+}
+
+async function chooseWeeklyActivity(page: Page, title: string) {
+  await page.getByLabel('주간 리포트 활동 선택', { exact: true }).click()
+  await page.getByRole('list', { name: '활동 선택 목록' }).getByRole('button').filter({ hasText: title }).click()
+}
 test('일일 리포트가 문제 항목 ID로 해당 답변 근거를 연다', async ({page, context}) => {
   await parentServer(context, 'DAILY', true)
   await context.route('**/reports/report-1/evidence/daily-item-1', route => route.fulfill({json: {items: [{attemptId: 'attempt-1', answerId: 'answer-1', kind: 'ANSWER', available: true, quote: '해당 문제의 원문 근거'}]}}))
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  await page.locator('summary').getByText('나무는 어떤 도움을 줄까요?', {exact:true}).click()
+  await page.getByRole('button', { name: '전체 1개 보기', exact: true }).click()
+  await page.locator('[data-daily-group]:enabled').click()
+  await page.locator('[data-daily-problem-link="0"]').click()
   await page.getByRole('button', {name: '내용', exact: true}).click()
   await expect(page.getByText('해당 문제의 원문 근거', {exact: false})).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: '리포트 항목 내용', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '일일 리포트 전체 보기', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '내용', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '전체 1개 보기', exact: true })).toBeFocused()
 })
 
 test('문의 응답이 늦어도 신고 초안과 유형을 보존하고 오래된 접수 내역을 연다', async ({page, context}) => {
@@ -189,15 +209,20 @@ test('마지막 미읽음 알림을 읽으면 남은 알림 페이지로 돌아�
   await expect(page.getByRole('navigation',{name:'알림 페이지'})).toContainText('1쪽')
 })
 
-test('프로필 초안과 QR 발급 당시 자녀를 보존한다', async ({page,context}) => {
+test('프로필 편집 항목 전환 시 초안과 QR 발급 당시 자녀를 보존한다', async ({page,context}) => {
   await parentServer(context)
   await context.route('**/student-devices/pairings', route => route.fulfill({json:{pairingCode:'12345678',expiresAt:new Date(Date.now()+600_000).toISOString()}}))
   await page.goto(`/parent/settings?childId=${otherId}`)
+  await page.getByRole('button', { name: '달빛 프로필 설정' }).click()
+  const editor = page.getByRole('dialog', { name: '달빛 프로필 설정' })
+  await editor.getByRole('button', { name: '자녀 정보', exact: true }).click()
   await page.getByLabel('새 자녀 별명',{exact:true}).fill('작성 중인 별명')
-  await page.getByRole('tab',{name:'공개·동의'}).click()
-  await page.getByRole('tab',{name:'프로필'}).click()
+  await editor.getByRole('button', { name: '뭉치 변경', exact: true }).click()
+  await editor.getByRole('button', { name: '자녀 정보', exact: true }).click()
   await expect(page.getByLabel('새 자녀 별명',{exact:true})).toHaveValue('작성 중인 별명')
+  await editor.getByRole('button', { name: '창 닫기' }).click()
   await page.goto(`/parent/devices?childId=${otherId}`)
+  await page.getByRole('button', { name: '기기 연결', exact: true }).click()
   await page.getByRole('button',{name:'등록 코드 만들기'}).click()
   const targets = page.getByText(/이 코드로 등록할 자녀/)
   await expect(targets).toContainText('별빛, 달빛')
@@ -280,7 +305,7 @@ test('로고는 홈으로 연결하고 자녀 추가는 계정·자녀 설정에
   await parentServer(context)
   await page.goto(`/parent/settings?childId=${childId}&from=2026-11-01&to=2026-11-09`)
   await expect(page.locator('.ws-header').getByRole('button', { name: '자녀 추가 등록', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: '자녀 추가 등록', exact: true }).click()
+  await page.getByRole('button', { name: /자녀 추가 등록/ }).click()
   await expect(page.getByRole('dialog', { name: '자녀 프로필 등록' })).toBeVisible()
   await page.getByRole('button', { name: '창 닫기' }).click()
   await page.getByRole('link', { name: '사고뭉치 홈', exact: true }).filter({ visible: true }).click()
@@ -288,14 +313,18 @@ test('로고는 홈으로 연결하고 자녀 추가는 계정·자녀 설정에
   expect(new URL(page.url()).searchParams.get('from')).toBe('2026-11-01')
 })
 
-test('PIN 자녀는 상단 선택기로 한 명만 고르고 Google 없이 선택한 자녀에게 저장한다', async ({ page, context }) => {
+test('자녀별 PIN 관리에서 한 명만 편집하고 Google 없이 해당 자녀에게 저장한다', async ({ page, context }) => {
   const state = await parentServer(context)
   await page.goto(`/parent/devices?childId=${childId}`)
   const picker = page.getByRole('combobox', { name: '현재 자녀' })
   await expect(page.getByRole('group', { name: '자녀 선택' })).toHaveCount(0)
+  await expect(page.getByRole('form', { name: / PIN$/ })).toHaveCount(0)
+  await page.getByRole('button', { name: '별빛 PIN 관리', exact: true }).click()
   await expect(page.getByRole('form', { name: / PIN$/ })).toHaveCount(1)
   await page.getByLabel('별빛 새 PIN', { exact: true }).fill('5090')
+  await page.getByRole('dialog').getByRole('button', { name: '창 닫기' }).click()
   await picker.selectOption(otherId)
+  await page.getByRole('button', { name: '달빛 PIN 관리', exact: true }).click()
   await expect(page.getByLabel('달빛 새 PIN', { exact: true })).toHaveValue('')
   const form = page.getByRole('form', { name: '달빛 PIN', exact: true })
   await form.getByLabel('달빛 새 PIN', { exact: true }).fill('4831')
@@ -433,25 +462,29 @@ test('일일·주간 리포트에서 돌아보기 난이도를 화면 문구로 
       { ...reflection, difficulty: '쉬웠어요', text: '이유가 떠올랐어요.', attemptId: 'weekly-2' }] })
 
   await page.goto(`/parent/report?childId=${childId}&view=reports&reportId=report-1`)
-  const problems = page.locator('details.report-answer-comparison > summary')
-  await expect(problems).toHaveCount(2)
-  for (const item of await problems.all()) await item.click()
-  await expect(page.locator('details.report-answer-comparison').getByText('보통', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '전체 2개 보기', exact: true }).click()
+  await page.locator('[data-daily-group]:enabled').click()
+  await page.locator('[data-daily-problem-link="0"]').click()
+  await expect(page.locator('article.report-answer-comparison').getByText('보통', { exact: true })).toBeVisible()
   await expect(page.getByText('까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
+  await page.getByRole('navigation', { name: '문제 탐색 경로' }).getByRole('button').nth(1).click()
+  await page.locator('[data-daily-problem-link="1"]').click()
   await expect(page.getByText('다시 생각했어요.', { exact: true })).toBeVisible()
   await expect(page.getByText(/NORMAL|UNKNOWN_LEVEL/)).toHaveCount(0)
+  await page.getByRole('dialog', { name: '일일 리포트 전체 보기', exact: true }).getByRole('button', { name: '창 닫기', exact: true }).click()
   await page.locator('.report-period-picker > summary').click()
   await page.getByRole('button', { name: '주간', exact: true }).click()
   await page.getByRole('button', { name: '2026-11-09 ~ 2026-11-15', exact: true }).click()
+  await openWeeklyActivity(page, '돌아보기 기록', '활동 1')
   await expect(page.getByText('보통', { exact: true })).toBeVisible()
   await expect(page.getByText('까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
-  await page.getByLabel('주간 리포트 활동 선택').selectOption('weekly-2')
+  await chooseWeeklyActivity(page, '활동 2')
   await expect(page.getByText('쉬웠어요', { exact: true })).toBeVisible()
   await expect(page.getByText('이유가 떠올랐어요.', { exact: true })).toBeVisible()
   await expect(page.getByText(/NORMAL/)).toHaveCount(0)
 })
 
-test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보완점이 없으면 생략한다 @responsive', async ({ page, context }) => {
+test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보완점이 없으면 생략한다 @responsive', async ({ page, context }, info) => {
   const { report } = await parentServer(context, 'WEEKLY')
   const content = { analysis: '나무가 그늘을 만든다는 구체적인 역할을 설명했어요.\n\n그늘에서 어떤 활동을 할 수 있는지 덧붙이면 생각을 더 자세히 전달할 수 있어요.',
     improvement_points: '그늘이 필요한 상황을 조금 더 풀어 볼 수 있어요.',
@@ -460,6 +493,7 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
     { ...explanation, answerId: 'no-difficulty', attemptId: 'no-difficulty', missionTitle: '이유를 연결한 글', text: JSON.stringify({ ...content, improvement_points: null }) }] }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
+  await openWeeklyActivity(page, '대표 답변 설명', explanation.missionTitle)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   const first = area.getByRole('article').first()
   await expect(first.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
@@ -470,17 +504,17 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
   await expect(first.locator('blockquote')).toBeVisible()
   await expect(first.locator('.report-explanation-section').first().locator('p')).toHaveCount(2)
   expect(parseFloat(await first.locator('.report-explanation-copy').first().evaluate(el => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16)
-  await page.getByLabel('주간 리포트 활동 선택').selectOption('no-difficulty')
+  await chooseWeeklyActivity(page, '이유를 연결한 글')
   await expect(area.getByRole('heading', { name: '보완할 지점', exact: true })).toHaveCount(0)
-  await page.getByLabel('주간 리포트 활동 선택').selectOption(explanation.attemptId)
+  await chooseWeeklyActivity(page, explanation.missionTitle)
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await first.scrollIntoViewIfNeeded()
     await expect(first.getByRole('heading', { name: '개선 방안', exact: true })).toBeVisible()
     expect(await first.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await page.getByRole('dialog').locator('.report-reader-heading').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: info.outputPath(`explanation-reader-${width}.png`) })
   }
-  await capture(page, 'report-explanation-sections')
-  await first.screenshot({ path: 'test-results/parent-navigation/report-explanation-card.png' })
 })
 
 test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으로 표시한다', async ({ page, context }) => {
@@ -489,6 +523,7 @@ test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으�
   report.verification = { numbersMatched: false, quotesMatched: false }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
+  await openWeeklyActivity(page, '대표 답변 설명', explanation.missionTitle)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('article')).toHaveCount(1)
   await expect(area.locator('blockquote')).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
@@ -501,23 +536,24 @@ test('#481: 주간 대표 답변 설명 카드의 미션·유형·인용·설명
   report.explanations = { state: 'INCLUDED', items: [explanation, { ...explanation, answerId: 'answer-two', attemptId: 'answer-two', thinkingType: 'CREATE', missionTitle: '새로운 나무집' }] }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
+  await openWeeklyActivity(page, '대표 답변 설명', explanation.missionTitle)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
-  await expect(page.getByLabel('주간 리포트 활동 선택').locator('option')).toHaveCount(2)
+  await expect(page.getByRole('list', { name: '활동 선택 목록', includeHidden: true }).getByRole('button', { includeHidden: true })).toHaveCount(2)
   await expect(area.getByRole('article')).toHaveCount(1)
-  await expect(page.locator('.weekly-activity-heading')).toContainText(explanation.missionTitle)
+  await expect(page.getByRole('dialog').locator('.report-reader-heading')).toContainText(explanation.missionTitle)
   await expect(area.getByRole('heading', { name: '대표 답변 설명', exact: true })).toBeVisible()
-  await expect(page.locator('.weekly-activity-heading')).toContainText('분석하기')
+  await expect(page.getByRole('dialog').locator('.report-reader-heading')).toContainText('[분석하기]')
   await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toHaveCount(1)
   await expect(area.locator('blockquote').first()).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
   await expect(area.getByText(explanation.text, { exact: true })).toHaveCount(1)
-  await page.getByLabel('주간 리포트 활동 선택').selectOption('answer-two')
-  await expect(page.locator('.weekly-activity-heading')).toContainText('새로운 나무집')
+  await chooseWeeklyActivity(page, '새로운 나무집')
+  await expect(page.getByRole('dialog').locator('.report-reader-heading')).toContainText('새로운 나무집')
   await capture(page, 'report-explanations')
 })
 
 for (const [state, notice] of [
   ['NOT_INCLUDED', '설명이 포함되지 않았습니다'], ['NO_TARGET', '해당하는 답변 기록이 없습니다'], [null, '설명 정보가 제공되지 않았습니다.'], [undefined, '설명 정보가 제공되지 않았습니다.'],
-] as const) test(`#481: 설명 상태 ${String(state)}는 수치 리포트 실패와 구분한다`, async ({ page, context }) => {
+] as const) test(`#481: 설명 상태 ${String(state)}는 수치 리포트 실패와 구분한다`, async ({ page, context }, info) => {
   const { report } = await parentServer(context, 'WEEKLY', true)
   report.explanations = state == null ? state : { state, items: [] }
   await page.goto(`/parent/report?childId=${childId}`)
@@ -525,8 +561,13 @@ for (const [state, notice] of [
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('note')).toContainText(notice)
   await expect(area.getByRole('article')).toHaveCount(0)
-  await expect(page.locator('.report-count-list').getByText('답변 제출 시도 수', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '이번 주 주요 수치' }).getByText('답변 제출 시도 수', { exact: true })).toBeVisible()
   await expect(page.getByText('리포트 생성에 실패했습니다. 기록 없음과는 다릅니다.')).toHaveCount(0)
+  if (state === 'NO_TARGET') for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await area.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: info.outputPath(`explanation-empty-${width}.png`) })
+  }
 })
 
 for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481: ${kind} 응답에서는 설명 원문을 표시하지 않는다`, async ({ page, context }) => {
@@ -545,7 +586,9 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
   await expect(page.getByText(explanation.text, { exact: true })).toHaveCount(0)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   if (kind === 'DAILY') await expect(area).toHaveCount(0)
-  else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
+  else if (kind === 'FREE') await expect(page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요' })).toBeVisible()
+  else if (kind === 'PRIVATE') await expect(page.getByText('아이의 답변이 비공개입니다.', { exact: true })).toBeVisible()
+  else await expect(area.getByRole('note')).toContainText('확인하지 못했습니다.')
 })
 
 // #998 무료·프리미엄 비교표: 상품은 공개 API GET /products, 비교표는 이용권·결제의 #plan-compare 하나뿐이다.
@@ -613,11 +656,18 @@ for (const kind of ['PRIVATE', 'PREMIUM', 'DAILY'] as const) test(`#998: ${kind}
   if (kind === 'PRIVATE') report.parentSharingEnabled = false
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  await expect(page.getByRole('region', { name: kind === 'DAILY' ? '일일 학습 요약' : '학습 수치', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: kind === 'DAILY' ? '일일 학습 요약' : '이번 주 주요 수치', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요' })).toHaveCount(0)
   await expect(page.locator(`a[href="${compareHref}"]`)).toHaveCount(0)
   if (kind === 'PRIVATE') await expect(page.getByText('아이의 답변이 비공개입니다.', { exact: true })).toBeVisible()
-  if (kind === 'PREMIUM') await expect(page.getByText('이 리포트는 학습 수치를 제공합니다.', { exact: true })).toBeVisible()
+  if (kind !== 'DAILY') {
+    await page.getByRole('button', { name: /학습 수치 전체 보기 2\s*항목/ }).click()
+    const dialog = page.getByRole('dialog', { name: '주간 리포트 전체 보기', exact: true })
+    await expect(dialog.getByRole('heading', { name: '학습 수치', exact: true })).toBeVisible()
+    await expect(dialog.getByText('답변 제출 시도 수', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('다른 활동', { exact: true })).toBeVisible()
+    if (kind === 'PRIVATE') await expect(dialog.getByRole('button', { name: '내용', exact: true })).toHaveCount(0)
+  }
 })
 
 test('#998: 이용권·결제 #plan-compare 주소로 들어오면 비교표 위치를 연다', async ({ page, context }) => {
@@ -641,6 +691,7 @@ for (const mode of ['unavailable', 'version', 'failure'] as const) test(`원문 
   if (mode === 'failure') await context.route('**/reports/report-1/evidence/explanation-original', route => route.fulfill({ status: 503, json: { code: 'UNAVAILABLE', title: '원문 조회 실패' } }))
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
+  await openWeeklyActivity(page, '대표 답변 설명', explanation.missionTitle)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByText('이 설명에 연결된 원문 전체를 확인할 수 없습니다.')).toBeVisible()
   await expect(area.locator('blockquote')).toHaveCount(0)

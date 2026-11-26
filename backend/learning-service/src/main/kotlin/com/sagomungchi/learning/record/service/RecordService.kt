@@ -32,6 +32,9 @@ data class MissionRef(val attemptId: UUID, val title: String)
 
 data class ThinkingTypes(val state: QueryState, val items: List<ThinkingTypeRecord>)
 
+/** 풀 당시 고정된 테마 버전. 일일 기록에서만 제공하며 이전 시도의 소속을 추측하지 않는다. */
+data class RecordTheme(val themeId: UUID, val versionId: UUID, val title: String, val storyType: String? = null)
+
 /**
  * 기록 시도: 학생 시도 상세에 생각 열기 열람 시각과 돌아보기 작성 시각을 붙임 (report #51).
  * 목록에서는 답변·열람을 조회 종료일까지로, 돌아보기는 기간 안에 쓴 것만 남김
@@ -42,6 +45,7 @@ data class RecordAttempt(
     val reflectionCreatedAt: Instant?,
     val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null,
     val explanationRequirements: Map<UUID, String>? = null,
+    val theme: RecordTheme? = null,
 )
 
 data class RecordPage(val state: QueryState, val items: List<RecordAttempt>, val page: Int, val size: Int, val totalElements: Int)
@@ -165,8 +169,14 @@ class RecordService(
     fun dailyAttempts(studentId: UUID, period: Period, page: Int, size: Int): RecordPage {
         val ids = repository.findCompleted(studentId, period)
         val slice = ids.drop(page * size).take(size)
-        val scheduledDays = repository.findScheduledDays(slice)
-        val items = slice.map { fullRecord(it).copy(scheduledDay = scheduledDays[it]) }
+        val themes = repository.findDailyThemes(slice)
+        val items = slice.map { id ->
+            val row = themes[id]
+            val theme = if (row?.themeId != null && row.versionId != null && row.title != null)
+                RecordTheme(row.themeId, row.versionId, row.title,
+                    com.sagomungchi.learning.theme.domain.ThemeTopicSeeds.parse(row.sourceTopic)?.type?.name) else null
+            fullRecord(id).copy(scheduledDay = row?.day, theme = theme)
+        }
         return RecordPage(QueryState.of(ids.size), items, page, size, ids.size)
     }
 

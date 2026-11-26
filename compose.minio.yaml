@@ -1,6 +1,18 @@
 # 선택 실행: docker compose -f compose.yaml -f compose.minio.yaml up -d minio
 # 버킷 준비: docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
 services:
+  ai-service:
+    environment:
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?.env 설정 필요}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
+
+  learning-service:
+    environment:
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_HOST_PORT:-9000}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?.env 설정 필요}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
+
   scoring-service:
     environment:
       S3_ENDPOINT_URL: http://minio:9000
@@ -11,6 +23,8 @@ services:
     environment: &report-minio-env
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_HOST_PORT:-9000}
+      MEMORY_BOOK_ASSET_ORIGINS: http://localhost:${MINIO_HOST_PORT:-9000}
+      MEMORY_BOOK_ASSET_INTERNAL_ORIGINS: http://localhost:${MINIO_HOST_PORT:-9000}=http://minio:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?.env 설정 필요}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
   report-worker:
@@ -54,7 +68,7 @@ services:
     volumes:
       - ./infrastructure/gitops/charts/platform-data/files/minio/create-buckets.sh:/create-buckets.sh:ro
     entrypoint: [/bin/sh, /create-buckets.sh]
-    command: [sagomungchi-local-missions, sagomungchi-local-reports, sagomungchi-local-models]
+    command: [sagomungchi-local-missions, sagomungchi-local-reports, sagomungchi-local-models, "${ASSET_S3_BUCKET:-sagomungchi-local-assets}"]
 
 volumes:
   minio-data:

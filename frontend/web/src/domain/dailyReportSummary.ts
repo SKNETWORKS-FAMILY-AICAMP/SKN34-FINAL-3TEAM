@@ -26,8 +26,13 @@ export function dailyReportSummary(report: Pick<WeeklyReport, 'problems' | 'metr
     { label: '쉬웠어요', tone: 'green', color: '#2c9b73' },
     { label: '보통', tone: 'blue', color: '#5486d8' },
     { label: '어려웠어요', tone: 'amber', color: '#e8a53b' },
-  ].map(d => ({ ...d, count: problems.filter(p => p.reflection?.written && difficultyText(p.reflection.difficulty) === d.label).length }))
+  ].map(d => {
+    const indices = problems.flatMap((p, index) => p.reflection?.written && difficultyText(p.reflection.difficulty) === d.label ? [index] : [])
+    return { ...d, count: indices.length, indices }
+  })
   const difficultyRecorded = difficulties.reduce((sum, d) => sum + d.count, 0)
+  const recordedIndices = new Set(difficulties.flatMap(d => d.indices))
+  const difficultyMissingIndices = problems.flatMap((_, index) => recordedIndices.has(index) ? [] : [index])
   return {
     total, available, judgments,
     followupActivities: readable ? problems.filter(p => p.followups.length > 0).length : null,
@@ -36,6 +41,6 @@ export function dailyReportSummary(report: Pick<WeeklyReport, 'problems' | 'metr
     reviewIndices: problems.flatMap((p, index) => p.judgment === 'RETHINK' ? [index] : []),
     elements: [...elements].map(([label, indices]) => ({ label, indices })).sort((a, b) => b.indices.length - a.indices.length || a.label.localeCompare(b.label, 'ko')),
     difficulties, difficultyRecorded,
-    difficultyMissing: problems.length - difficultyRecorded,
+    difficultyMissing: difficultyMissingIndices.length, difficultyMissingIndices,
   }
 }

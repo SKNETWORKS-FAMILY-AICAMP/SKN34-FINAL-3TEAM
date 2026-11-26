@@ -24,7 +24,8 @@ class ReportDocument internal constructor(val body: ObjectNode, val reportId: UU
     fun withoutProblemOriginals() {
         body.path("problems").forEach { node ->
             (node as? ObjectNode)?.apply {
-                retain("missionId", "attemptId", "title", "context", "scheduledDay", "judgment", "elements", "answerTimes", "itemId")
+                retain("missionId", "attemptId", "title", "context", "scheduledDay", "theme", "judgment", "elements", "answerTimes", "itemId")
+                (get("theme") as? ObjectNode)?.retain("themeId", "versionId", "title", "storyType")
                 putArray("followups"); putNull("finalAnswer"); putArray("quotes")
                 putNull("reflection")
             }

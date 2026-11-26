@@ -36,7 +36,7 @@ async function stubRounds(page: Page, stub: { status: number; body: unknown; tim
   }, { status: stub.status, body: stub.body, times: stub.times ?? 0 })
 }
 
-test('유료 자녀: 표지 책장에서 회차마다 그림책 발급, 잠금 안내 없음 @responsive', async ({ page }) => {
+test('유료 자녀: 표지 책장에서 회차마다 그림책 발급, 잠금 안내 없음 @responsive', async ({ page }, info) => {
   await login(page)
   await share(page, 'demo-seoyun')
   await page.goto('/parent/report?childId=demo-seoyun')
@@ -48,6 +48,8 @@ test('유료 자녀: 표지 책장에서 회차마다 그림책 발급, 잠금 �
   await expect(books.getByRole('note')).toHaveCount(0)
   await expect(books.getByText(/잠긴 책/)).toHaveCount(0)
   await noOverflow(page)
+  await books.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: info.outputPath('memory-covers.png') })
 })
 
 test('유료 자녀: 발급 → 받기 옆 "같이 읽었어요" → 누르면 단추 대신 표지에 같이 읽음 날짜(#1026) @responsive', async ({ page }) => {

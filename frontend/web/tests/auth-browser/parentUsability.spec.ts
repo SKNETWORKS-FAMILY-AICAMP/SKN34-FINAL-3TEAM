@@ -89,7 +89,7 @@ test('결제 설정 장애는 문의 경로와 사용자 문구를 보여 주고
   const calls = await parentServer(context)
   await page.goto('/parent/billing')
   await expect(page.getByRole('note').filter({ hasText: '지금 결제를 이용할 수 없어요.' })).toBeVisible()
-  await page.getByRole('radio', { name: /프리미엄 이용권/ }).check()
+  await expect(page.getByRole('region', { name: '프리미엄 이용권', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '결제수단 선택', exact: true })).toBeDisabled()
   expect(calls.some(call => call.startsWith('POST /orders'))).toBe(false)
 })

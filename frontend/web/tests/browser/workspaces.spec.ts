@@ -279,7 +279,8 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   const menuButton = page.getByRole('button', { name: '학부모 메뉴 열기' })
   if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menuButton.isVisible()) await menuButton.click()
   await page.getByRole('link', { name: '기기·PIN', exact: true }).filter({ visible: true }).click()
-  const card = page.getByRole('region', { name: '보호자 비밀번호' })
+  await page.getByRole('button', { name: '설정하기', exact: true }).click()
+  const card = page.getByRole('dialog', { name: '보호자 비밀번호 설정' })
   await expect(card.getByText('아직 없음')).toBeVisible()
   const popup = page.waitForEvent('popup')
   await card.getByRole('button', { name: '보호자 비밀번호 Google 본인 확인' }).click()
@@ -290,6 +291,7 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await card.getByRole('button', { name: '보호자 비밀번호 정하기' }).click()
   await expect(card.getByRole('status')).toHaveText('보호자 비밀번호를 저장했습니다.')
   await expect(card.getByText('설정됨')).toBeVisible()
+  await page.keyboard.press('Escape')
 
   await page.getByRole('link', { name: '사고뭉치 홈', exact: true }).filter({ visible: true }).click()
   await enterStudentFixture(page)

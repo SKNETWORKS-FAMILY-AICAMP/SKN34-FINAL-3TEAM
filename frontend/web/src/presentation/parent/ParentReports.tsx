@@ -1,10 +1,10 @@
-import { ChevronDown, Lock } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, Lock, TextSearch, NotebookPen, GitCompareArrows, ChartNoAxesColumnIncreasing } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations, reportExplanationItems } from './ReportExplanations.tsx'
 import { DailyReportSummary } from './DailyReportSummary.tsx'
+import { dailyReportGroups, type DailyActivitySelection } from '../../domain/dailyReportNavigation.ts'
 import type { Child, Metric } from '../../domain/classroom.ts'
 import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type WeeklyReport, type ReportItem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
@@ -19,6 +19,15 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
 import { Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
+import { ReportDialogNavigation } from './ReportDialogNavigation.tsx'
+import { useReportDialogHistory } from './useReportDialogHistory.ts'
+import { WeeklyReportOverview } from './WeeklyReportOverview.tsx'
+import { WeeklyReportDialog } from './WeeklyReportDialog.tsx'
+import { weeklyActivities, weeklyCategories, type WeeklyReportView } from '../../domain/weeklyReportNavigation.ts'
+import './report-reader.css'
+
+// Preview is local-only. No example records or mock handlers enter the production bundle.
+const ReportExamplePreview = import.meta.env.DEV ? lazy(() => import('./ReportExamplePreview.tsx')) : null
 
 export function ParentReports({
   child, canReadOriginals,
@@ -32,6 +41,7 @@ export function ParentReports({
   onAskReport: (report: ReportContext) => void
 }) {
   const [params, setParams] = useSearchParams()
+  const [exampleOpen, setExampleOpen] = useState(false)
   const [dismissedReveal, setDismissedReveal] = useState(0)
   const [today] = useState(() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()))
   const reports = useParentQuery(['reports', child.id, 'COMPLETED', ''], signal => parentApi.reports(child.id, 'COMPLETED', signal))
@@ -58,7 +68,12 @@ export function ParentReports({
   }
 
   return <>
-    <div className="parent-report-entry"><h2>{child.nickname}의 학습 리포트</h2></div>
+    <div className="parent-report-entry"><h2>{child.nickname}의 학습 리포트</h2>
+      {ReportExamplePreview && <button type="button" className="cj-secondary" aria-haspopup="dialog" onClick={() => setExampleOpen(true)}>주간 리포트 예시 보기</button>}
+    </div>
+    {exampleOpen && ReportExamplePreview && <Modal title="주간 리포트 예시" onClose={() => setExampleOpen(false)} scrollIndicator>
+      <Suspense fallback={<p role="status">리포트 예시를 불러오고 있어요.</p>}><ReportExamplePreview /></Suspense>
+    </Modal>}
     <QueryFeedback query={reports} />
     {active ? (
       <div className="report-explorer parent-report-inline" aria-label="리포트 내용" role="region">
@@ -188,17 +203,21 @@ function ReportDetail({
   const targets = useMemo(() => r ? reportTargets(r, highlight) : emptyReportTargets(), [r, highlight])
   const additionalDailyMetrics = r?.metrics.map((metric, index) => ({ metric, index })).filter(({ metric }) => metric.label !== '완료한 활동') ?? []
   const additionalDailyHighlights = additionalDailyMetrics.flatMap((entry, index) => targets.metrics.includes(entry.index) ? [index] : [])
-  const [recordSelection, setRecordSelection] = useState<{ revision: number; indices: number[] } | null>(null)
-  const selectedRecords = recordSelection?.revision === r?.revision ? recordSelection?.indices ?? [] : []
-  function openActivities(indices: number[]) {
+  const [recordSelection, setRecordSelection] = useState<(DailyActivitySelection & { revision: number; reportId: string }) | null>(null)
+  const [weeklyChoice, setWeeklyChoice] = useState<WeeklyReportView | null>(null)
+  const [dismissedWeeklyHighlight, setDismissedWeeklyHighlight] = useState(0)
+  const highlightedAttempt = r?.changes[targets.changes[0]]?.attemptId ?? r?.reflections[targets.reflections[0]]?.attemptId ?? r?.quotes[targets.quotes[0]]?.attemptId
+  const highlightedCategory = r && (highlightedAttempt ? weeklyCategories(r).find(item => item.ids.includes(highlightedAttempt))?.key
+    : targets.metrics.length ? 'metrics' : r.thinkingTypes[targets.thinking[0]]?.type)
+  const weeklySelection = weeklyChoice ?? (!daily && ready && highlight && revealToken > dismissedWeeklyHighlight && highlightedCategory
+    ? { category: highlightedCategory, attemptId: highlightedAttempt ?? null } : null)
+  function setWeeklySelection(value: WeeklyReportView | null) {
+    setDismissedWeeklyHighlight(revealToken)
+    setWeeklyChoice(value)
+  }
+  function openActivities(selection: DailyActivitySelection) {
     if (!r) return
-    setRecordSelection({ revision: r.revision, indices })
-    const entries = Array.from(panel.current?.querySelectorAll<HTMLDetailsElement>('[data-daily-problem-index]') ?? [])
-    const selected = entries.filter(element => indices.includes(Number(element.dataset.dailyProblemIndex)))
-    selected.forEach(element => { element.open = true })
-    const first = (indices.length ? selected[0] : entries[0])?.querySelector('summary')
-    first?.focus({ preventScroll: true })
-    first?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    setRecordSelection({ ...selection, revision: r.revision, reportId: r.reportId })
   }
   const matched = Object.values(targets).reduce((total, values) => total + values.length, 0)
   useEffect(() => {
@@ -213,7 +232,7 @@ function ReportDetail({
       : undefined
     lastReveal.current = revealToken
     return () => { if (frame !== undefined) cancelAnimationFrame(frame) }
-  }, [highlight, ready, matched, targets, revealToken])
+  }, [highlight, ready, matched, targets, revealToken, weeklySelection?.category, weeklySelection?.attemptId])
   async function downloadReport() {
     setNotice('')
     try {
@@ -228,13 +247,21 @@ function ReportDetail({
       setNotice(e instanceof Error ? e.message : '파일을 받지 못했습니다.')
     }
   }
+  const proofDialog = proof && r && canReadOriginals && r.parentSharingEnabled !== false ? (
+    <Modal title="리포트 항목 내용" scrollIndicator onClose={() => setProof(null)}>
+      <EvidenceQuery reportLayout queryKey={['report-evidence', child.id, id, proof]}
+        load={(signal) => parentApi.reportEvidence(id, proof, signal)} />
+    </Modal>
+  ) : null
   return (
     <section className="ws-card report-detail" data-period-type={daily ? 'DAILY' : 'WEEKLY'} ref={panel}>
       {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
       <header className="report-toolbar">
         {periodPicker}
         <div className="report-toolbar-actions">
-          <ReportProblem targetType="REPORT" targetId={id} />
+          {ready && <button className="cj-secondary" onClick={() => daily ? openActivities({ indices: [] }) : setWeeklySelection({ category: null, attemptId: null })}>
+            리포트 전체 보기
+          </button>}
           {r && ready && r.parentSharingEnabled !== false && (
             <button className="cj-secondary" disabled={conversationOff}
               title={conversationOff ? 'AI 질문은 프리미엄 기능입니다.' : undefined}
@@ -267,63 +294,52 @@ function ReportDetail({
                 {additionalDailyMetrics.length > 0 && <details className="report-inclusion" open={additionalDailyHighlights.length > 0 || undefined}><summary>추가 학습 수치</summary>
                   <ReportMetricCounts metrics={additionalDailyMetrics.map(entry => entry.metric)} highlighted={additionalDailyHighlights} canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} />
                 </details>}
-                <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
-              </section> : <div className="report-overview-grid">
+                <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p><p>판정과 생각 요소는 그날 답변의 기록이며, 아이의 능력 점수가 아니에요.</p></details>
+              </section> : <div className="weekly-report-overview">
                 {!daily && (r.narrative ? (
                   <section className="report-data-group report-narrative-panel">
                     <h3>한 주의 기록</h3>
                     <div className="report-narrative-text">
-                      {narrativeParagraphs(r.narrative.text).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                      <p>{narrativeParagraphs(r.narrative.text)[0]}</p>
                     </div>
-                    <details className="report-source"><summary>요약 출처</summary><p>{r.narrative.source}</p></details>
+                    <button className="cj-secondary" onClick={() => setWeeklySelection({ category: 'narrative', attemptId: null })}>한 주의 기록 읽기</button>
                   </section>
                 ) : entitlement?.narrativeEnabled === false && r.parentSharingEnabled !== false ? (
                   <PremiumPreview childId={child.id} />
                 ) : (
-                  <p>{r.parentSharingEnabled === false ? '아이의 답변이 비공개입니다.' : '이 리포트는 학습 수치를 제공합니다.'}</p>
+                  r.parentSharingEnabled === false ? <p>아이의 답변이 비공개입니다.</p> : null
                 ))}
-                <section className="report-data-group report-stat-panel" aria-label="학습 수치">
-                  <h3>학습 수치</h3>
-                  <ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics}
-                    canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} />
-                  <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
-                </section>
+                <WeeklyReportOverview report={r} highlighted={targets.metrics} thinkingHighlights={targets.thinking} onProof={setProof}
+                  onCategory={category => setWeeklySelection({ category, attemptId: null })}
+                  theme={r.themeSummary ? <><ThemeSummaryView summary={r.themeSummary} /><button className="cj-secondary" onClick={() => setWeeklySelection({ category: 'theme', attemptId: null })}>테마 기록 보기</button></> : undefined} />
+                <nav className="weekly-record-links" aria-label="주간 기록 바로가기">
+                  {weeklyCategories(r).filter(item => item.kind === 'record').map(item => {
+                    const Icon = item.key === 'explanations' ? TextSearch : item.key === 'reflections' ? NotebookPen : GitCompareArrows
+                    return <button key={item.key} aria-label={`${item.label} ${item.ids.length}개`} disabled={!item.ids.length || r.parentSharingEnabled === false} onClick={() => setWeeklySelection({ category: item.key, attemptId: null })}><Icon className="weekly-record-icon" size={21} aria-hidden="true" /><span className="weekly-record-name">{item.label}</span><span className="weekly-record-count"><strong>{item.ids.length}</strong>개</span><ChevronRight size={18} aria-hidden="true" /></button>
+                  })}
+                  <button onClick={() => setWeeklySelection({ category: 'metrics', attemptId: null })}><ChartNoAxesColumnIncreasing className="weekly-record-icon" size={21} aria-hidden="true" /><span className="weekly-record-name">학습 수치 전체 보기</span><span className="weekly-record-count"><strong>{r.metrics.length}</strong>항목</span><ChevronRight size={18} aria-hidden="true" /></button>
+                  {r.eveningQuestion && !r.narrative && <button onClick={() => setWeeklySelection({ category: 'narrative', attemptId: null })}>이번 주 저녁 질문<ChevronRight size={16} aria-hidden="true" /></button>}
+                </nav>
+                {r.parentSharingEnabled === true && entitlement?.narrativeEnabled !== false && !reportExplanationItems(r).length &&
+                  <ReportExplanations report={r} studentName={child.nickname} narrativeEnabled={entitlement?.narrativeEnabled} />}
               </div>}
-              {daily && (
-                <DailyProblems completedDate={r.period.from} highlighted={targets.problems} selected={selectedRecords} problems={r.problems ?? []}
-                  canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
-              )}
-              {!daily && r.themeSummary && (
-                <details className="report-theme-disclosure">
-                  <summary>이번 주 테마 보기</summary>
-                  <ThemeSummaryView summary={r.themeSummary} />
-                </details>
-              )}
-              {!daily && (entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false ? (
-                <>
-                  <WeeklyActivityRecords report={r} studentName={child.nickname} targets={targets} onProof={setProof} narrativeEnabled={entitlement?.narrativeEnabled} />
-                  {r.eveningQuestion && (
-                    <section className="report-data-group">
-                      <h3>이번 주 저녁 질문</h3>
-                      <p>{r.eveningQuestion}</p>
-                    </section>
-                  )}
-                </>
-              ) : <ReportExplanations report={r} studentName={child.nickname} narrativeEnabled={entitlement?.narrativeEnabled} />)}
             </div>
           )}
         </>
       )}
       {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
       {notice && <p role="status">{notice}</p>}
-      {proof && r && canReadOriginals && r.parentSharingEnabled !== false && (
-        <Modal title="리포트 항목 내용" scrollIndicator onClose={() => setProof(null)}>
-          <EvidenceQuery
-            queryKey={['report-evidence', child.id, id, proof]}
-            load={(signal) => parentApi.reportEvidence(id, proof, signal)}
-          />
-        </Modal>
-      )}
+      {r && daily && ready && recordSelection?.reportId === r.reportId && recordSelection.revision === r.revision ? (
+        <DailyProblemsDialog key={`${r.reportId}-${r.revision}`} report={r} selection={recordSelection} highlighted={targets.problems}
+          onProof={setProof} onClose={() => { setRecordSelection(null); setProof(null) }}>
+          {proofDialog}
+        </DailyProblemsDialog>
+      ) : r && !daily && ready && weeklySelection ? <WeeklyReportDialog key={`${r.reportId}-${r.revision}-${weeklySelection.category}-${weeklySelection.attemptId}`} report={r} initial={weeklySelection} onClose={() => { setWeeklySelection(null); setProof(null) }}
+        renderActivity={attemptId => <WeeklyActivityRecords report={r} selectedId={attemptId} studentName={child.nickname} targets={targets} onProof={setProof} narrativeEnabled={entitlement?.narrativeEnabled} />}
+        metrics={<section className="report-stat-panel"><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} /><details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details></section>}
+        theme={r.themeSummary ? <ThemeSummaryView summary={r.themeSummary} /> : undefined}>
+        {proofDialog}
+      </WeeklyReportDialog> : proofDialog}
     </section>
   )
 }
@@ -352,64 +368,132 @@ const judgmentLabels: Record<NonNullable<DailyProblem['judgment']>, string> = {
   RETHINK: '다시 생각해 보기',
   HELD: '판정 보류',
 }
-const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
-  THEME_DAY: '주간 테마 오늘 문제',
-  THEME_REVIEW: '되돌아보기 다시 풀기',
-  EXTRA: '추가 문제',
+
+/** 일일 리포트(P24): 테마(또는 추가 문제) → 문제 목록 → 상세 기록. */
+type DailyDialogView = { groupKey: string | null; problemIndex: number | null; filtered: boolean }
+
+function DailyProblemsDialog({ report, selection, highlighted, onProof, onClose, children }: {
+  report: WeeklyReport; selection: DailyActivitySelection; highlighted: number[]
+  onProof: (itemId: string) => void; onClose: () => void; children: ReactNode
+}) {
+  const groups = dailyReportGroups(report)
+  const selectedIndices = [...new Set(selection.indices)].filter(index => report.problems?.[index])
+  const initialIndex = selectedIndices[0] ?? null
+  const initialGroup = groups.find(g => initialIndex !== null && g.indices.includes(initialIndex))
+  const initialRoot: DailyDialogView = { groupKey: null, problemIndex: null, filtered: !selection.direct && selectedIndices.length > 0 }
+  // Direct problem links retain their parent path so the back arrow reaches the theme list.
+  const history = useReportDialogHistory<DailyDialogView>(initialGroup ? [initialRoot,
+    { ...initialRoot, groupKey: initialGroup.key },
+    { ...initialRoot, groupKey: initialGroup.key, problemIndex: initialIndex },
+  ] : [initialRoot], (a, b) => a.groupKey === b.groupKey && a.problemIndex === b.problemIndex && a.filtered === b.filtered)
+  const { filtered, groupKey, problemIndex } = history.current
+  const group = groups.find(g => problemIndex !== null ? g.indices.includes(problemIndex) : g.key === groupKey)
+  const visibleIndices = (indices: number[]) => filtered ? indices.filter(i => selectedIndices.includes(i)) : indices
+  const visibleGroups = groups.filter(g => g.story || visibleIndices(g.indices).length > 0)
+  const problem = problemIndex === null ? undefined : report.problems?.[problemIndex]
+  const selectedPosition = problemIndex === null ? -1 : selectedIndices.indexOf(problemIndex)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      heading.current?.focus({ preventScroll: true })
+      heading.current?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [group?.key, problemIndex, filtered])
+  function root(clearFilter = false) {
+    history.navigate({ groupKey: null, problemIndex: null, filtered: clearFilter ? false : filtered })
+  }
+  return <Modal title="일일 리포트 전체 보기" scrollIndicator onClose={onClose}>
+    <div className="report-body daily-problems-dialog">
+      <div className="report-dialog-topline"><ReportDialogNavigation {...history} /><p className="daily-problems-date">{report.period.from} · {report.problems?.length ?? 0}개 활동</p></div>
+      <nav className="daily-report-path" aria-label="문제 탐색 경로">
+        <button onClick={() => root()} aria-current={!group ? 'page' : undefined}>전체 리포트</button>
+        {group && <><ChevronRight size={14} aria-hidden="true" /><button aria-current={!problem ? 'page' : undefined}
+          onClick={() => history.navigate({ groupKey: group.key, problemIndex: null, filtered })}>{group.label}</button></>}
+        {problem && <><ChevronRight size={14} aria-hidden="true" /><span aria-current="page">상세 기록</span></>}
+      </nav>
+      {filtered && <div className="daily-report-filter"><span>{selection.label ?? '선택한 활동'} · {selectedIndices.length}개 활동</span><button onClick={() => root(true)}>전체 문제 보기</button></div>}
+      {filtered && problem && selectedPosition >= 0 && selectedIndices.length > 1 && <nav className="daily-matching-activities" aria-label="선택한 조건의 활동 이동">
+        <button type="button" className="cj-secondary" disabled={selectedPosition === 0}
+          onClick={() => history.navigate({ ...history.current, problemIndex: selectedIndices[selectedPosition - 1] })}>이전 활동</button>
+        <span>{selectedPosition + 1} / {selectedIndices.length}</span>
+        <button type="button" className="cj-secondary" disabled={selectedPosition === selectedIndices.length - 1}
+          onClick={() => history.navigate({ ...history.current, problemIndex: selectedIndices[selectedPosition + 1] })}>다음 활동</button>
+      </nav>}
+      <header className="report-reader-heading">
+        <BookOpen size={26} aria-hidden="true" />
+        <h3 className="daily-navigation-heading" tabIndex={-1} ref={heading}>{problem ? problem.title : group ? group.label : '테마와 추가 문제'}</h3>
+      </header>
+        {!group ? <>
+            <ul className="daily-navigation-list daily-story-list" aria-label="테마별 문제 수">{visibleGroups.map(g => <li key={g.key}>
+              <button className="daily-navigation-row" data-daily-group={g.key} data-daily-story={g.story || undefined}
+                disabled={visibleIndices(g.indices).length === 0} onClick={() => history.navigate({ groupKey: g.key, problemIndex: null, filtered })}>
+                <strong>{g.label}</strong><span className="daily-navigation-count">{visibleIndices(g.indices).length}개{filtered && ` / 전체 ${g.indices.length}개`}</span><ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </li>)}</ul>
+          {!report.problems?.length && <p>이날은 기록이 없습니다.</p>}
+          {visibleGroups.some(g => g.key === 'unclassified') && <p className="daily-unclassified-note">이야기 테마를 확인할 수 없는 문제는 ‘테마 미분류 기록’에서 볼 수 있어요.</p>}
+        </> : problem && problemIndex !== null ? <DailyProblems completedDate={report.period.from} problems={[problem]} indices={[problemIndex]}
+          highlighted={highlighted} canReadOriginals={report.parentSharingEnabled !== false} onProof={onProof} /> : <>
+          <p className="daily-navigation-help">{visibleIndices(group.indices).length}개 문제</p>
+          <ul className="daily-navigation-list">{visibleIndices(group.indices).map(index => {
+            const p = report.problems![index]
+            return <li key={index}><button className="daily-navigation-row" data-daily-problem-link={index} onClick={() => history.navigate({ groupKey: group.key, problemIndex: index, filtered })}>
+              <strong>{p.title}</strong><span>{p.judgment ? judgmentLabels[p.judgment] : '판정 없음'}</span><ChevronRight size={16} aria-hidden="true" />
+            </button></li>
+          })}</ul>
+        </>}
+      {children}
+    </div>
+  </Modal>
 }
 
-/** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted, selected = [] }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[]; selected?: number[] }) {
+function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted, indices }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[]; indices: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
-      <h3>그날 푼 문제</h3>
-      {problems.map((p, i) => (
-        <details className="report-answer-comparison report-highlight-target" open={highlighted.includes(i) || undefined} data-daily-problem-index={i} data-summary-selected={selected.includes(i) || undefined} data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
-          <summary>{p.title}</summary>
+      {problems.map((p, offset) => {
+        const i = indices[offset]
+        return (
+        <article className="report-answer-comparison report-reader-layout report-highlight-target" data-daily-problem-index={i} data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
+          <div className="report-reader-document">
           {scheduledDayLine(p, completedDate) && <p>{scheduledDayLine(p, completedDate)}</p>}
           <HighlightLabel active={highlighted.includes(i)} />
-
-          <p>
-            {p.context ? `${contextLabels[p.context]} · ` : ''}
-            {p.judgment ? `판정 ${judgmentLabels[p.judgment]}` : '판정 없음'}
-          </p>
-          {/* P28: 생각·작성 시간은 원문이 아니라 원문 비공개여도 보인다. 시간 없는 답은 줄을 생략 */}
-          {(p.answerTimes ?? []).map((t) => (
-            <p key={t.version}>{answerTimeLine(t)}</p>
-          ))}
-          {p.followups.map((f, j) => (
+          <section className="report-final-answer">
+            <h4>마지막 답</h4>
+            {canReadOriginals && p.finalAnswer ? <blockquote>{p.finalAnswer}</blockquote>
+              : <p className="report-reader-empty">{canReadOriginals ? '리포트에 마지막 답변이 포함되지 않았어요.' : '아이가 답변 원문을 비공개로 두었어요.'}</p>}
+          </section>
+          {p.followups.length > 0 && <section className="report-reader-followups"><h4>되묻기와 답변</h4>{p.followups.map((f, j) => (
             <div className="report-followup" key={j}>
               <div className="report-followup-question"><span className="report-step-label">되묻기 {j + 1}</span><p>{f.question}</p></div>
               <div className="report-student-response"><span className="report-response-label">아이의 답변</span>
                 <blockquote data-empty={!canReadOriginals || !f.answer || undefined}>{canReadOriginals ? f.answer ?? '보완 답변 없음' : '아이가 답변 원문을 비공개로 두었어요.'}</blockquote>
               </div>
             </div>
-          ))}
-          {canReadOriginals && p.finalAnswer && (
-            <section className="report-final-answer">
-              <h4>마지막 답</h4>
-              <blockquote>{p.finalAnswer}</blockquote>
-            </section>
-          )}
-          {p.elements.length > 0 && (
-            <p>
-              확인된 생각 요소 · {p.elements.filter((e) => e.satisfied).map((e) => e.label).join(', ') || '없음'}
-            </p>
-          )}
-          <section className="report-reflection-note">
+          ))}</section>}
+          {!p.itemId && canReadOriginals && <p className="report-reader-empty">이 문제에는 연결된 원문 근거가 없습니다.</p>}
+          {p.itemId && canReadOriginals && <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>내용</button>}
+          </div>
+          <aside className="report-reader-feedback" aria-label="판정과 돌아보기">
+          <section className="report-reader-panel">
+            <h4>판정 결과</h4>
+            <p className="report-reader-verdict" data-judgment={p.judgment ?? 'UNKNOWN'}>{p.judgment ? judgmentLabels[p.judgment] : '판정 없음'}</p>
+          </section>
+          <section className="report-reader-panel">
+            <h4>확인된 생각 요소</h4>
+            {p.elements.some(e => e.satisfied) ? <ul className="report-reader-elements">{p.elements.filter(e => e.satisfied).map((e, index) => <li key={`${e.label}-${index}`}>{e.label}</li>)}</ul> : <p className="report-reader-empty">확인된 요소 없음</p>}
+          </section>
+          <section className="report-reflection-note report-reader-panel">
             <h4>돌아보기</h4>
-            {p.reflection?.written && p.reflection.difficulty && <span className="report-difficulty">{difficultyText(p.reflection.difficulty)}</span>}
+            {p.reflection?.written && difficultyText(p.reflection.difficulty) && <span className="report-difficulty" data-difficulty={difficultyText(p.reflection.difficulty)}>{difficultyText(p.reflection.difficulty)}</span>}
             <p>{p.reflection?.written ? p.reflection.text || '작성함' : '쓰지 않음'}</p>
           </section>
-          {!p.itemId && canReadOriginals && <p>이 문제에는 연결된 원문 근거가 없습니다.</p>}
-          {p.itemId && canReadOriginals && (
-            <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>
-              내용
-            </button>
-          )}
-        </details>
-      ))}
+          {/* P28: 생각·작성 시간은 원문 비공개여도 보이고, 시간 없는 답은 생략한다. */}
+          {!!p.answerTimes?.length && <section className="report-reader-panel"><h4>풀이 기록</h4>{p.answerTimes.map(t => <p key={t.version}>{answerTimeLine(t)}</p>)}</section>}
+          </aside>
+        </article>
+      )})}
       <small>판정 결과는 그날 기록이며 능력 점수가 아닙니다.</small>
     </>
   )
@@ -425,13 +509,13 @@ function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
       ) : (
         <>
           <p>
-            {summary.title} · {summary.completed ? '완주' : '진행'}
+            {summary.title} · {(summary.finished ?? summary.completed) ? '완주' : '진행'}
           </p>
-          <ul>
+          <ul className="weekly-theme-days">
             {summary.days.map((d) => (
-              <li key={d.day}>
-                {({ MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금' } as Record<string, string>)[d.day] ?? d.day} ·{' '}
-                {d.title ?? '문제'} · {d.completed ? '마침' : '마치지 않음'}
+              <li key={d.day} data-completed={d.completedInWeek ?? d.completed}>
+                <span>{({ MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금' } as Record<string, string>)[d.day] ?? d.day}</span>
+                <span>{d.title ?? '문제'}</span><span>{d.completed ? '마침' : d.completedInWeek ? '나중에 마침' : '마치지 않음'}</span>
               </li>
             ))}
           </ul>
@@ -478,35 +562,18 @@ function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }:
   </>
 }
 
-function WeeklyActivityRecords({ report: r, targets, onProof, narrativeEnabled, studentName }: {
+function WeeklyActivityRecords({ report: r, targets, onProof, narrativeEnabled, studentName, selectedId }: {
   report: WeeklyReport
   studentName: string
   targets: ReportTargets
   onProof: (id: string) => void
   narrativeEnabled?: boolean
+  selectedId: string
 }) {
   const explanations = useMemo(() => reportExplanationItems(r), [r])
-  const activities = useMemo(() => {
-    const ids = [...new Set([
-      ...explanations.map(item => item.attemptId),
-      ...r.changes.map(item => item.attemptId),
-      ...r.reflections.map(item => item.attemptId),
-      ...r.quotes.filter(item => item.verified).map(item => item.attemptId),
-    ])]
-    return ids.map((id, index) => {
-      const thinking = r.thinkingTypes.find(type => type.missions.some(mission => mission.attemptId === id))
-      const explanation = explanations.find(item => item.attemptId === id)
-      return {
-        id,
-        title: thinking?.missions.find(mission => mission.attemptId === id)?.title ?? explanation?.missionTitle ?? `활동 ${index + 1}`,
-        type: thinking?.type ?? explanation?.thinkingType,
-      }
-    })
-  }, [r, explanations])
-  const highlightedId = r.changes[targets.changes[0]]?.attemptId ?? r.reflections[targets.reflections[0]]?.attemptId ?? r.quotes[targets.quotes[0]]?.attemptId
-  const [selection,setSelection] = useState({id:'',highlightedId:undefined as string|undefined})
-  const id = highlightedId && selection.highlightedId !== highlightedId ? highlightedId : activities.some(a=>a.id===selection.id) ? selection.id : activities[0]?.id
-  const activity = activities.find(a=>a.id===id)
+  const activities = weeklyActivities(r)
+  const id = selectedId
+  const activity = activities.find(item => item.id === id)
   const changes = r.changes.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id)
   const reflections = r.reflections.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id)
   const quotes = r.quotes.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id && x.value.verified)
@@ -514,22 +581,12 @@ function WeeklyActivityRecords({ report: r, targets, onProof, narrativeEnabled, 
   const hasFullOriginal = explanations.some(item => item.attemptId === id && item.itemId)
   const visibleQuotes = hasFullOriginal ? quotes.filter(({ index }) => targets.quotes.includes(index)) : quotes
   const explanation = <ReportExplanations report={r} attemptId={id} narrativeEnabled={narrativeEnabled} studentName={studentName} />
-  return <section className="report-data-group weekly-activity-records"><h3>활동별 기록</h3>
-    {activities.length > 1 && (
-      <label className="weekly-activity-picker">활동 선택
-        <select aria-label="주간 리포트 활동 선택" value={id} onChange={e => setSelection({ id: e.target.value, highlightedId })}>
-          {activities.map(item => <option key={item.id} value={item.id}>{item.title}{item.type ? ` · ${thinkingLabels[item.type]}` : ''}</option>)}
-        </select>
-      </label>
-    )}
+  return <section className="report-data-group weekly-activity-records" aria-label="활동별 기록">
     <div className="weekly-activity-layout">
-      {activity ? <header className="weekly-activity-heading">
-        <h4>{activity.title}</h4>{activity.type && <span>{thinkingLabels[activity.type]}</span>}
-      </header> : <p>이 리포트에 포함된 답변·돌아보기 기록이 없습니다.</p>}
       {hasExplanation && explanation}
       {activity && <div className="weekly-activity-pair">
-        {(!hasFullOriginal || visibleQuotes.length > 0) && <section><h4>답변 인용</h4>{!visibleQuotes.length && <p className="weekly-record-empty">이 활동의 확인된 인용이 리포트에 포함되지 않았습니다.</p>}{visibleQuotes.map(({value:v,index:i})=><blockquote className="report-highlight-target" key={`${v.answerId}-${i}`} data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.quotes.includes(i)}/>{v.text}</blockquote>)}</section>}
-        <section><h4>돌아보기</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty">{difficultyText(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
+        {(!hasFullOriginal || visibleQuotes.length > 0) && <section><h4>[답변 인용]</h4>{!visibleQuotes.length && <p className="weekly-record-empty">이 활동의 확인된 인용이 리포트에 포함되지 않았습니다.</p>}{visibleQuotes.map(({value:v,index:i})=><blockquote className="report-highlight-target" key={`${v.answerId}-${i}`} data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.quotes.includes(i)}/>{v.text}</blockquote>)}</section>}
+        <section><h4>[돌아보기]</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty report-difficulty" data-difficulty={difficultyText(f.difficulty)}>{difficultyText(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
       </div>}
       {changes.map(({value:c,index:i})=><details className="report-answer-comparison report-highlight-target" open={targets.changes.includes(i) || undefined} data-answer-highlight={targets.changes.includes(i) ? 'true' : undefined} tabIndex={-1} key={c.attemptId}><summary>처음 답변과 보완 답변</summary><HighlightLabel active={targets.changes.includes(i)}/>{c.followup && <p>되묻기 · {c.followup}</p>}<div className="ws-grid report-change-pair"><div><h4>처음 답변</h4><blockquote>{c.first.text ?? '원문 없음'}</blockquote></div><div><h4>보완 답변</h4><blockquote>{c.revised.text ?? '원문 없음'}</blockquote></div></div><p>글자 수 {c.counts.chars.join(' → ')} · 문장 수 {c.counts.sentences.join(' → ')}</p><details><summary>변화 집계 상세</summary><p>까닭 연결어 수 {c.counts.reasonConnectives.join(' → ')}</p><small>실제로 센 글의 변화이며 사고력 향상으로 단정하지 않습니다.</small></details><button className="cj-secondary" onClick={()=>onProof(c.itemId ?? c.attemptId)}>전후 변화 내용</button></details>)}
       {!hasExplanation && explanation}

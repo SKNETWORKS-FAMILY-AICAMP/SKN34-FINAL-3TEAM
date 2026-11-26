@@ -14,6 +14,28 @@ npm run dev        # API 모드: Vite가 /api/v1 요청을 core-service(기본 8
 - **API 모드(기본)**: 저장소 루트 `.env`(`.env.example` 참고)를 채우고 `docker compose up --build -d`로 백엔드를 띄운 뒤 **http://localhost:5173**으로 엽니다. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 서버 미구현·실패를 샘플 데이터로 덮지 않습니다
 - **MSW 목업 모드**: 백엔드 없이 화면만 봅니다. 앱은 목 여부와 무관하게 같은 apiClient·SSE·Query 경로를 씁니다
 
+### 다른 개발 환경에서 학부모 화면 확인
+
+화면은 선택한 자녀 ID로 `/api/v1/children/{childId}/reports`와 `/api/v1/reports/{reportId}`를 조회합니다. 개인 PC의 DB 파일이나 특정 테스트 자녀 ID를 참조하지 않습니다. 프론트와 함께 변경된 core·learning·report 코드도 같은 버전으로 빌드해야 일일 리포트의 테마 정보가 전달됩니다.
+
+- **실제 생성 리포트:** API 모드에서 해당 보호자와 연결된 자녀의 `COMPLETED` 리포트를 표시합니다. 목록은 화면 진입·재조회 때 서버에서 읽습니다. 화면을 계속 열어 둔 상태에서 새 리포트를 실시간으로 추가하는 기능은 없습니다. 정상 스케줄은 KST 매일 00:00에 전날 일일 리포트, 월요일 00:00에 지난주 주간 리포트를 생성합니다. core 스케줄러·RabbitMQ·report-worker와 필수 동의가 준비돼 있어야 합니다.
+- **저장소 합성 데이터:** 아래 MSW 모드에서 동일한 학부모 화면을 사용합니다. `reportDemo=structured`는 저장소의 가상 답변 3건을 추가하는 개발 전용 진입입니다. 기존 로컬 DB 데이터와 섞이지 않습니다.
+- **Gemma 예시 설명:** 아래 생성 명령이 각 환경에 저장한 파일을 읽습니다. 파일이 없으면 설명 미포함으로 표시하며, 한화의 실제 리포트나 다른 개발자의 생성 결과를 가져오지 않습니다. 실제 리포트 본문은 이 예시 파일 대신 리포트 API를 사용합니다.
+- **API 포트:** 루트 `.env`의 `CORE_HOST_PORT`를 바꾸면 Vite 프록시도 같은 포트를 읽습니다. 별도 서버는 `CORE_PROXY_TARGET`으로 지정할 수 있습니다. 변경 뒤 Vite를 다시 실행합니다.
+- **캐릭터 선택:** 계정·자녀 설정과 기기 화면의 뭉치 선택은 현재 브라우저 저장소에 보관합니다. 다른 PC로 선택값을 동기화하지 않습니다.
+
+그림책 표지는 서버의 `imageUrl`을 사용합니다. 로컬 MinIO에서 새 테마 그림을 생성·저장하려면 루트 `.env`에 `ASSET_S3_BUCKET=sagomungchi-local-assets`와 기존 MinIO 자격 증명을 설정하고, 저장소 루트에서 실행합니다. `ASSET_S3_BUCKET`을 비워 두면 기존처럼 그림 생성을 건너뜁니다.
+
+```powershell
+docker compose -f compose.yaml -f compose.minio.yaml up -d minio
+docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
+docker compose -f compose.yaml -f compose.minio.yaml up --build -d
+```
+
+이 구성은 ai의 저장 주소, learning의 브라우저용 이미지 주소, report-worker의 PDF 이미지 조회 주소를 연결합니다. 이미 존재하는 그림은 다시 생성하지 않습니다. 새 테마 생성에는 기존 프로젝트의 모델·이미지 API 설정이 별도로 필요하고, 저장소 주소만으로 그림이나 AI 설명이 생기지는 않습니다. 다른 환경의 버킷·객체는 복사하지 않습니다. 기존에 `theme`가 없던 저장 리포트는 정상 재생성 후 새 테마 분류를 표시합니다.
+
+### MSW 목업 실행
+
 ```powershell
 $env:VITE_API_MOCK='true'
 npm run dev

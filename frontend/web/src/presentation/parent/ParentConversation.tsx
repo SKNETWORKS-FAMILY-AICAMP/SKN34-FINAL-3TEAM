@@ -12,6 +12,7 @@ import { QueryFeedback, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import type { ReportContext } from './ParentInsights.tsx'
 import type { ReportAnswer } from '../../domain/reportHighlight.ts'
+import { ReportEvidenceItems } from './ReportEvidenceItems.tsx'
 export function ParentConversation({
   child,
   scope,
@@ -317,9 +318,11 @@ function ExampleQuestions({ childId, onPick }: { childId: string; onPick: (quest
 export function EvidenceQuery({
   queryKey,
   load,
+  reportLayout = false,
 }: {
   queryKey: unknown[]
   load: (signal: AbortSignal) => Promise<{ items: Evidence[] }>
+  reportLayout?: boolean
 }) {
   const q = useParentQuery(queryKey, load)
   return (
@@ -328,7 +331,7 @@ export function EvidenceQuery({
       {q.error instanceof ApiError && q.error.problem.status === 410 && (
         <p>이용 불가 · 삭제된 근거입니다. 다른 기록으로 대체하지 않습니다.</p>
       )}
-      {q.data && !q.error && <EvidenceItems items={q.data.items} />}
+      {q.data && !q.error && (reportLayout ? <ReportEvidenceItems items={q.data.items} /> : <EvidenceItems items={q.data.items} />)}
     </>
   )
 }

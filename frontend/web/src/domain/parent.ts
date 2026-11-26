@@ -128,6 +128,8 @@ export interface DailyProblem {
   title: string
   context: 'THEME_DAY' | 'THEME_REVIEW' | 'EXTRA' | null
   scheduledDay?: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | null
+  /** 풀 당시 고정된 테마. 이전 리포트·추가 문제에는 없다. */
+  theme?: { themeId: string; versionId: string; title: string; storyType?: string | null } | null
   judgment: 'CORRECT' | 'PARTIAL' | 'RETHINK' | 'HELD' | null
   followups: { question: string; answer: string | null }[]
   finalAnswer: string | null
@@ -151,13 +153,14 @@ export function difficultyText(difficulty: string | null | undefined): string {
   if (Object.hasOwn(difficultyLabels, difficulty)) return difficultyLabels[difficulty]
   return Object.values(difficultyLabels).includes(difficulty) ? difficulty : ''
 }
-/** 주간 리포트의 주간 테마 요약(FN-RPT-17, 구현 예정). */
+/** 주간 리포트의 테마 요약. completed는 개근, finished는 주 안의 완주 여부. */
 export interface ThemeSummary {
   state?: QueryState
   themeId: string | null
   title: string | null
-  days: { day: string; missionId: string; title?: string; completed: boolean }[]
+  days: { day: string; missionId: string; title?: string; completed: boolean; completedInWeek?: boolean }[]
   completed: boolean
+  finished?: boolean
   reviewRetries: { missionId: string; title?: string }[]
 }
 export interface ReportItem {

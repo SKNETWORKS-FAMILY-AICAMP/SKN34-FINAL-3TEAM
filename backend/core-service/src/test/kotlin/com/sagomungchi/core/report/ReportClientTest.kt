@@ -193,6 +193,8 @@ class ReportClientTest {
             "changes":[{"attemptId":"a","counts":{},"itemId":"i","first":{"text":"합성"},"revised":{"text":"합성"},"followup":"합성","extra":"합성"}],
             "reflections":[{"attemptId":"a","written":true,"difficulty":"NORMAL","itemId":"i","text":"합성"}],
             "problems":[{"missionId":"m","attemptId":"a","title":"t","context":"THEME_DAY","scheduledDay":"TUE","judgment":"j","elements":[],"itemId":"i","finalAnswer":"합성","followups":[{"q":"합성"}],"quotes":[{"text":"합성"}],"reflection":"합성","answerTimes":[{"version":1,"thinkingSeconds":45,"writingSeconds":130}]}]}""") as ObjectNode
+        (body["problems"][0] as ObjectNode).putObject("theme")
+            .put("themeId", "theme").put("versionId", "v1").put("title", "테마 이름").put("storyType", "SOUND").put("extra", "합성")
         val narrativeOnly = ReportDocument(body.deepCopy(), reportId).apply { withoutNarrative() }.body
         assertTrue(narrativeOnly["narrative"].isNull && narrativeOnly["eveningQuestion"].isNull && narrativeOnly["explanations"].isNull)
         assertFalse(narrativeOnly["thinkingTypes"][0].has("summary")); assertEquals("합성", narrativeOnly["quotes"][0]["text"].asText())
@@ -200,5 +202,8 @@ class ReportClientTest {
         assertFalse(problems["problems"].toString().contains("합성")); assertEquals("합성", problems["narrative"]["text"].asText())
         assertEquals("TUE", problems["problems"][0]["scheduledDay"].asText())
         assertEquals(45, problems["problems"][0]["answerTimes"][0]["thinkingSeconds"].asInt())
+        assertEquals("테마 이름", problems["problems"][0]["theme"]["title"].asText())
+        assertEquals("SOUND", problems["problems"][0]["theme"]["storyType"].asText())
+        assertEquals(setOf("themeId", "versionId", "title", "storyType"), problems["problems"][0]["theme"].fieldNames().asSequence().toSet())
     }
 }

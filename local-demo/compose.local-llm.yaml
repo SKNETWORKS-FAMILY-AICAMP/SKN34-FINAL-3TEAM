@@ -23,9 +23,9 @@ services:
       EXPLANATION_DEADLINE: "115"
       # 이 오버레이는 RunPod LoRA로 연결하는 로컬 시연용이다.
       EXPLANATION_LOCAL_SKIP_REGISTRY: "1"
-      # 서명용 가상 자격 증명만 두고 AWS로는 나가지 않는다 (compose.e2e.yaml과 같음)
-      AWS_ACCESS_KEY_ID: local-synthetic
-      AWS_SECRET_ACCESS_KEY: local-synthetic
+      # MinIO의 그림 저장과 같은 SDK 자격 증명 사용. 리포트 호출은 위 로컬 프록시로만 전달한다.
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?.env 설정 필요}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
 
 
   report-worker:

@@ -1,0 +1,71 @@
+/* Linear Insights: compact metric row, chart/detail panels, then drill-down records.
+   The parent workspace retains its light reading surface and green brand. */
+#class-journal .ws-parent .weekly-report-overview { display:grid; gap:28px; min-width:0; }
+#class-journal .ws-parent .weekly-report-overview > .report-narrative-panel { display:grid; grid-template-columns:160px minmax(0,1fr); gap:16px 28px; padding:26px; margin:0; border:0; border-radius:12px; background:#f0f5f1; }
+#class-journal .ws-parent .weekly-report-overview > .report-narrative-panel h3 { margin:0; padding:0; border:0; color:#244b36; font-size:24px; line-height:1.5; }
+#class-journal .ws-parent .weekly-report-overview .report-narrative-text { margin:0; color:#304b3b; font-size:16px; line-height:1.9; max-width:75ch; }
+#class-journal .ws-parent .weekly-report-overview .report-source { grid-column:2; margin:0; font-size:12px; color:#566d5e; }
+#class-journal .ws-parent .weekly-insights { display:grid; gap:26px; }
+#class-journal .ws-parent .weekly-key-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:0; padding:0; border-bottom:1px solid #dde4e0; }
+#class-journal .ws-parent .weekly-key-metrics:has(> div:nth-child(2):last-child) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+#class-journal .ws-parent .weekly-key-metrics > div { min-width:0; padding:12px 26px 24px; }
+#class-journal .ws-parent .weekly-key-metrics > div:first-child { padding-left:0; }
+#class-journal .ws-parent .weekly-key-metrics > div + div { border-left:1px solid #e6ebe8; }
+#class-journal .ws-parent .weekly-key-metrics dt { font-size:14px; line-height:1.6; color:#56616a; }
+#class-journal .ws-parent .weekly-key-metrics dd { display:flex; align-items:baseline; gap:6px; margin:12px 0; color:#243a2e; }
+#class-journal .ws-parent .weekly-key-metrics dd strong { font-size:36px; line-height:1.2; font-weight:650; font-variant-numeric:tabular-nums; }
+#class-journal .ws-parent .weekly-key-metrics dd > span { color:#68746c; font-size:14px; }
+#class-journal .ws-parent .weekly-key-context { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; color:#68746c; font-size:12px; }
+#class-journal .ws-parent .weekly-key-context button { display:flex; align-items:center; gap:5px; padding:3px 0; min-height:28px; border:0; border-radius:0; box-shadow:none; background:transparent; color:#245f3d; font-size:12px; }
+#class-journal .ws-parent .weekly-key-context button:hover { text-decoration:underline; text-underline-offset:4px; }
+#class-journal .ws-parent .weekly-key-context button:focus-visible { outline:2px solid #245f3d; outline-offset:4px; }
+#class-journal .ws-parent .weekly-insight-panels { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:24px; align-items:stretch; }
+#class-journal .ws-parent .weekly-insight-panels:not(:has(.weekly-theme-panel)) { grid-template-columns:minmax(0,640px); }
+#class-journal .ws-parent .weekly-insight-panels > section { min-width:0; padding:24px; border:1px solid #dfe5e2; border-radius:12px; background:#fff; }
+#class-journal .ws-parent .weekly-insight-panels h3 { display:flex; align-items:center; gap:10px; margin:0; padding:0; border:0; font-size:17px; color:#303b35; }
+#class-journal .ws-parent .weekly-thinking-chart > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:24px; }
+#class-journal .ws-parent .weekly-thinking-chart > header > span { color:#68746c; font-size:12px; }
+#class-journal .ws-parent .weekly-thinking-chart ul { display:grid; gap:17px; list-style:none; padding:0; margin:0; }
+#class-journal .ws-parent .weekly-thinking-chart li { display:block; font-size:13px; }
+#class-journal .ws-parent .weekly-type-button { display:grid; grid-template-columns:100px minmax(0,1fr) 35px 14px; gap:12px; align-items:center; width:100%; min-height:40px; padding:6px 0; border:0; background:none; text-align:left; color:#334b3e; font:inherit; cursor:pointer; }
+#class-journal .ws-parent .weekly-type-button:hover:not(:disabled) { color:#16603a; background:#f2f7f3; }
+#class-journal .ws-parent .weekly-type-button:focus-visible { outline:2px solid #276f49; outline-offset:4px; }
+#class-journal .ws-parent .weekly-type-button:disabled { cursor:default; color:#758079; }
+#class-journal .ws-parent .weekly-type-track { display:block; height:9px; border-radius:2px; background:#edf1ee; overflow:hidden; }
+#class-journal .ws-parent .weekly-type-track > span { display:block; height:100%; background:#639078; border-radius:2px; }
+#class-journal .ws-parent .weekly-thinking-chart li strong { text-align:right; color:#334b3e; font-variant-numeric:tabular-nums; font-size:14px; }
+#class-journal .ws-parent .weekly-thinking-chart li small { font-size:11px; font-weight:400; margin-left:4px; color:#68746c; }
+#class-journal .ws-parent .weekly-theme-panel > p { margin:14px 0 18px; font-size:16px; line-height:1.65; }
+#class-journal .ws-parent .weekly-theme-days { display:grid; gap:0; margin:0; padding:0; list-style:none; }
+#class-journal .ws-parent .weekly-theme-days li { display:grid; grid-template-columns:30px minmax(0,1fr) auto; gap:10px; padding:10px 0; border-top:1px solid #edf0ee; font-size:13px; }
+#class-journal .ws-parent .weekly-theme-days li > span:first-child { color:#68746c; }
+#class-journal .ws-parent .weekly-theme-days li > span:last-child { font-size:12px; color:#68746c; }
+#class-journal .ws-parent .weekly-theme-days li[data-completed=true] > span:last-child { color:#245f3d; }
+#class-journal .ws-parent .weekly-all-metrics { padding:18px 0; border-block:1px solid #dfe5e2; }
+#class-journal .ws-parent .weekly-all-metrics > summary { cursor:pointer; color:#42594b; font-size:14px; }
+#class-journal .ws-parent .weekly-all-metrics .report-stat-panel { margin-top:20px; border:0; padding:0; }
+#class-journal .ws-parent .report-detail[data-period-type=WEEKLY] .weekly-activity-records { margin:10px 0 0; padding:24px 0 0; border:0; border-top:1px solid #dfe5e2; background:transparent; }
+#class-journal .ws-parent .report-detail[data-period-type=WEEKLY] .weekly-activity-records > h3 { font-size:23px; margin:0 0 20px; padding:0; border:0; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-card.report-reader-layout { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(300px,1fr); gap:0; padding:0; margin:0; border:1px solid #e1e6e3; border-radius:12px; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-evidence { padding:0; margin:0; background:none; border:0; }
+#class-journal .ws-parent .weekly-activity-layout .report-reader-feedback .report-explanation-section { padding:0; border:0; background:none; border-radius:0; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-section + .report-explanation-section { padding-top:22px; border-top:1px solid #dde3e8; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-section h5 { display:flex; align-items:center; gap:10px; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-section h5 svg { color:#526a80; flex-shrink:0; }
+@container parent-report (max-width:780px) {
+  #class-journal .ws-parent .weekly-insight-panels { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .weekly-activity-layout .report-explanation-card.report-reader-layout { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .weekly-activity-layout .report-reader-feedback { border-left:0; border-top:1px solid #e4e7ec; }
+}
+@media(max-width:600px) {
+  #class-journal .ws-parent .weekly-report-overview > .report-narrative-panel { grid-template-columns:minmax(0,1fr); padding:20px; gap:14px; }
+  #class-journal .ws-parent .weekly-report-overview .report-source { grid-column:1; }
+  #class-journal .ws-parent .weekly-key-metrics, #class-journal .ws-parent .weekly-key-metrics:has(> div:nth-child(2):last-child) { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .weekly-key-metrics > div { padding:18px 0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 16px; }
+  #class-journal .ws-parent .weekly-key-metrics > div + div { border-left:0; border-top:1px solid #e6ebe8; }
+  #class-journal .ws-parent .weekly-key-metrics dd { grid-column:2; grid-row:1 / 3; margin:0; align-self:center; }
+  #class-journal .ws-parent .weekly-key-metrics dd strong { font-size:30px; }
+  #class-journal .ws-parent .weekly-key-context { justify-content:flex-start; gap:16px; }
+  #class-journal .ws-parent .weekly-insight-panels > section { padding:20px; }
+  #class-journal .ws-parent .weekly-type-button { grid-template-columns:80px minmax(0,1fr) 30px 14px; gap:8px; }
+}

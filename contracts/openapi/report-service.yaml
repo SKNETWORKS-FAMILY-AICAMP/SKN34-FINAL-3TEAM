@@ -1107,6 +1107,16 @@
             ],
             "title": "Scheduledday"
           },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "judgment": {
             "anyOf": [
               {
@@ -1243,6 +1253,42 @@
           "text"
         ],
         "title": "DailyReflection"
+      },
+      "DailyTheme": {
+        "properties": {
+          "themeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Themeid"
+          },
+          "versionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Versionid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "storyType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storytype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "themeId",
+          "versionId",
+          "title"
+        ],
+        "title": "DailyTheme"
       },
       "Download": {
         "properties": {

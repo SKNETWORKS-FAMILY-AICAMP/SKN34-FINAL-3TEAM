@@ -467,3 +467,29 @@ def test_scheduled_day_input_contract(context, day, expected):
     raw["scheduledDay"] = "SAT"
     with pytest.raises(ValidationError):
         AttemptInput.model_validate(raw)
+
+
+@pytest.mark.parametrize("context", ["THEME_DAY", "THEME_REVIEW", "EXTRA", None])
+def test_daily_theme_reference_input(context):
+    from app.clients.learning_client import AttemptInput
+
+    raw = wire_attempt(attempt_for(uuid4()))
+    theme = {
+        "themeId": str(uuid4()),
+        "versionId": str(uuid4()),
+        "title": "풀 당시 테마",
+        "storyType": "SOUND",
+    }
+    raw.update(context=context, theme=theme)
+    record = AttemptInput.model_validate(raw).record()
+    assert (record.theme.payload() if record.theme else None) == (
+        theme if context in ("THEME_DAY", "THEME_REVIEW") else None
+    )
+    theme.pop("storyType")
+    legacy = AttemptInput.model_validate(raw).record()
+    assert legacy.theme is None or legacy.theme.story_type is None
+    raw.pop("theme")
+    assert AttemptInput.model_validate(raw).record().theme is None
+    raw["theme"] = {"themeId": theme["themeId"], "title": theme["title"]}
+    with pytest.raises(ValidationError):
+        AttemptInput.model_validate(raw)

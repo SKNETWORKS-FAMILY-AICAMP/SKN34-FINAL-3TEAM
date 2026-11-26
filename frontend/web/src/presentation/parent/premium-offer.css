@@ -1,0 +1,80 @@
+#class-journal .ws-parent .ws-main:has(.premium-billing) { background:#fff; }
+#class-journal .ws-parent .premium-billing>header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; margin:10px 0 32px; }
+#class-journal .ws-parent .premium-change-plan { flex:none; min-height:46px; padding:10px 20px; border:1px solid #b9c5bb; border-radius:24px; background:#fff; color:#263e2f; font-size:14px; font-weight:600; white-space:nowrap; }
+#class-journal .ws-parent .premium-catalog-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 8px; }
+#class-journal .ws-parent .premium-catalog-heading h2 { font-size:22px; font-weight:600; margin:0; scroll-margin-top:calc(var(--parent-topbar-height, 0px) + 24px); }
+#class-journal .ws-parent .premium-catalog-heading>button { flex:none; min-height:44px; border:0; background:none; color:#405c48; text-decoration:underline; text-underline-offset:4px; }
+#class-journal .ws-parent .premium-catalog[data-multiple] .premium-catalog-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; }
+#class-journal .ws-parent .premium-catalog[data-multiple] .premium-offer { display:flex; flex-direction:column; gap:28px; }
+#class-journal .ws-parent .premium-catalog[data-multiple] .premium-purchase { max-width:none; }
+#class-journal .ws-parent .premium-catalog[data-multiple] .premium-benefits { grid-template-columns:minmax(0,1fr); }
+#class-journal .ws-parent .premium-preview { padding:8px 0 32px; margin:0 0 36px; border-bottom:1px solid #e2e5df; }
+#class-journal .ws-parent .premium-preview-note { margin:0 0 28px; color:#58655c; font-size:14px; line-height:1.8; }
+#class-journal .ws-parent .premium-preview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px; list-style:none; padding:0; margin:0; }
+#class-journal .ws-parent .premium-preview-grid>li { min-width:0; }
+#class-journal .ws-parent .premium-preview-panel { display:flex; flex-direction:column; align-items:flex-start; min-height:224px; padding:24px; border-radius:14px; background:#f0f0eb; color:#233329; }
+#class-journal .ws-parent .premium-preview-panel[data-tone="1"] { background:#eaf0f4; }
+#class-journal .ws-parent .premium-preview-panel[data-tone="2"] { color:#fff; background:radial-gradient(ellipse at 0% 30%,#428dd4,transparent 70%),radial-gradient(ellipse at 100% 85%,#c14e32,transparent 75%),#29203e; }
+#class-journal .ws-parent .premium-preview-panel[data-tone="3"] { background:#eee9e1; }
+#class-journal .ws-parent .premium-preview-panel h3 { margin:0 0 12px; font-size:24px; font-weight:600; color:inherit; letter-spacing:-.025em; }
+#class-journal .ws-parent .premium-preview-label { padding:2px 9px; border:1px solid currentColor; border-radius:20px; font-size:12px; line-height:1.5; }
+#class-journal .ws-parent .premium-preview-price { display:flex; flex-direction:column; gap:4px; margin:auto 0 0; padding-top:38px; font-variant-numeric:tabular-nums; color:inherit; }
+#class-journal .ws-parent .premium-preview-price strong { font-size:clamp(28px,2.7vw,40px); font-weight:600; line-height:1.2; letter-spacing:-.035em; white-space:nowrap; }
+#class-journal .ws-parent .premium-preview-price strong>span { margin-left:3px; font-size:18px; font-weight:400; }
+#class-journal .ws-parent .premium-preview-price>span { font-size:13px; }
+#class-journal .ws-parent .premium-preview-action:disabled { display:block; width:100%; margin-top:12px; min-height:46px; border:0; border-radius:28px; background:#e8ebe7; color:#58645b; box-shadow:none; cursor:not-allowed; font-size:14px; }
+#class-journal .ws-parent .premium-preview-benefit { margin:14px 0 0; font-size:13px; color:#58655c; }
+#class-journal .ws-parent .premium-billing>header h1 { font-size:clamp(30px,3vw,44px); letter-spacing:-.035em; font-weight:600; margin:0 0 14px; }
+#class-journal .ws-parent .premium-billing>header p { color:#58655c; font-size:15px; }
+#class-journal .ws-parent .premium-offer { display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.3fr); gap:48px; padding:20px 0 40px; margin:0 0 32px; border-bottom:1px solid #e2e5df; }
+#class-journal .ws-parent .premium-purchase { min-width:0; max-width:440px; }
+#class-journal .ws-parent .premium-price-panel { display:flex; flex-direction:column; position:relative; isolation:isolate; overflow:hidden; min-height:290px; border-radius:14px; padding:30px; color:#fff; background:#261b39; }
+#class-journal .ws-parent .premium-price-panel::before { content:""; position:absolute; inset:0; z-index:-1; background:radial-gradient(ellipse at 14% 40%,#499ced 0%,#3b76b4 19%,transparent 49%),radial-gradient(ellipse at 95% 78%,#e96736 0%,#aa352c 33%,transparent 67%),linear-gradient(120deg,#173a5b,#452047 68%,#8d291d); }
+#class-journal .ws-parent .premium-price-panel::after { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,#131d3628 0%,transparent 30%,#0c142d80 100%); }
+#class-journal .ws-parent .premium-price-panel h2 { color:inherit; font-size:30px; margin:0 0 10px; font-weight:500; letter-spacing:-.025em; }
+#class-journal .ws-parent .premium-duration { margin:0; color:#fff; font-size:14px; }
+#class-journal .ws-parent .premium-price { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-top:auto; padding-top:70px; font-variant-numeric:tabular-nums; }
+#class-journal .ws-parent .premium-price strong { font-size:clamp(38px,3.1vw,50px); font-weight:600; letter-spacing:-.035em; line-height:1.15; }
+#class-journal .ws-parent .premium-price strong>span { font-size:22px; margin-left:4px; font-weight:400; }
+#class-journal .ws-parent .premium-price>span { font-size:14px; }
+#class-journal .ws-parent .premium-checkout { display:flex; justify-content:center; align-items:center; gap:16px; width:100%; min-height:50px; padding:14px 20px; margin-top:16px; border:0; border-radius:30px; background:#181a18; color:#fff; font-size:15px; font-weight:600; text-decoration:none; }
+#class-journal .ws-parent .premium-checkout:not(:disabled):hover { background:#343a35; color:#fff; box-shadow:none; }
+#class-journal .ws-parent .premium-checkout:disabled { background:#e9ece8; color:#616a62; border:0; }
+#class-journal .ws-parent .premium-child { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:18px 0 0; color:#314b3b; font-size:14px; }
+#class-journal .ws-parent .premium-child>span { font-size:12px; color:#28704a; padding:4px 9px; background:#edf5ed; border-radius:5px; }
+#class-journal .ws-parent .premium-payment-note { font-size:12px; line-height:1.75; color:#606b62; margin:12px 0 0; }
+#class-journal .ws-parent .premium-benefits { min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; padding-top:16px; }
+#class-journal .ws-parent .premium-benefit-group h3 { display:flex; flex-direction:column; align-items:flex-start; gap:14px; margin:0 0 24px; font-size:17px; line-height:1.6; color:#253b2e; }
+#class-journal .ws-parent .premium-benefit-group h3>svg { width:23px; height:23px; color:#52715b; }
+#class-journal .ws-parent .premium-benefit-group ul { display:grid; gap:20px; list-style:none; margin:0; padding:0; }
+#class-journal .ws-parent .premium-benefit-group li { display:flex; align-items:flex-start; gap:10px; font-size:14px; line-height:1.7; color:#34453a; }
+#class-journal .ws-parent .premium-benefit-group li>svg { flex:none; width:16px; height:16px; margin-top:4px; color:#496b51; }
+#class-journal .ws-parent .premium-benefit-group li>span { min-width:0; overflow-wrap:anywhere; }
+#class-journal .ws-parent .premium-benefit-group small { display:block; margin-top:3px; font-size:12px; color:#5e6c61; }
+#class-journal .ws-parent .premium-comparison { border-top:1px solid #e2e5df; border-bottom:1px solid #e2e5df; margin:28px 0 36px; }
+#class-journal .ws-parent .premium-comparison>summary { cursor:pointer; padding:20px 0; color:#405c48; font-size:14px; }
+#class-journal .ws-parent .premium-comparison .plan-compare { margin:8px 0 28px; }
+#class-journal .ws-parent .premium-billing .payment-management { margin-top:32px; }
+#class-journal .ws-parent .premium-billing .payment-management>section>h2 { margin:0 0 20px; font-size:23px; }
+#class-journal .ws-parent .premium-billing .payment-management>section>p { color:#5b685e; font-size:14px; line-height:1.8; }
+@media(max-width:1100px) {
+  #class-journal .ws-parent .premium-preview-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+  #class-journal .ws-parent .premium-offer { gap:32px; grid-template-columns:minmax(250px,.9fr) minmax(0,1.2fr); }
+  #class-journal .ws-parent .premium-benefits { grid-template-columns:minmax(0,1fr); gap:30px; padding-top:0; }
+  #class-journal .ws-parent .premium-benefit-group h3 { flex-direction:row; align-items:center; gap:10px; margin-bottom:18px; }
+  #class-journal .ws-parent .premium-benefit-group ul { gap:14px; }
+}
+@media(max-width:640px) {
+  #class-journal .ws-parent .premium-preview-grid { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .premium-preview-panel { min-height:210px; }
+  #class-journal .ws-parent .premium-preview-price strong { font-size:40px; }
+  #class-journal .ws-parent .premium-catalog[data-multiple] .premium-catalog-list { grid-template-columns:minmax(0,1fr); }
+  #class-journal .ws-parent .premium-billing>header { margin:8px 0 20px; }
+  #class-journal .ws-parent .premium-offer { grid-template-columns:minmax(0,1fr); gap:32px; padding-top:8px; }
+  #class-journal .ws-parent .premium-purchase { max-width:none; }
+  #class-journal .ws-parent .premium-price-panel { min-height:240px; padding:26px; }
+  #class-journal .ws-parent .premium-price { padding-top:54px; }
+  #class-journal .ws-parent .premium-price strong { font-size:44px; }
+  #class-journal .ws-parent .premium-benefits { gap:30px; }
+  #class-journal .ws-parent .premium-benefit-group ul { gap:16px; }
+}

@@ -101,6 +101,7 @@ data class RecordAttemptResponse(
     val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null,
     @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val explanationRequirements: Map<UUID, String>? = null,
+    val theme: com.sagomungchi.learning.record.service.RecordTheme? = null,
 ) {
     companion object {
         /** 시도 상세(AttemptResponse)와 같은 값을 AttemptDetail에서 직접 만듦: 다른 기능 controller DTO를 거치지 않음 (#251) */
@@ -124,6 +125,7 @@ data class RecordAttemptResponse(
                 context = detail.attempt.context,
                 scheduledDay = record.scheduledDay,
                 explanationRequirements = record.explanationRequirements,
+                theme = record.theme,
             )
         }
     }

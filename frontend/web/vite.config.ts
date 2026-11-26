@@ -46,8 +46,8 @@ export default defineConfig(({ mode }) => {
     // kind(#236): CORE_PROXY_TARGET=http://127.0.0.1, CORE_PROXY_HOST=api.sagomungchi.local로 Ingress 호스트 규칙에 맞춤
     proxy: {
       '/api': {
-        target: process.env.CORE_PROXY_TARGET || `http://localhost:${process.env.CORE_HOST_PORT ?? 8080}`,
-        ...(process.env.CORE_PROXY_HOST ? { headers: { host: process.env.CORE_PROXY_HOST } } : {}),
+        target: env.CORE_PROXY_TARGET || `http://localhost:${env.CORE_HOST_PORT ?? 8080}`,
+        ...(env.CORE_PROXY_HOST ? { headers: { host: env.CORE_PROXY_HOST } } : {}),
       },
       ...(env.VITE_GUARDIAN_TRANSFER_ENABLED === 'true' ? {
         '/trial/google': { target: process.env.TRANSFER_GOOGLE_PROXY_TARGET || 'http://127.0.0.1:18096', rewrite: (path: string) => path.replace(/^\/trial\/google/, '') },

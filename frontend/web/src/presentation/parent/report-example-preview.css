@@ -1,0 +1,46 @@
+#class-journal .ws-parent .report-example-preview { color:var(--pd-ink, #243a2e); font-size:16px; line-height:1.8; overflow-wrap:anywhere; }
+#class-journal .ws-parent .report-example-notice { margin:0 0 16px; padding:0; color:#526b5b; font-size:13px; line-height:1.7; }
+#class-journal .ws-parent .report-example-period { margin:0 0 24px; color:#526b5b; font-size:14px; font-variant-numeric:tabular-nums; }
+#class-journal .ws-parent .report-example-preview h3 { margin:0 0 12px; font-size:20px; }
+#class-journal .ws-parent .report-example-preview h4 { margin:0 0 10px; font-size:17px; }
+#class-journal .ws-parent .report-example-preview p { margin-block:0 12px; }
+#class-journal .ws-parent .report-week-overview { display:grid; grid-template-columns:190px minmax(0,1fr); gap:28px; padding:28px; border:0; border-radius:12px; background:#f0f5f1; }
+#class-journal .ws-parent .report-week-overview > h3 { display:flex; flex-direction:column; align-items:flex-start; gap:18px; margin:0; color:#244b36; font-size:27px; font-weight:700; line-height:1.4; letter-spacing:-.02em; }
+#class-journal .ws-parent .report-week-overview > h3 svg { color:#49755a; }
+#class-journal .ws-parent .report-week-overview-copy { min-width:0; }
+#class-journal .ws-parent .report-week-overview-copy .report-week-lead { margin:0 0 12px; color:#244b36; font-size:21px; font-weight:650; line-height:1.65; text-wrap:pretty; }
+#class-journal .ws-parent .report-week-overview-copy > p:last-child { margin:0; color:#486152; font-size:15px; line-height:1.9; }
+#class-journal .ws-parent .report-example-activities { margin-top:32px; padding-top:0; border:0; }
+#class-journal .ws-parent .report-example-section-heading { display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
+#class-journal .ws-parent .report-example-section-heading h3 { margin:0; font-size:19px; }
+#class-journal .ws-parent .report-example-section-heading > span { color:#626a78; font-size:13px; }
+#class-journal .ws-parent .report-example-activity-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; margin:0 0 24px; }
+#class-journal .ws-parent .report-example-activity-nav > button { display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0; min-height:88px; margin:0; padding:14px 4px; border:0; border-bottom:2px solid #e0e6e2; border-radius:0; background:transparent; box-shadow:none; text-align:left; color:#626a78; font:inherit; cursor:pointer; transition:color 140ms ease-out,border-color 140ms ease-out; }
+#class-journal .ws-parent .report-example-activity-nav > button[aria-pressed=true] { color:#245f3d; border-bottom-color:#245f3d; }
+#class-journal .ws-parent .report-example-activity-nav > button:hover { color:#245f3d; background:#f6f8f6; }
+#class-journal .ws-parent .report-example-activity-nav > button:focus-visible { outline:2px solid #245f3d; outline-offset:3px; }
+#class-journal .ws-parent .report-example-activity-title { display:block; font-size:15px; font-weight:650; line-height:1.5; text-wrap:pretty; }
+#class-journal .ws-parent .report-example-activity-meta { display:block; color:#626a78; font-size:12px; line-height:1.5; font-variant-numeric:tabular-nums; }
+#class-journal .ws-parent .report-example-preview .report-reader-layout { border:0; border-top:1px solid #dce3df; border-radius:0; margin-top:0; }
+#class-journal .ws-parent .report-example-preview .report-reader-document { padding-left:0; }
+#class-journal .ws-parent .report-example-preview .report-reader-feedback { gap:28px; border-left:0; }
+#class-journal .ws-parent .report-example-preview .report-explanation-sections { display:block; }
+#class-journal .ws-parent .report-example-preview .report-explanation-section { padding:0; border:0; border-radius:0; background:transparent; }
+#class-journal .ws-parent .report-example-preview .report-explanation-section + .report-explanation-section { margin-top:24px; padding-top:24px; border-top:1px solid #dce2e8; }
+#class-journal .ws-parent .report-example-preview .report-explanation-section h5,
+#class-journal .ws-parent .report-example-reflection h4 { display:flex; align-items:center; gap:10px; }
+#class-journal .ws-parent .report-example-preview .report-explanation-section h5 svg { flex-shrink:0; color:#526a80; }
+#class-journal .ws-parent .report-example-preview .report-example-reflection { margin:0; padding-top:24px; border-top:1px solid #dce2e8; }
+#class-journal .ws-parent .report-example-reflection h4 svg { color:#49755a; flex-shrink:0; }
+#class-journal .ws-parent .report-example-preview .report-reader-document-title { padding-bottom:22px; border-bottom:1px solid #e4e7ec; }
+#class-journal .ws-parent .cj-modal:has(.report-example-preview) { width:min(1100px, 100%); max-width:100%; }
+#class-journal .ws-parent .report-example-source .report-explanation-evidence { background:transparent; padding:0; border:0; }
+@media(max-width:760px) {
+  #class-journal .ws-parent .report-week-overview { grid-template-columns:minmax(0,1fr); gap:16px; padding:22px; }
+  #class-journal .ws-parent .report-week-overview > h3 { flex-direction:row; align-items:center; gap:12px; font-size:24px; }
+  #class-journal .ws-parent .report-week-overview-copy .report-week-lead { font-size:19px; }
+  #class-journal .ws-parent .report-example-activity-nav { grid-template-columns:minmax(0,1fr); gap:0; }
+  #class-journal .ws-parent .report-example-activity-nav > button { min-height:72px; padding:13px 4px; gap:6px; }
+  #class-journal .ws-parent .report-example-preview .report-reader-document { padding:24px 0; }
+  #class-journal .ws-parent .report-example-preview .report-reader-feedback { padding:24px 20px; }
+}

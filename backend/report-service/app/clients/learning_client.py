@@ -32,6 +32,7 @@ from app.generation.records import (
     Period,
     RecordContractError,
     ReflectionRecord,
+    ThemeReference,
     ThinkingMission,
     ThinkingType,
 )
@@ -206,6 +207,13 @@ class ReflectionInput(InputModel):
     created_at: AwareDatetime
 
 
+class ThemeInput(InputModel):
+    theme_id: UUID
+    version_id: UUID
+    title: str = Field(min_length=1)
+    story_type: str | None = None
+
+
 class AttemptInput(InputModel):
     attempt_id: UUID
     student_id: UUID
@@ -218,6 +226,7 @@ class AttemptInput(InputModel):
     available: StrictBool = True
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
     scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
+    theme: ThemeInput | None = None
 
     explanation_requirements: dict[UUID, str] = Field(default_factory=dict)
 
@@ -230,6 +239,11 @@ class AttemptInput(InputModel):
             explanation_requirements=self.explanation_requirements,
             mission_id=self.mission.id,
             context=self.context,
+            theme=ThemeReference(
+                self.theme.theme_id, self.theme.version_id, self.theme.title, self.theme.story_type
+            )
+            if self.theme and self.context in ("THEME_DAY", "THEME_REVIEW")
+            else None,
             scheduled_day=self.scheduled_day
             if self.context in ("THEME_DAY", "THEME_REVIEW")
             else None,

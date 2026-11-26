@@ -20,6 +20,7 @@ from app.generation.records import (
     JudgmentRecord,
     Period,
     RecordContractError,
+    ThemeReference,
 )
 from app.generation.repository import ReportRepository, weekly_report
 from app.generation.theme_summary import ThemeSummary, ThemeSummaryBuilder
@@ -193,7 +194,10 @@ def test_monday_revisions_lists_and_database_constraints(db_session):
 
 def test_daily_persistence_response_and_rendering(db_session):
     command, records, learning = daily_fixture()
-    records = replace(records, attempts=(replace(records.attempts[0], scheduled_day="TUE"),))
+    theme = ThemeReference(uuid4(), uuid4(), "풀 당시 테마", "SOUND")
+    records = replace(
+        records, attempts=(replace(records.attempts[0], scheduled_day="TUE", theme=theme),)
+    )
     repo = ReportRepository()
     report, _ = repo.get_or_create(db_session, command)
     result = asyncio.run(DailyReportBuilder().build(records, learning))
@@ -206,6 +210,7 @@ def test_daily_persistence_response_and_rendering(db_session):
     )
     detail = from_result(report, result)
     ReportDetail.model_validate(detail)
+    assert detail["problems"][0]["theme"] == theme.payload()
     assert without_ai(detail) == detail
     rendered = ReportRenderer().render(detail, "합성학생")
     assert b"%PDF" in rendered["PDF"][:10]
@@ -213,6 +218,8 @@ def test_daily_persistence_response_and_rendering(db_session):
     assert "일일 리포트" in rendered["MD"].decode()
     assert "화요일 문제 · 토요일에 풀었어요" in rendered["HTML"].decode()
     assert "화요일 문제 · 토요일에 풀었어요" in rendered["MD"].decode()
+    assert "테마: 풀 당시 테마" in rendered["HTML"].decode()
+    assert "테마: 풀 당시 테마" in rendered["MD"].decode()
 
 
 def test_theme_scope_no_participation_and_http_failure():
@@ -717,6 +724,20 @@ def test_old_daily_problem_has_null_schedule():
 
     detail = assemble({}, [(ItemType.PROBLEM, None, {"title": "이전 저장본"})])
     assert detail["problems"][0]["scheduledDay"] is None
+    assert detail["problems"][0]["theme"] is None
+
+
+@pytest.mark.parametrize("context", ["THEME_DAY", "THEME_REVIEW", "EXTRA"])
+def test_daily_theme_matches_activity_context_and_never_labels_extra(context):
+    _, records, learning = daily_fixture()
+    theme = ThemeReference(uuid4(), uuid4(), "테마 이름 <&>")
+    records = replace(
+        records, attempts=(replace(records.attempts[0], context=context, theme=theme),)
+    )
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
+    problem = next(i.payload for i in result.items if i.type == ItemType.PROBLEM)
+    assert problem["theme"] == (None if context == "EXTRA" else theme.payload())
+    assert problem["finalAnswer"] == records.attempts[0].answers[-1].text
 
 
 @pytest.mark.parametrize(

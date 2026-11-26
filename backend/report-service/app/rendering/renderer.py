@@ -175,6 +175,8 @@ class ReportRenderer:
                         "판정: " + safe(problem["judgment"] or "판정 대기"),
                     ]
                 )
+                if theme := problem.get("theme"):
+                    lines.append("테마: " + safe(theme["title"]))
                 if label := scheduled_day_line(problem, report["period"]["from"]):
                     lines.append(label)
                 lines.extend(safe(answer_time_line(t)) for t in problem.get("answerTimes", []))

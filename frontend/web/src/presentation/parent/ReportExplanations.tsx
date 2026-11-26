@@ -1,20 +1,42 @@
 import { thinkingLabels } from '../../domain/classroom.ts'
+import { Lightbulb, PencilLine, TextSearch } from 'lucide-react'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
 import type { ReportExplanation, WeeklyReport } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import { explanationBlocks, explanationSections, personalizeExplanation } from '../../domain/reportExplanation.ts'
 
-function ExplanationBody({ text, studentName }: { text: string; studentName: string }) {
+const sectionIcons = { '상세 분석': TextSearch, '보완할 지점': PencilLine, '개선 방안': Lightbulb }
+
+/** Add reading breaks only; keep the model's sentences and their order unchanged. */
+function readableParagraphs(text: string) {
+  if (text.length < 320) return [text]
+  const sentences = Array.from(new Intl.Segmenter('ko', { granularity: 'sentence' }).segment(text), item => item.segment)
+  const paragraphs: string[] = []
+  let current = ''
+  for (const sentence of sentences) {
+    if (current.length >= 180 && current.length + sentence.length > 280) { paragraphs.push(current.trim()); current = '' }
+    current += sentence
+  }
+  if (current.trim()) paragraphs.push(current.trim())
+  return paragraphs
+}
+
+export function ReportExplanationBody({ text, studentName, showSectionIcons = false }: { text: string; studentName: string; showSectionIcons?: boolean }) {
   return <div className="report-explanation-sections">{explanationSections(text).map((section, index) =>
     <div className="report-explanation-section" key={index}>
-      <h5>{section.title}</h5>
+      <h5>{showSectionIcons && <ExplanationSectionIcon title={section.title} />}{section.title}</h5>
       <div className="report-explanation-copy">{explanationBlocks(personalizeExplanation(section.body, studentName)).map((block, blockIndex) => {
-        if (block.kind === 'paragraph') return <p key={blockIndex}>{block.text}</p>
+        if (block.kind === 'paragraph') return readableParagraphs(block.text).map((text, paragraphIndex) => <p key={`${blockIndex}-${paragraphIndex}`}>{text}</p>)
         const List = block.ordered ? 'ol' : 'ul'
         return <List key={blockIndex}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</List>
       })}</div>
     </div>)}</div>
+}
+
+function ExplanationSectionIcon({ title }: { title: string }) {
+  const Icon = sectionIcons[title as keyof typeof sectionIcons]
+  return Icon ? <Icon size={19} aria-hidden="true" /> : null
 }
 
 function OriginalAnswer({ report, item }: { report: WeeklyReport; item: ReportExplanation }) {
@@ -67,10 +89,12 @@ export function ReportExplanations({ report, attemptId, narrativeEnabled, studen
 
   return <section className="report-explanations" aria-label="대표 답변 설명">
     {notice ? <p role="note">{notice}</p> : matching.map(item =>
-      <article className="report-explanation-card" key={item.itemId ?? item.answerId}>
-        <OriginalAnswer report={report} item={item} />
+      <article className="report-explanation-card report-reader-layout" key={item.itemId ?? item.answerId}>
+        <div className="report-reader-document"><OriginalAnswer report={report} item={item} /></div>
+        <aside className="report-reader-feedback" aria-label="대표 답변 설명 내용">
         <h4 className="report-explanation-title">대표 답변 설명</h4>
-        <ExplanationBody text={item.text} studentName={studentName} />
+        <ReportExplanationBody text={item.text} studentName={studentName} showSectionIcons />
+        </aside>
       </article>)}
   </section>
 }

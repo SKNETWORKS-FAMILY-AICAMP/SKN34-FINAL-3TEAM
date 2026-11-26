@@ -69,7 +69,7 @@ export function ParentWorkspace() {
     }} /></details>}
     {hasPeriod && child && !validPeriod(scope) && <p role="alert">조회 기간이 올바르지 않습니다. 시작일과 종료일을 다시 선택해 주세요.</p>}
     {['help', 'support', 'notices', 'notifications'].includes(page) ? <Suspense fallback={<p role="status">불러오고 있습니다.</p>}>{location.pathname.endsWith('/support/results') ? <SupportResults /> : <ServiceContent page={page as 'help' | 'support' | 'notices' | 'notifications'} />}</Suspense>
-      : page === 'settings' ? <ParentSettings key={child?.id ?? 'account'} child={child} childCount={consentReady ? children.data?.items.length : undefined} onCreated={select} />
+      : page === 'settings' ? <ParentSettings key={child?.id ?? 'account'} child={child} childItems={consentReady ? children.data?.items : undefined} onCreated={select} />
       : page === 'billing' ? <ParentPayments key={child?.id ?? 'all'} child={child} />
       : page === 'devices' && children.data && !children.error ? <StudentDevices items={children.data.items} selectedChildId={child?.id} />
       : children.data && !children.error && !children.data.items.length ? <section className="ws-card"><h1>자녀를 등록하고 시작하세요</h1><p>등록한 자녀의 학습 현황과 리포트를 확인할 수 있습니다.</p><Link className="cj-primary" to="/parent/settings?section=profile">계정·자녀 설정에서 자녀 등록</Link></section>

@@ -28,8 +28,10 @@ test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이
     }
   })
   await page.getByRole('list', { name: '리포트 일자' }).getByRole('button').first().click()
-  const problem = page.locator('details.report-answer-comparison').filter({ hasText: '합성 시간 문제' })
-  await problem.locator('summary').click()
+  await page.getByRole('button', { name: '전체 1개 보기', exact: true }).click()
+  await page.locator('[data-daily-group]:enabled').click()
+  await page.locator('[data-daily-problem-link="0"]').click()
+  const problem = page.locator('article.report-answer-comparison')
   await expect(problem.getByText('처음 답: 생각 1분 미만 · 작성 2분', { exact: true })).toBeVisible()
   await expect(problem.getByText('두 번째 되묻기 뒤 답: 생각 10분 · 작성 1분', { exact: true })).toBeVisible()
   await expect(problem.getByText(/^되묻기 뒤 답:/)).toHaveCount(0)

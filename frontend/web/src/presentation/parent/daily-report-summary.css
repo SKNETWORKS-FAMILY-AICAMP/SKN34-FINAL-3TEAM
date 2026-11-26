@@ -5,6 +5,34 @@
 #class-journal .ws-parent .daily-summary * { box-sizing:border-box; }
 #class-journal .ws-parent .daily-summary ::selection { background:#dceee3; color:#1e4734; }
 #class-journal .ws-parent .daily-summary button:focus-visible { outline:2px solid #245f3d; outline-offset:3px; }
+#class-journal .ws-parent .cj-modal:has(> .cj-modal-scroll-frame > .cj-modal-body > .daily-problems-dialog) { width:min(1100px,100%); max-width:100%; height:min(820px,90dvh); }
+#class-journal .ws-parent .daily-problems-dialog { display:block; }
+#class-journal .ws-parent .daily-problems-dialog .daily-problems-date { margin:0 0 20px; color:#586776; font-size:13px; }
+#class-journal .ws-parent .daily-problems-dialog summary:focus-visible { outline:2px solid #245f3d; outline-offset:3px; }
+#class-journal .ws-parent .daily-report-path { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:20px; font-size:12px; color:#52616e; }
+#class-journal .ws-parent .daily-report-path button,
+#class-journal .ws-parent .daily-report-filter button { padding:6px 2px; min-height:36px; border:0; background:none; box-shadow:none; color:#245f3d; font:inherit; text-align:left; text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; }
+#class-journal .ws-parent .daily-report-path [aria-current="page"] { color:#243342; font-weight:600; text-decoration:none; }
+#class-journal .ws-parent .daily-report-path svg { flex-shrink:0; }
+#class-journal .ws-parent .daily-report-filter { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; margin:0 0 20px; background:#edf5ef; border-radius:8px; color:#245f3d; font-size:13px; }
+#class-journal .ws-parent .daily-matching-activities { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 20px; }
+#class-journal .ws-parent .daily-matching-activities > span { color:#586776; font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+#class-journal .ws-parent .daily-matching-activities button { min-height:40px; }
+#class-journal .ws-parent .daily-navigation-heading { margin:0 0 10px; font-size:20px; line-height:1.5; overflow-wrap:anywhere; }
+#class-journal .ws-parent .daily-navigation-help { margin:0 0 24px; color:#586776; font-size:13px; }
+#class-journal .ws-parent .daily-navigation-list { list-style:none; padding:0; margin:0; border-top:1px solid #e1e7ed; }
+#class-journal .ws-parent .daily-navigation-list li { border-bottom:1px solid #e1e7ed; }
+#class-journal .ws-parent button.daily-navigation-row { display:flex; align-items:center; gap:16px; width:100%; min-height:64px; padding:16px 10px; border:0; border-radius:0; background:none; color:#243342; text-align:left; box-shadow:none; font-size:14px; line-height:1.6; }
+#class-journal .ws-parent button.daily-navigation-row:hover:not(:disabled) { background:#f1f6f2; }
+#class-journal .ws-parent .daily-story-list button.daily-navigation-row { min-height:48px; padding-block:10px; }
+#class-journal .ws-parent button.daily-navigation-row:disabled { opacity:1; color:#586776; cursor:default; }
+#class-journal .ws-parent button.daily-navigation-row:disabled > svg { visibility:hidden; }
+#class-journal .ws-parent .daily-navigation-count { font-variant-numeric:tabular-nums; text-align:right; }
+#class-journal .ws-parent .daily-unclassified-note { color:#586776; font-size:13px; margin-top:16px; }
+#class-journal .ws-parent .daily-navigation-row strong { flex:1; min-width:0; overflow-wrap:anywhere; font-weight:550; }
+#class-journal .ws-parent .daily-navigation-row > span { max-width:35%; font-size:12px; color:#586776; }
+#class-journal .ws-parent .daily-navigation-row svg { flex-shrink:0; color:#607267; }
+#class-journal .ws-parent .daily-problems-dialog :is(button,.daily-navigation-heading):focus-visible { outline:2px solid #245f3d; outline-offset:3px; }
 #class-journal .ws-parent .daily-summary .daily-summary-card { min-width:0; background:#fff; border:1px solid #e1e7ed; border-radius:12px; padding:20px; box-shadow:none; }
 #class-journal .ws-parent .daily-summary h4 { display:flex; align-items:center; gap:8px; margin:0; color:#465563; font-size:13px; line-height:1.6; font-weight:550; }
 #class-journal .ws-parent .daily-summary h4 svg { flex-shrink:0; color:#647585; stroke-width:1.6; }
@@ -14,7 +42,6 @@
 #class-journal .ws-parent .daily-number strong { font-size:32px; font-weight:650; letter-spacing:-.025em; color:var(--daily-ink); }
 #class-journal .ws-parent .daily-number > span { font-size:13px; color:var(--daily-muted); }
 #class-journal .ws-parent .daily-number .daily-unavailable { font-size:16px; line-height:1.8; }
-#class-journal .ws-parent .daily-total > p { margin-top:8px; }
 #class-journal .ws-parent .daily-judgments dl { display:flex; flex-wrap:wrap; gap:18px 28px; margin:16px 0 0; }
 #class-journal .ws-parent .daily-judgments dl > div { flex:1 1 100px; }
 #class-journal .ws-parent .daily-judgments dd { margin:0; font-size:30px; font-weight:600; line-height:1.2; }
@@ -29,16 +56,16 @@
 #class-journal .ws-parent .daily-summary-panels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; align-items:stretch; }
 #class-journal .ws-parent .daily-summary-card > header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 #class-journal .ws-parent .daily-panel-count { color:var(--daily-muted); font-size:12px; }
-#class-journal .ws-parent .daily-summary .daily-panel-description { margin:8px 0 16px; }
+#class-journal .ws-parent .daily-summary .daily-elements > ul { margin-top:12px; }
 #class-journal .ws-parent .daily-summary ul { list-style:none; padding:0; margin:0; }
 #class-journal .ws-parent .daily-summary .daily-activity-list { margin-top:12px; display:grid; gap:8px; }
-#class-journal .ws-parent .daily-summary button.daily-activity { width:100%; display:flex; align-items:center; gap:10px; padding:13px 12px; background:#f8fafb; border:1px solid #eef1f4; border-radius:8px; text-align:left; color:var(--daily-ink); box-shadow:none; font:inherit; min-height:64px; transition:background .15s ease; }
+#class-journal .ws-parent .daily-summary button.daily-activity { width:100%; display:grid; grid-template-columns:minmax(0,1fr) 92px 15px; align-items:center; gap:6px; padding:13px 12px; background:#f8fafb; border:1px solid #eef1f4; border-radius:8px; text-align:left; color:var(--daily-ink); box-shadow:none; font:inherit; min-height:64px; transition:background .15s ease; }
 #class-journal .ws-parent .daily-summary button.daily-activity:hover { background:#edf4ef; border-color:#d8e7de; }
 #class-journal .ws-parent .daily-activity-copy { flex:1; min-width:0; }
 #class-journal .ws-parent .daily-activity-copy strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; font-size:13px; line-height:1.6; font-weight:550; }
 #class-journal .ws-parent .daily-activity-copy small { display:block; margin-top:4px; color:var(--daily-muted); font-size:11px; line-height:1.5; }
 #class-journal .ws-parent .daily-activity > svg { flex-shrink:0; color:#6c7b88; }
-#class-journal .ws-parent .daily-badge { flex-shrink:0; max-width:92px; padding:4px 8px; border-radius:6px; font-size:11px; line-height:1.5; text-align:center; font-weight:500; }
+#class-journal .ws-parent .daily-badge { justify-self:start; max-width:92px; padding:4px 8px; border-radius:6px; font-size:11px; line-height:1.5; text-align:center; font-weight:500; }
 #class-journal .ws-parent .daily-badge.daily-tone-green { background:#eaf6ef; }
 #class-journal .ws-parent .daily-badge.daily-tone-amber { background:#fff5df; }
 #class-journal .ws-parent .daily-badge.daily-tone-rose { background:#fceef0; }
@@ -60,6 +87,9 @@
 #class-journal .ws-parent .daily-difficulty-legend i { width:8px; height:8px; border-radius:50%; }
 #class-journal .ws-parent .daily-difficulty-legend dd { margin:0; font-weight:600; }
 #class-journal .ws-parent .daily-difficulty-legend dd span { margin-left:4px; color:var(--daily-muted); font-size:11px; font-weight:400; }
+#class-journal .ws-parent .daily-difficulty-legend button.daily-difficulty-count { position:relative; display:inline; min-width:0; min-height:0; margin:0; padding:0; border:0; border-radius:2px; background:none; box-shadow:none; color:inherit; font:inherit; vertical-align:baseline; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+#class-journal .ws-parent .daily-difficulty-legend button.daily-difficulty-count::after { content:''; position:absolute; inset:-5px -9px; }
+#class-journal .ws-parent .daily-difficulty-legend button.daily-difficulty-count:hover { color:#245f3d; }
 #class-journal .ws-parent .daily-summary .daily-empty-copy { padding:25px 0; font-size:13px; }
 #class-journal .ws-parent .daily-summary .daily-summary-note { margin:16px 0 0; font-size:12px; }
 #class-journal .ws-parent .daily-summary-empty { display:flex; flex-direction:column; align-items:center; gap:12px; padding:48px 20px; margin-top:16px; color:var(--daily-muted); text-align:center; }
@@ -80,5 +110,6 @@
   #class-journal .ws-parent .daily-summary .daily-stat { padding:14px 16px; }
   #class-journal .ws-parent .daily-summary h4 { font-size:12px; gap:6px; }
   #class-journal .ws-parent .daily-activity > svg { display:none; }
-  #class-journal .ws-parent .daily-badge { max-width:74px; font-size:10px; }
+  #class-journal .ws-parent .daily-summary button.daily-activity { grid-template-columns:minmax(0,1fr) 92px; }
+  #class-journal .ws-parent .daily-badge { max-width:92px; font-size:10px; }
 }

@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { PaymentManagement } from './PaymentManagement.tsx'
-import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../auth/sessionContext.ts'
 import type { Child } from '../../domain/classroom.ts'
 import { checkoutConfirmation, paymentComplete, paymentStateLabel, duplicateSubscription, memoryBookLabel } from '../../domain/payment.ts'
-import type { PendingCheckout } from '../../domain/payment.ts'
+import type { PaymentProduct, PendingCheckout } from '../../domain/payment.ts'
 import { paymentApi, paymentClientKey, paymentTestMode, mockPaymentMode } from '../../data/payment/api.ts'
 import { readCheckout } from '../../data/payment/checkoutStorage.ts'
 import { requestCheckoutOrder, useCheckoutState, usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
@@ -14,6 +13,7 @@ import { loadToss } from '../../data/payment/toss.ts'
 import type { TossWidget } from '../../data/payment/toss.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
+import { PremiumOffer, PremiumPlanPreview } from './PremiumOffer.tsx'
 import { PlanComparison } from '../common/PlanComparison.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './payment.css'
@@ -21,14 +21,19 @@ import './payment.css'
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 export function ParentPayments({ child }: { child?: Child }) {
   const [params] = useSearchParams(), cache = useQueryClient()
+  const { hash } = useLocation()
   const checkoutMode = params.get('checkout') === '1'
   const products = useParentQuery(['products'], signal => paymentApi.products(signal))
   const subscriptions = useParentQuery(['subscriptions'], signal => paymentApi.subscriptions(signal), !paymentTestMode)
-  const entitlement = knownEntitlement(useChildEntitlement(child?.id ?? '', !!child && !paymentTestMode))
   const duplicate = child && duplicateSubscription(subscriptions.data?.items ?? [], child.id)
+  const currentSubscription = child ? subscriptions.data?.items.find(s => duplicateSubscription([s], child.id)) : undefined
   const [selection, setSelection] = useState(params.get('productId') ?? '')
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const catalogHeading = useRef<HTMLHeadingElement>(null)
+  const changePlanButton = useRef<HTMLButtonElement>(null)
   const availableProducts = products.data?.items.filter(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') ?? []
-  const product = availableProducts.find(p => p.id === selection)
+  const offeredProduct = availableProducts.find(p => p.code === 'PREMIUM') ?? availableProducts[0]
+  const product = checkoutMode ? availableProducts.find(p => p.id === selection) : offeredProduct
   const paymentAvailable = mockPaymentMode || /^test_gck_/.test(paymentClientKey)
   const [pending, setOrder] = useState<PendingCheckout | null>(() => { const p = readCheckout(); return checkoutMode && p && p.childId === child?.id && p.productId === params.get('productId') ? p : null })
   const order = checkoutMode ? pending : null
@@ -40,6 +45,7 @@ export function ParentPayments({ child }: { child?: Child }) {
   const createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
   const [tabNotice, setTabNotice] = useState('')
   const checkoutTab = useRef<Window | null>(null)
+  const checkoutProductId = useRef('')
   const [opening, setOpening] = useState(false)
   useEffect(() => {
     const refresh = () => { void cache.invalidateQueries({ queryKey: ['parent'] }) }
@@ -49,45 +55,64 @@ export function ParentPayments({ child }: { child?: Child }) {
   }, [cache])
   // 같은 멱등 키의 주문 생성은 data 계층에서 진행 중 요청을 공유한다. effect가 다시 실행돼도(StrictMode·재조회) 409 경합 없이 같은 결과를 받는다.
   useEffect(() => {
-    if (!checkoutMode || order || !product || !child || duplicate || !paymentAvailable || !paymentTestMode && (subscriptions.isPending || subscriptions.error)) return
+    if (!checkoutMode || order || !product || products.error || !child || duplicate || !paymentAvailable || !paymentTestMode && (subscriptions.isPending || subscriptions.error)) return
     let active = true
     void requestCheckoutOrder(child.id, product.id, createKey.current).then(pending => {
       if (active) setOrder(pending)
     }).catch(e => { if (active) setError(e) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
-  }, [checkoutMode, order, product, child, duplicate, paymentAvailable, subscriptions.isPending, subscriptions.error])
-  async function prepare() {
-    if (!product || !child || duplicate || busy || !paymentAvailable) return
+  }, [checkoutMode, order, product, child, duplicate, paymentAvailable, subscriptions.isPending, subscriptions.error, products.error])
+  function openCatalog() {
+    setCatalogOpen(true)
+    requestAnimationFrame(() => {
+      catalogHeading.current?.focus({ preventScroll: true })
+      catalogHeading.current?.scrollIntoView({ block: 'start' })
+    })
+  }
+  async function prepare(chosen = availableProducts.find(p => p.id === checkoutProductId.current) ?? product) {
+    if (!chosen || products.error || !child || duplicate || busy || !paymentAvailable) return
     setBusy(true); setError(null)
     try {
       if (checkoutMode) {
-        setOrder(await requestCheckoutOrder(child.id, product.id, createKey.current))
+        setOrder(await requestCheckoutOrder(child.id, chosen.id, createKey.current))
         return
       }
-      if (checkoutTab.current && !checkoutTab.current.closed) { checkoutTab.current.focus(); return }
+      if (checkoutTab.current && !checkoutTab.current.closed && checkoutProductId.current === chosen.id) { checkoutTab.current.focus(); return }
+      if (checkoutProductId.current && checkoutProductId.current !== chosen.id) createKey.current = crypto.randomUUID()
       const url = new URL('/parent/billing', location.origin)
-      url.search = new URLSearchParams({ childId: child.id, productId: product.id, checkout: '1', orderKey: createKey.current }).toString()
+      url.search = new URLSearchParams({ childId: child.id, productId: chosen.id, checkout: '1', orderKey: createKey.current }).toString()
       const tab = window.open(url.href, '_blank')
       if (!tab) throw new Error('결제 탭이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.')
       tab.opener = null
       checkoutTab.current = tab
+      checkoutProductId.current = chosen.id
       setOpening(true)
       setTabNotice('새 탭에서 결제를 진행해 주세요. 돌아오면 이용권 상태를 다시 확인합니다.')
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
-  return <section className="payment-page">
-    <header><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></header>
-    {!checkoutMode && <PlanComparison id="plan-compare" />}
+  return <section className={checkoutMode ? "payment-page" : "payment-page premium-billing"}>
+    <header><div><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></div>
+      {!checkoutMode && <button ref={changePlanButton} className="premium-change-plan" aria-controls="plan-change-preview" aria-expanded={catalogOpen} onClick={openCatalog}>이용권 변경</button>}
+    </header>
     {paymentTestMode && <p className="payment-test-note">결제 연동 테스트 · 실제 청구 없이 토스 인증과 승인을 확인합니다. 테스트 주문은 서버 메모리에만 보관되며 학습 이용권에는 적용되지 않습니다.</p>}
     {mockPaymentMode && <p className="payment-test-note">모의 결제 시연 · 외부 PG를 호출하지 않고 가상 승인·구독·환불을 확인합니다.</p>}
     {duplicate && <p role="status">이 자녀는 이미 이용 중인 구독이 있습니다. 현재 구독에서 결제수단과 자동 갱신을 관리할 수 있습니다.</p>}
     <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
     {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
     {opening && !duplicate && <button disabled={busy} onClick={() => void prepare()}>결제 탭 다시 열기</button>}
+    {!checkoutMode && availableProducts.length > 0 && <section id="available-plans" className="premium-catalog" aria-labelledby="available-plans-title" data-multiple={availableProducts.length > 1 || undefined}>
+      <div className="premium-catalog-heading"><h2 id="available-plans-title">이용 가능한 이용권</h2></div>
+      <div className="premium-catalog-list">{availableProducts.map((p: PaymentProduct) => <PremiumOffer key={p.id} product={p} childName={child?.nickname} subscribed={!!duplicate}
+        current={currentSubscription?.product?.id === p.id || currentSubscription?.product?.code === p.code}
+        disabled={!child || products.isPending || !!products.error || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable}
+        busy={busy} opening={opening} paymentAvailable={paymentAvailable} onCheckout={() => void prepare(p)} />)}</div>
+    </section>}
+    {!checkoutMode && catalogOpen && <PremiumPlanPreview headingRef={catalogHeading} onClose={() => { setCatalogOpen(false); changePlanButton.current?.focus() }} />}
     {!checkoutMode && <PaymentManagement key={`current-${child?.id ?? 'all'}`} child={child} section="subscriptions" />}
-    {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : entitlement?.status === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
+    {!checkoutMode && <PremiumComparison key={hash} initiallyOpen={hash === '#plan-compare'} />}
+
     {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
-    {(!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
+    {checkoutMode && (!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
       <section className="payment-panel"><h2>{order ? '결제수단' : '이용권 선택'}</h2>
         {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); checkoutTab.current = null; setOpening(false); setTabNotice(''); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}{memoryBookLabel(p)}</small></span><strong>{won(p.price)}</strong></label>)}</div>
           {products.data && !products.data.items.some(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') && <p>현재 구매 가능한 이용권이 없습니다.</p>}
@@ -104,6 +129,14 @@ export function ParentPayments({ child }: { child?: Child }) {
     </div>}
     {!checkoutMode && <PaymentManagement key={`history-${child?.id ?? 'all'}`} child={child} section="history" />}
   </section>
+}
+
+function PremiumComparison({ initiallyOpen }: { initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen)
+  return <details className="premium-comparison" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>무료와 프리미엄 이용 범위 비교</summary>
+    {open && <PlanComparison id="plan-compare" />}
+  </details>
 }
 
 
