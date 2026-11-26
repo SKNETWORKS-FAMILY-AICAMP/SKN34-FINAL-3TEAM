@@ -28,7 +28,6 @@ class BookStatus(StrEnum):
 class FailureCode(StrEnum):
     """영구 실패만(재시도해도 같은 결과). 일시 장애는 큐 재시도에 맡긴다"""
 
-    STUDENT_RECORDS_PRIVATE = "STUDENT_RECORDS_PRIVATE"
     THEME_FRAME_NOT_FOUND = "THEME_FRAME_NOT_FOUND"
     STUDENT_DELETED = "STUDENT_DELETED"
     INVALID_ROUND = "INVALID_ROUND"
