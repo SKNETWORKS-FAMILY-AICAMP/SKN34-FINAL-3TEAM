@@ -444,7 +444,7 @@ sequenceDiagram
 
 - 거절은 받는 학부모 `POST /guardian-transfers/{id}/reject`, 취소는 보내는 학부모 `POST /guardian-transfers/{id}/cancel`로 `REJECTED`·`CANCELLED`가 된다. 이미 처리된 요청은 `409 TRANSFER_ALREADY_RESOLVED`
 - 대기 요청이 있으면 보내는 학부모의 탈퇴 요청과 그 자녀의 연결 해제·삭제는 `409 TRANSFER_PENDING`이다. 탈퇴 화면은 "이관 유지" 또는 "이관 취소 후 탈퇴 절차 진행"(`POST /guardian-transfers/cancel-outgoing`)을 고르게 하며, 취소만으로 탈퇴·삭제를 실행하지 않는다
-- 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
+- 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 커뮤니티 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
 - 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 신규 대상 조회·요청·수락을 제어한다(기본 꺼짐). 본인 요청 조회·거절·취소는 기능 off·동의 누락에도 유지하고, 취소 후 탈퇴는 별도 재인증·최종 확인을 거친다(#307). 상세 범위와 검증은 [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
 ### 2.6 꾸미기 해금·착용 (P22, #389)
@@ -1005,11 +1005,11 @@ sequenceDiagram
   participant S3R as S3 reports
 
   P->>C: GET /children/{childId}/memory-books/rounds
-  C->>C: 학부모 세션·연결·동의, 원문 공개 확인(비공개 403 STUDENT_RECORDS_PRIVATE, learning 미호출)
+  C->>C: 학부모 세션·연결·법정대리인 동의 확인
   C->>L: GET /internal/students/{id}/album (자녀 범위 SYSTEM)
   C-->>P: 회차 목록 + 회차마다 가장 최근 그림책
   P->>C: POST /children/{childId}/memory-books {rounds:[{themeId, weekStart}]}
-  C->>C: 연결·동의·원문 공개, 같은 회차 QUEUED·보관 기간 안 READY면 200으로 그것
+  C->>C: 연결·동의, 같은 회차 QUEUED·보관 기간 안 READY면 200으로 그것
   C->>L: POST /internal/students/{id}/frames/ownership (트랜잭션 밖)
   alt 미보유
     C-->>P: 404 THEME_FRAME_NOT_FOUND
@@ -1022,43 +1022,39 @@ sequenceDiagram
   CDB-->>MQ: Outbox relay (cmd.direct)
   MQ->>R: memorybook.generate {bookId, studentId, rounds}
   R->>R: 학생 삭제 잠금, 삭제 상태 확인
-  R->>C: GET /internal/students/{id}/profile (별명, parentSharingEnabled)
-  alt 원문 비공개로 바뀜
-    R->>MQ: memorybook.completed FAILED STUDENT_RECORDS_PRIVATE (learning 미호출)
-  else 공개
-    R->>L: GET /internal/students/{id}/memory-book/{themeId}/{weekStart}
-    L-->>R: 회차 조립(엔딩 전이면 outro·answer·outroImage null, 그림은 presigned URL)
-    R->>S3M: 그림 GET (허용 출처만, 리디렉트 거부, 장당 5MB·합 40MB)
-    alt 그림 주소가 있는데 한 장도 못 받음
-      R->>MQ: memorybook.completed FAILED ASSET_UNAVAILABLE
-    end
-    R->>R: data URI(못 받은 장은 빈 칸) → Jinja2 → Chromium PDF(네트워크 차단)
-    R->>S3R: PUT reports/memory-books/{studentId}/{bookId}/pdf
-    R->>MQ: memorybook.completed READY (report Outbox)
+  R->>C: GET /internal/students/{id}/profile (별명)
+  R->>L: GET /internal/students/{id}/memory-book/{themeId}/{weekStart}
+  L-->>R: 회차 조립(엔딩 전이면 outro·answer·outroImage null, 그림은 presigned URL)
+  R->>S3M: 그림 GET (허용 출처만, 리디렉트 거부, 장당 5MB·합 40MB)
+  alt 그림 주소가 있는데 한 장도 못 받음
+    R->>MQ: memorybook.completed FAILED ASSET_UNAVAILABLE
   end
+  R->>R: data URI(못 받은 장은 빈 칸) → Jinja2 → Chromium PDF(네트워크 차단)
+  R->>S3R: PUT reports/memory-books/{studentId}/{bookId}/pdf
+  R->>MQ: memorybook.completed READY (report Outbox)
   MQ->>C: memorybook.completed
   C->>CDB: processed_event 한 번만 → 작업 READY·FAILED, 사용 예약 마감(READY 사용·FAILED 미사용)
   P->>C: GET /children/{childId}/memory-books (만드는 중이면 web이 3초마다 다시 조회)
   P->>C: GET /children/{childId}/memory-books/{bookId}/download
-  C->>C: 연결·동의·현재 원문 공개 확인, QUEUED 409·FAILED 409·만료 410
+  C->>C: 연결·동의 확인, QUEUED 409·FAILED 409·만료 410
   C->>RA: GET /internal/students/{id}/memory-books/{bookId}/files/pdf
   RA-->>C: {url, expiresAt} (TTL 300초, attachment)
   C->>CDB: memory_book_download 기록
   C-->>P: {url, expiresAt} → web이 그 주소로 이동
   P->>C: PUT /children/{childId}/memory-books/{bookId}/read-together
-  C->>C: 연결·동의·현재 원문 공개 확인, 다른 자녀·없음 404, QUEUED·FAILED 409 (만료 READY는 허용)
+  C->>C: 연결·동의 확인, 다른 자녀·없음 404, QUEUED·FAILED 409 (만료 READY는 허용)
   C->>CDB: read_together_at = COALESCE(read_together_at, now) (처음 시각 유지)
   C-->>P: 200 그림책 {…, readTogetherAt}
   Note over C,CDB: 매주 토요일 19:30 KST (ShedLock core-memory-book-read-reminder)
   C->>CDB: 지난 7일 안 READY·같이 읽음 없음·보관 기간 안 책이 있는 자녀 목록
   loop 자녀마다 (자녀별 트랜잭션)
-    C->>CDB: 학생 행 잠금, ACTIVE·원문 공개·조건 재확인 → 알림 받을 학부모마다 notification MEMORY_BOOK_READ_REMINDER (원천 ID = 자녀 + 그 주 월요일, 수신 끈 학부모 제외)
+    C->>CDB: 학생 행 잠금, ACTIVE·조건 재확인 → 알림 받을 학부모마다 notification MEMORY_BOOK_READ_REMINDER (원천 ID = 자녀 + 그 주 월요일, 수신 끈 학부모 제외)
   end
 ```
 
-- 일시 장애(learning·core 5xx, S3 오류)는 report-worker가 예외로 올려 큐 재시도(1·5·15분, DLQ). 영구 실패만 FAILED 이벤트(`STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`). 그림은 받지 못한 장만 빈 칸으로 두되, 그림 주소가 있는데 한 장도 받지 못하면 `ASSET_UNAVAILABLE`로 실패한다(사용 예약 미사용, 한도 안 씀)
+- 일시 장애(learning·core 5xx, S3 오류)는 report-worker가 예외로 올려 큐 재시도(1·5·15분, DLQ). 영구 실패만 FAILED 이벤트(`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`). 그림은 받지 못한 장만 빈 칸으로 두되, 그림 주소가 있는데 한 장도 받지 못하면 `ASSET_UNAVAILABLE`로 실패한다(사용 예약 미사용, 한도 안 씀)
 - 같은 명령이 다시 오면 저장된 파일이 있을 때 다시 만들지 않고 완료만 다시 알린다
-- 토요일 같이 읽기 알림(#1025)은 한 자녀가 실패해도 다른 자녀를 계속 처리하고, 같은 토요일에 다시 돌아도 원천 ID가 같아 자녀·학부모마다 1건이다. 원문 비공개 자녀는 받기가 403이라 알리지 않는다
+- 토요일 같이 읽기 알림(#1025)은 한 자녀가 실패해도 다른 자녀를 계속 처리하고, 같은 토요일에 다시 돌아도 원천 ID가 같아 자녀·학부모마다 1건이다.
 - 자녀 삭제 확정은 core가 같은 트랜잭션에서 작업 행을 지우고(받기 기록은 FK CASCADE), report가 `reports/{studentId}/`와 `reports/memory-books/{studentId}/` 아래 파일을 지운다(10.1)
 
 ---
@@ -1224,7 +1220,7 @@ sequenceDiagram
   end
   Note over RW,C: #119 core API를 기본 worker의 CoreClient.lookup에서 호출 (#56)
   RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
-  C-->>RW: 200 {studentId, nickname, parentSharingEnabled, grade} (ACTIVE만, no-store)
+  C-->>RW: 200 {studentId, nickname, grade} (ACTIVE만, no-store)
   RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
   Note over RW,C: 403·404·통신 장애는 GENERATION_FAILED로 종료. HTTP 재시도·가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
@@ -1245,7 +1241,7 @@ sequenceDiagram
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
     end
   end
-  opt 주간, narrativeEnabled, 원문 공개 (FN-RPT-09, #479·#508·#747, 단계 전체 300초 예산)
+  opt 주간, narrativeEnabled (FN-RPT-09, #479·#508·#747, 단계 전체 300초 예산)
     RW->>L: GET /internal/records/students/{id}/attempts?includeModelScores=true (SYSTEM)
     L-->>RW: 기간 내 기록 + modelScores.m2
     alt M2 점수가 있는 답변 없음
@@ -1414,7 +1410,7 @@ sequenceDiagram
     RW->>RW: state = NO_RECORD
   else 기록 있음
     RW->>RW: 문제별 판정·되묻기·보완 답변·생각 요소·돌아보기·인용 템플릿 구성 (ai 호출 없음)
-    RW->>RW: 숫자·인용 원본 대조, #206 비공개면 원문 제외
+    RW->>RW: 숫자·인용 원본 대조
   end
   RW->>S3: PDF·Markdown·HTML 저장
   rect rgba(128,128,128,0.12)

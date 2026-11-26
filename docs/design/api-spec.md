@@ -121,7 +121,7 @@
 | `JOB_RETRY_UNAVAILABLE` / `JOB_RETRY_OUTCOME_UNKNOWN` | 503 | 재처리를 지원하지 않는 작업 종류 / 알림 재처리 후 결과 상태 미확정 (2.8) |
 | `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
 | `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
-| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록 조회(#206. 시도 비교는 학생 전용이라 해당 없음) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
+| `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 409 / 409 | 학생 삭제 진행·비활성(꾸미기·커뮤니티 공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
 | `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
@@ -284,8 +284,6 @@
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~9, 7~9는 중1~3) 수정 (학년은 이후 제공 문제에만 적용, 학년이 바뀌면 `grade_changed_at` 기록해 그 해 자동 진급 판단에 씀, P26 #432) | ACC-09 | 우선1 |
 | PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}`. 활성 학부모 세션·현재 연결 자녀 권한 검사, 추가 재인증 없음. 숫자 4~6자리·반복/연속 거부(422), 잠금·실패 횟수 초기화·감사 | ACC-14 | 구현 |
-| GET · PUT | `/students/me/sharing-preferences` | 학생 | 학부모 원문 공개 설정 조회·변경. PUT `{parentSharingEnabled}`(누락·null 400) → `{studentId, parentSharingEnabled}`, 기본 false (#206, 5.15) | - | 구현 |
-| GET | `/children/{childId}/sharing-preferences` | 학부모 | 연결 자녀의 원문 공개 설정 조회 `{studentId, parentSharingEnabled}` (#206, 5.15) | - | 구현 |
 | POST | `/student-devices/pairings` | 학부모 | 1회용 페어링 코드 발급 `{childIds[]}` → `{pairingCode, expiresAt}` (10분, QR은 클라이언트가 코드로 생성) (P01) | ACC-14 | 제안 |
 | GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
 | DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
@@ -422,7 +420,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state: NO_RECORD|INSUFFICIENT_SAMPLE`로 표시하며, 생성 실패(`FAILED`)와 구분 (FN-RPT-11). `NO_RECORD`는 LLM 미호출 (P06)
 - 무료 플랜은 수치만 제공(`narrative: null`, 생각 유형 `summary` 없음) (P13)
 - 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 대상일이 끝난 자정(다음 날 00:00 KST, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함, 생성 시각은 2026-11-09 결정). report 생성·저장·조회·다운로드 구현(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, scheduledDay, judgment, followups[], finalAnswer, elements[], reflection, quotes[], answerTimes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함 `scheduledDay`는 선택·nullable 칸(MON~FRI)이며 THEME_DAY·THEME_REVIEW의 시도에 저장된 테마·주·미션에 해당하는 예정 요일이다. EXTRA·값 없는 이전 응답/저장본은 null. 완료일 기준 집계는 유지하고 다른 요일에 풀었으면 상세·PDF·Markdown에 "화요일 문제 · 목요일에 풀었어요"를 표시한다. 당일 풀이는 기존 표시를 유지한다(#845).
-- 일일 `answerTimes`(P28, 설계 #800, 구현 report #803): 그 문제 답변 중 생각·작성 시간이 있는 것만 버전 순 `[{version, thinkingSeconds, writingSeconds}]`, 없으면 `[]`. 원문 비공개(#206)여도 넣는다. 표시는 `version` 1 "처음 답", 2 "되묻기 뒤 답", 3 "두 번째 되묻기 뒤 답" + "생각 N분 · 작성 N분"(60초 미만 "1분 미만", 그 밖은 분 단위 내림), HTML·Markdown·PDF·웹 화면 같은 문구. 칸이 없는 이전 저장본은 `[]`로 읽는다
+- 일일 `answerTimes`(P28, 설계 #800, 구현 report #803): 그 문제 답변 중 생각·작성 시간이 있는 것만 버전 순 `[{version, thinkingSeconds, writingSeconds}]`, 없으면 `[]`. 표시는 `version` 1 "처음 답", 2 "되묻기 뒤 답", 3 "두 번째 되묻기 뒤 답" + "생각 N분 · 작성 N분"(60초 미만 "1분 미만", 그 밖은 분 단위 내림), HTML·Markdown·PDF·웹 화면 같은 문구. 칸이 없는 이전 저장본은 `[]`로 읽는다
 - 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[], finished, ending}`. 테마 미참여 주는 `state: NO_RECORD` 요약. #486: `days[].completed`(당일 풀이)·`days[].completedInWeek`(그 주 안에 학습 완료)로 요일별 "그날 풀었어요·나중에 풀었어요·못 풀었어요", `completed`(개근)·`finished`(주간 완주)·`ending`(`NOT_ENDED`·`ENDED`)을 표시. 새 칸은 learning이 주지 않으면 `null`이며 이전처럼 표시
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
@@ -441,15 +439,15 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 | GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | `{url, expiresAt}`(report 서명 URL, TTL 300초, attachment). 받을 때마다 `memory_book_download` 기록 | RPT-18 | 구현 |
 | PUT | `/children/{childId}/memory-books/{bookId}/read-together` | 학부모 | "같이 읽었어요" 표시(본문 없음) → 200 그림책 응답. 멱등(이미 표시했으면 처음 `readTogetherAt` 그대로), 취소 없음. 보관 기간이 지난 책(`EXPIRED`)도 표시 가능, 유료 판정 없음 | RPT-18 | 구현(#1025) |
 
-- 순서(발급): 학부모 세션(아니면 403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 원문 공개(#206, 비공개면 403 `STUDENT_RECORDS_PRIVATE`, learning 미호출) → 같은 회차 재사용 → learning `frames/ownership` 보유 확인(트랜잭션 밖, 미보유 404 `THEME_FRAME_NOT_FOUND`) → 하루 한도 `limits.dailyMemoryBooks`(KST, 429 `USAGE_LIMIT_REACHED`) → 유료 판정 `features.memoryBook`(무료 403 `PREMIUM_REQUIRED`)·`MEMORY_BOOK` 사용 예약(환불 중 409 `REFUND_IN_PROGRESS`) → 학생 행 잠금 안에서 작업 행·`memorybook.generate` Outbox 저장(삭제 확정 학생 409 `STUDENT_UNAVAILABLE`). 저장 실패·재사용이면 예약을 미사용으로 마감
-- 목록·회차 목록·받기도 매번 연결·동의와 **현재** 원문 공개를 확인한다. 비공개로 바꾸면 파일은 남기고 받기만 막는다(C4, 리포트와 같음). 다시 공개하면 보관 기간 안의 파일을 다시 받을 수 있다
-- 생성 실패 코드(`failureCode`, 목록·회차 목록의 `status: FAILED`): `STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`(그림 주소가 있는데 한 장도 받지 못함, #975). 실패는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않는다. 일부 그림만 받지 못하면 그 칸만 비우고 `READY`
+- 순서(발급): 학부모 세션(아니면 403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 같은 회차 재사용 → learning `frames/ownership` 보유 확인(트랜잭션 밖, 미보유 404 `THEME_FRAME_NOT_FOUND`) → 하루 한도 `limits.dailyMemoryBooks`(KST, 429 `USAGE_LIMIT_REACHED`) → 유료 판정 `features.memoryBook`(무료 403 `PREMIUM_REQUIRED`)·`MEMORY_BOOK` 사용 예약(환불 중 409 `REFUND_IN_PROGRESS`) → 학생 행 잠금 안에서 작업 행·`memorybook.generate` Outbox 저장(삭제 확정 학생 409 `STUDENT_UNAVAILABLE`). 저장 실패·재사용이면 예약을 미사용으로 마감
+- 목록·회차 목록·받기도 매번 연결·법정대리인 동의를 확인한다. 원문 제공은 법정대리인 동의서 1.2의 필수 목적이라 학생별 공개 확인은 없다(#1064)
+- 생성 실패 코드(`failureCode`, 목록·회차 목록의 `status: FAILED`): `THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`(그림 주소가 있는데 한 장도 받지 못함, #975). 실패는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않는다. 일부 그림만 받지 못하면 그 칸만 비우고 `READY`
 - 그림책 응답(`MemoryBook`: 발급·발급 목록·책장 `book`·같이 읽음)에는 `readTogetherAt`(학부모가 처음 "같이 읽었어요"를 누른 시각, 없으면 null)이 있다(#1025). 누가 눌렀는지는 저장하지 않는다
-- 같이 읽음 오류(#1025): 권한·확인 순서는 받기와 같다(학부모 세션 403 `FORBIDDEN` → 연결·동의 403 `CHILD_NOT_LINKED` → 현재 원문 공개 403 `STUDENT_RECORDS_PRIVATE`). 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`. 410은 없다
-- 토요일 저녁 같이 읽기 알림(#1025): core 예약 작업이 매주 토요일 19:30 KST(ShedLock `core-memory-book-read-reminder`)에 `status = READY`·`completed_at ≥ 실행 시각 − 7일`·`read_together_at IS NULL`·`expires_at > 실행 시각`인 책이 있는 자녀마다 알림 받을 학부모(연결 + 필수 동의 + 법정대리인 동의)에게 `MEMORY_BOOK_READ_REMINDER` 1건(2.7). 원문 비공개 자녀는 받기가 403이라 보내지 않는다. 같은 주에 다시 돌아도 원천 ID가 자녀·그 주 월요일(KST)이라 1건
+- 같이 읽음 오류(#1025): 권한·확인 순서는 받기와 같다(학부모 세션 403 `FORBIDDEN` → 연결·동의 403 `CHILD_NOT_LINKED`). 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`. 410은 없다
+- 토요일 저녁 같이 읽기 알림(#1025): core 예약 작업이 매주 토요일 19:30 KST(ShedLock `core-memory-book-read-reminder`)에 `status = READY`·`completed_at ≥ 실행 시각 − 7일`·`read_together_at IS NULL`·`expires_at > 실행 시각`인 책이 있는 자녀마다 알림 받을 학부모(연결 + 필수 동의 + 법정대리인 동의)에게 `MEMORY_BOOK_READ_REMINDER` 1건(2.7). 같은 주에 다시 돌아도 원천 ID가 자녀·그 주 월요일(KST)이라 1건
 - 받기 오류: 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`(detail에 실패 코드), 학생 기록 삭제 중 409 `DELETION_IN_PROGRESS`, 보관 기간(30일)이 지났거나 파일 없음 410 `MEMORY_BOOK_EXPIRED`, report 장애 503 `REPORT_UNAVAILABLE`·모양 오류 502 `REPORT_CONTRACT_INVALID`
 - 구독이 끝나도 보관 기간 안의 파일은 받을 수 있다(C2). 새 발급만 유료다
-- 무료 책장(B6, 설계 #997, 구현 #999): 유료 판정은 발급과 같은 `ProductEntitlementService`의 `features.memoryBook` 규칙(값이 없으면 구독 중만)을 쓴다. 무료면 `weekStart ≥ 이번 주 월요일(KST) − 28일`인 회차만 반환한다(진행 중인 주는 원래 빠지므로 최대 4회차). `totalElements`·페이지는 노출 회차 기준, `lockedCount`는 무료라 숨긴 회차 수(유료 0), `canCreate`는 유료 판정 결과(하루 한도·원문 공개는 기존 오류 그대로). 숨긴 회차의 기록·PDF는 지우지 않고(P09, C1) 이미 만든 그림책은 발급 목록·받기에서 보관 기간 안 그대로 쓸 수 있다. 결제하면 다음 조회부터 전체가 보인다. 무료 발급은 403 `PREMIUM_REQUIRED` 그대로
+- 무료 책장(B6, 설계 #997, 구현 #999): 유료 판정은 발급과 같은 `ProductEntitlementService`의 `features.memoryBook` 규칙(값이 없으면 구독 중만)을 쓴다. 무료면 `weekStart ≥ 이번 주 월요일(KST) − 28일`인 회차만 반환한다(진행 중인 주는 원래 빠지므로 최대 4회차). `totalElements`·페이지는 노출 회차 기준, `lockedCount`는 무료라 숨긴 회차 수(유료 0), `canCreate`는 유료 판정 결과(하루 한도는 기존 오류 그대로). 숨긴 회차의 기록·PDF는 지우지 않고(P09, C1) 이미 만든 그림책은 발급 목록·받기에서 보관 기간 안 그대로 쓸 수 있다. 결제하면 다음 조회부터 전체가 보인다. 무료 발급은 403 `PREMIUM_REQUIRED` 그대로
 - 학생 경로는 없다(2026-11-23 결정). 학생 세션으로 위 경로를 부르면 403 `FORBIDDEN`
 - 생성은 비동기: core `memorybook.generate` 명령 → report-worker가 learning 회차 조립(4.1.4)·core 프로필(4.5.1)·그림을 받아 PDF를 `reports/` 버킷에 저장 → `memorybook.completed` 이벤트로 core 작업을 READY·FAILED로 바꾸고 사용 예약을 마감([시퀀스 3.11](sequence-diagram.md))
 
@@ -656,7 +654,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/students/me/points?page&size` | 학생 | `{balance, items:[{eventType, amount, createdAt}], page, size, totalElements}` (최신순, size 1~100) | RET-05 | 핵심(#389) |
-| GET | `/children/{childId}/points?page&size` | 학부모 | 연결 자녀 잔액·내역(같은 모양). 학생 공개 설정(#206)과 무관, 연결 아닌 자녀 403 | RET-05 | 핵심(#389) |
+| GET | `/children/{childId}/points?page&size` | 학부모 | 연결 자녀 잔액·내역(같은 모양). 연결 아닌 자녀 403 | RET-05 | 핵심(#389) |
 | GET | `/students/me/look-items` | 학생 | 테마·캐릭터·아이템 목록 `{items:[{itemKey, slot, name, pricePoints, unlocked, onSale, assetKey, ownedCount, createdAt}]}`(테마·캐릭터 `assetKey`·`createdAt` null). 판매 중단 아이템은 해금한 학생에게만 `onSale:false`로 보임. #704: `ownedCount`는 방 소품(`DECOR`) 보유 개수(0이면 `unlocked:false`, 다른 칸 null), `createdAt`은 관리자 아이템 등록일(웹 "새로 나왔어요"). 판매 중단 방 소품은 1개 이상 가진 학생에게만 보임 | RET-06 | 핵심(#389·#704) |
 | POST | `/students/me/look-items/{itemKey}/unlock` | 학생 | 포인트 해금 → 200 `{itemKey, unlocked:true, balance}`. `Idempotency-Key`(UUID) 필수(없으면 400), 같은 키 재전송은 처음 응답, 같은 키·다른 항목 422 `IDEMPOTENCY_KEY_REUSED`. 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 없는 항목 404 `LOOK_ITEM_NOT_FOUND`, 이미 해금(무료 포함) 200(차감 없음). 잔액 행 잠금으로 다른 키 동시 요청도 1회만 차감. 방 소품(`DECOR`)은 해금 대신 아래 사기라 422 `VALIDATION_FAILED`(#704) | RET-06 | 핵심(#389) |
 | POST | `/students/me/look-items/{itemKey}/purchase` | 학생 | 방 소품 사기(#704) → 200 `{itemKey, ownedCount, balance}`. `Idempotency-Key`(UUID) 필수(없으면 400), 같은 키 재전송은 처음 응답(1회만 차감), 같은 키·다른 항목 422 `IDEMPOTENCY_KEY_REUSED`, 키가 다르면 새 구매로 또 차감. 아이템당 8개 초과 409 `LOOK_DECOR_LIMIT`, 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 없는 항목 404 `LOOK_ITEM_NOT_FOUND`, 방 소품이 아닌 항목 422 `VALIDATION_FAILED`. 원장 `UNLOCK`(음수), 사건 키 `itemKey:Idempotency-Key` | RET-06 | 핵심(#704) |
@@ -845,7 +843,6 @@ data: {}
   "reportId": "r-44", "childId": "s-1", "status": "COMPLETED", "state": "OK",
   "period": { "from": "2026-11-02", "to": "2026-11-08" },
   "correctionNotice": false, // 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (5.7, #244)
-  "parentSharingEnabled": true, // core가 현재 학생 공유 설정으로 채움. false면 원문·근거 링크가 빠진 상태 (#206, #614)
   "revision": 1, "revisions": [{ "revision": 1, "generatedAt": "2026-11-09T00:00:00+09:00" }],
   "inclusionRule": "기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외",
   "metrics": [ /* Metric[] */ ],
@@ -872,7 +869,7 @@ data: {}
 
 - 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
 
-- 리포트 상세의 `explanations`(FN-RPT-09, #479): 주간 리포트만 `{state, items[]}`를 반환하고 일일 리포트·무료 플랜은 `null`이다(무료 전환 뒤 과거 리포트도 `narrative`처럼 null, P13). `state`는 `INCLUDED`(설명 1개 이상)·`NOT_INCLUDED`(대상 답변이 있으나 생성 실패·검사 실패·시간 초과·설명 모델 미활성, P16)·`NO_TARGET`(M2 점수가 있는 답변 없음 또는 원문 비공개, FN-RPT-07)이다. `items[]`는 대표 답변 최대 3개(생각 유형이 겹치지 않게, 같으면 최근 답변)의 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`이며 "AI 관찰"로 표시한다. 점수·등급·숫자는 넣지 않는다. 저장은 report_db `report_item.item_type = EXPLANATION`(근거 `report_item_evidence`, 검사 통과분만)이고 설명이 빠져도 리포트 `status`·`state`는 바뀌지 않는다. 기존 `narrative.modelExplanation`은 계약 유지를 위해 항상 null이다. PDF·HTML·Markdown도 같은 항목·상태를 표시한다.
+- 리포트 상세의 `explanations`(FN-RPT-09, #479): 주간 리포트만 `{state, items[]}`를 반환하고 일일 리포트·무료 플랜은 `null`이다(무료 전환 뒤 과거 리포트도 `narrative`처럼 null, P13). `state`는 `INCLUDED`(설명 1개 이상)·`NOT_INCLUDED`(대상 답변이 있으나 생성 실패·검사 실패·시간 초과·설명 모델 미활성, P16)·`NO_TARGET`(M2 점수가 있는 답변 없음)이다. `items[]`는 대표 답변 최대 3개(생각 유형이 겹치지 않게, 같으면 최근 답변)의 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`이며 "AI 관찰"로 표시한다. 점수·등급·숫자는 넣지 않는다. 저장은 report_db `report_item.item_type = EXPLANATION`(근거 `report_item_evidence`, 검사 통과분만)이고 설명이 빠져도 리포트 `status`·`state`는 바뀌지 않는다. 기존 `narrative.modelExplanation`은 계약 유지를 위해 항상 null이다. PDF·HTML·Markdown도 같은 항목·상태를 표시한다.
 
 ### 3.5 결제 승인 — `POST /payments/confirm`
 
@@ -1189,7 +1186,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|---|
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions, question?, keywords?, essayType?, answerKey?, solution?}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions, modelScores}` (scoring 교차 확인 4.2.2) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
-| POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[], report?}` → 3.3과 같은 이벤트. `report`는 일일 리포트 고정 대화(2.4, #392)의 요약 `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`, 있으면 `from = to = date`. `explanations`는 주간 리포트 상세 설명(FN-RPT-09, #983·#1012) `[{missionTitle, text}]`(최대 3개). core가 조회 기간과 겹치는 가장 최근 `COMPLETED` 주간 리포트에서 원문 공개·이용권(서술)·`explanations.state = INCLUDED`를 모두 만족할 때만 넣고, 일일 리포트 고정 대화와 report 조회 실패 때는 빈 목록. ai는 설명 글·미션 제목 속 숫자도 숫자 대조(FN-AGT-06) 허용 목록에 더한다 |
+| POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[], report?}` → 3.3과 같은 이벤트. `report`는 일일 리포트 고정 대화(2.4, #392)의 요약 `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`, 있으면 `from = to = date`. `explanations`는 주간 리포트 상세 설명(FN-RPT-09, #983·#1012) `[{missionTitle, text}]`(최대 3개). core가 조회 기간과 겹치는 가장 최근 `COMPLETED` 주간 리포트에서 이용권(서술)·`explanations.state = INCLUDED`를 모두 만족할 때만 넣고, 일일 리포트 고정 대화와 report 조회 실패 때는 빈 목록. ai는 설명 글·미션 제목 속 숫자도 숫자 대조(FN-AGT-06) 허용 목록에 더한다 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[], tone?}`(tone 생략 시 DEFAULT, #209) → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
 | POST | `/internal/report-explanations` | report | `{grade, inputType, text, question?, essay?, criteria?, scores?}` → `{active:true, explanation:{text, quote}, versions}` 또는 `{active:false}` (4.2.3, #477) |
 | GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft,reportExplanation,themeDraft,memoryExplanation,memoryQuery}}` (#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation`, #437 `themeDraft`, #565 `memoryExplanation` 추가, #679 `memoryQuery` 설계·#681 구현. core에 이 응답을 읽는 코드는 없음) |
@@ -1408,7 +1405,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
-| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.5.1, #206). learning: 추억 검색·설명 글에서 학생 별명을 가리기 위한 별명 조회(`memory/client/StudentProfileClient.kt`, P27 #563·#564) |
+| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명 (4.5.1). learning: 추억 검색·설명 글에서 학생 별명을 가리기 위한 별명 조회(`memory/client/StudentProfileClient.kt`, P27 #563·#564) |
 | GET | `/internal/students/{studentId}/report-template` | report-worker: 현재 연결 학부모의 리포트 표시 설정 `{settings, revision}`. 학생 삭제 진행·비활성 409 `STUDENT_UNAVAILABLE` (#209) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
@@ -1417,7 +1414,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.5.1 학생 별명 조회 (#119, 호출: report-worker, learning)
 
-`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, parentSharingEnabled, grade}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 네 필드만 제공한다(`parentSharingEnabled`는 학생 공유 설정, #206).
+`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, grade}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 세 필드만 제공한다(학생 원문 공개 칸은 #1064로 뺌).
 
 실제 `InternalAuthFilter`가 내부 토큰을 검사한 뒤 guardianship Controller → Application Service → 기존 `ChildManagementRepository.profile`을 호출한다. Service는 `SYSTEM` 역할과 대상 학생의 `X-Student-Scope` 포함 여부를 DB 조회 전에 확인한다. 학부모 Bearer만으로 호출할 수 없다.
 
@@ -1694,9 +1691,11 @@ SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수�
 
 ### 5.15 2026-11-01 확정 변경: #206·#207
 
-- `GET /api/v1/students/me/sharing-preferences`와 `PUT /api/v1/students/me/sharing-preferences`는 학생 세션의 단일 학생만 대상으로 합니다. PUT 본문은 `{parentSharingEnabled: boolean}`, 응답은 `{studentId, parentSharingEnabled}`이며 누락/null은 400입니다. 기본값은 false입니다. 학부모는 `GET /api/v1/children/{childId}/sharing-preferences`로 연결된 자녀의 상태만 조회할 수 있습니다.
-- 비공개 상태에서 학부모의 답변 목록·상세·분석 대화·근거·기존 다운로드 URL 재발급은 `403 STUDENT_RECORDS_PRIVATE`입니다. 요약·유형 집계와 리포트의 수치는 유지합니다. 리포트 상세의 답변·돌아보기·인용·파생 문구는 제거하며, 기존 원문 포함 파일은 비공개 중 재발급하지 않습니다. 이미 전달된 파일은 회수할 수 없습니다.
-- 내부 학생 프로필에 `parentSharingEnabled`를 추가합니다. report는 생성 시 현재 값을 조회하고 false 또는 누락이면 원문·근거 링크·원문 기반 AI 문구를 생성/파일 렌더링 전에 제거합니다. 기존 리포트의 조회도 core에서 현재 설정을 다시 확인합니다.
+> **2026-11-26 변경 메모(#1064·#1058)**: 아래 #206 학생 전역 원문 공개 설정과 비공개 차단은 없앴다. 원문은 연결 + 현재 법정대리인 동의(법정대리인 동의서 1.2, 2026-11-27 시행)로 제공하고, 학생에게는 첫 사용 안내에서 알린다. 아래 #206 세 줄(공개 설정 API, 비공개 403, 내부 프로필 칸)은 당시 기록이며 현재 계약이 아니다. 삭제하는 것: 학생·학부모 공개 설정 API, 403 오류 코드, 내부 프로필과 리포트 상세의 공개 칸(자세한 내용은 [auth-account 20절](../report/auth-account.md#20-원문-제공-법정대리인-필수-동의-1064)). #207은 그대로다.
+
+- ~~`GET /api/v1/students/me/sharing-preferences`와 `PUT /api/v1/students/me/sharing-preferences`는 학생 세션의 단일 학생만 대상으로 합니다. PUT 본문은 `{parentSharingEnabled: boolean}`, 응답은 `{studentId, parentSharingEnabled}`이며 누락/null은 400입니다. 기본값은 false입니다. 학부모는 `GET /api/v1/children/{childId}/sharing-preferences`로 연결된 자녀의 상태만 조회할 수 있습니다.~~ (#1064로 없앰)
+- ~~비공개 상태에서 학부모의 답변 목록·상세·분석 대화·근거·기존 다운로드 URL 재발급은 `403 STUDENT_RECORDS_PRIVATE`입니다. 요약·유형 집계와 리포트의 수치는 유지합니다. 리포트 상세의 답변·돌아보기·인용·파생 문구는 제거하며, 기존 원문 포함 파일은 비공개 중 재발급하지 않습니다. 이미 전달된 파일은 회수할 수 없습니다.~~ (#1064로 없앰)
+- ~~내부 학생 프로필에 `parentSharingEnabled`를 추가합니다. report는 생성 시 현재 값을 조회하고 false 또는 누락이면 원문·근거 링크·원문 기반 AI 문구를 생성/파일 렌더링 전에 제거합니다. 기존 리포트의 조회도 core에서 현재 설정을 다시 확인합니다.~~ (#1064로 없앰)
 
 - #207 조회 경로: core `GET /api/v1/attempts/{attemptId}/comparison` → learning `GET /internal/attempts/{attemptId}/comparison`. 응답 상태는 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 각 스냅샷에 고정 문항·제출 답변·마지막 판정·기준표를 포함합니다.
 - #207 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**를 비교 기준으로 삼는다. 기준은 현재 시도 시작 이전에 마무리한 시도 중 finishedAt 내림차순(동률은 startedAt·ID 순) 첫 건이다. 이전 답변·판정·피드백을 덮어쓰지 않는다. 현재 시도의 마무리 이후에만 비교를 공개한다. 기준표 버전이 다르면 요소 충족 변화는 직접 비교하지 않고 기준 변경을 안내한다. 이전 시도가 없으면 명시적으로 비교 기록 없음이다.
@@ -1704,7 +1703,7 @@ SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수�
 ### 5.16 #209 학부모 리포트 템플릿 설정 (로컬 구현 계약)
 
 2026-11-02 사용자 전달 승인: 원문 공개는 #206 학생 전역 설정만 사용(학생 본인 변경,
-기본 비공개), 메모 제외. 섹션 숨김은 승인하지 않음. 기존 권한·숫자·인용 대조 유지.
+기본 비공개), 메모 제외. (2026-11-26 변경 메모: 원문은 법정대리인 동의서 1.2로 제공하고 #206 설정은 없앰, #1064) 섹션 숨김은 승인하지 않음. 기존 권한·숫자·인용 대조 유지.
 설정은 학부모별이며 자녀 전반의 다음 생성에 사용. 기존 리포트 판은 변경하지 않는다.
 
 - `sectionOrder`: `thinkingTypes, changes, reflections, quotes, narrative, eveningQuestion`의
@@ -1733,7 +1732,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 생성 결과 `versions.template`에 `{settings,revision}`을 보존하여 과거 판을 재해석하지 않는다.
 서술 요청에 `tone`을 추가하며 생략 시 DEFAULT. 무료·NO_RECORD AI 생략, 대조 실패 처리 유지.
 
-원문 비공개 생성·기존 파일 접근은 #206 계약(5.15)을 따른다.
+원문 제공은 연결·법정대리인 동의를 따른다(5.15 변경 메모, #1064).
 
 화면 동작은 [기능명세서](functional-spec.md) 2.6.1.
 
@@ -1770,7 +1769,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 ### 5.18 #391 report 일일 생성·주간 테마 소비 계약
 
 - report 내부 목록 `GET /internal/reports`는 선택 `periodType=DAILY|WEEKLY`를 받는다. 미지정은 두 종류 모두이며 `(studentId,periodType,periodFrom)`별 최신 판이다. 상세·목록에 periodType을 반환하고 상세 problems는 일일, themeSummary는 주간에 사용한다. 구체적인 중첩 필드는 report OpenAPI를 따른다. core 공개 프록시는 #390에서 연결한다.
-- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 learning 기록 응답 값을 그대로 쓰며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
+- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 learning 기록 응답 값을 그대로 쓰며 임의로 추정하지 않는다. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
 - learning `GET /internal/records/students/{studentId}/daily-attempts?from&to&page&size`는 같은 KST 날짜의 **완료 시각**으로 조회한다. 기존 P08의 제출일 조회와 분리하며 응답은 RecordPage와 같다. 전날 제출·오늘 완료도 포함한다. 학생 scope·삭제 검사와 페이지 제한은 기존 기록 조회와 같다. `scheduledDay`는 선택·nullable 칸(MON~FRI)이며 THEME_DAY·THEME_REVIEW의 시도에 저장된 테마·주·미션에 해당하는 예정 요일이다. EXTRA·값 없는 이전 응답/저장본은 null. 완료일 기준 집계는 유지하고 다른 요일에 풀었으면 상세·PDF·Markdown에 "화요일 문제 · 목요일에 풀었어요"를 표시한다. 당일 풀이는 기존 표시를 유지한다(#845).
 - learning 주간 테마 summary API는 #385에서 구현했다(내부 API 표 `GET /internal/students/{studentId}/weekly-theme/summary`). report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed,completedInWeek?}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}],finished?,ending?}`이다(`?` 칸은 #486 선택 칸). 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다.
 - 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다. #846에서 선택 `noRecord`(기록 없는 COMPLETED만 `true`, 그 밖은 생략)를 더했다(5.9).
@@ -1794,7 +1793,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 ### 5.21 리포트 상세 설명의 원문 전체 표시 (#475)
 
-설명 항목에 선택적 `itemId`를 반환한다. 웹은 기존 `/reports/{reportId}/evidence/{itemId}`에서 설명과 같은 `attemptId`·`answerId`·`answerVersion`이며 `available=true`인 답변 원문 전체를 조회해 항상 펼쳐 표시한다. 발췌 `quote`를 원문 전체로 표시하지 않는다. 삭제·비공개·버전 불일치·조회 실패에는 원문을 대체하지 않고 이용 불가 안내를 표시한다. 기존 소유·공개·이용권 검사는 유지한다.
+설명 항목에 선택적 `itemId`를 반환한다. 웹은 기존 `/reports/{reportId}/evidence/{itemId}`에서 설명과 같은 `attemptId`·`answerId`·`answerVersion`이며 `available=true`인 답변 원문 전체를 조회해 항상 펼쳐 표시한다. 발췌 `quote`를 원문 전체로 표시하지 않는다. 삭제·버전 불일치·조회 실패에는 원문을 대체하지 않고 이용 불가 안내를 표시한다. 기존 소유·이용권 검사는 유지한다.
 
 ### 5.22 Google 이메일 아이디 갱신 (#683)
 
