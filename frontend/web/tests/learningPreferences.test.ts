@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
-import { sharingApi } from '../src/data/classroom/sharingApi.ts'
+import { ApiError } from '../src/data/apiClient.ts'
 import { getAttemptComparison } from '../src/data/classroom/learningApi.ts'
 import { comparisonAnswerText } from '../src/domain/learning.ts'
 import type { AttemptComparison, ComparisonSnapshot } from '../src/domain/learning.ts'
@@ -13,34 +12,6 @@ const snapshot = (id: string): ComparisonSnapshot => ({ attemptId: id, finishedA
 const comparison = (): AttemptComparison => ({ attemptId: 'current', state: 'COMPARABLE',
   previous: snapshot('previous'), current: snapshot('current'), elements: [{ elementId: 'e1', label: '까닭',
     previousSatisfied: false, currentSatisfied: true, change: 'ADDED' }] })
-
-test('공개 설정 API는 학생·학부모 경로를 나누고 false 본문·취소·no-store를 유지한다', async t => {
-  const requests: { url: string; init: RequestInit }[] = []
-  setAccessToken('synthetic', 'STUDENT')
-  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
-    requests.push({ url: String(url), init })
-    return Response.json({ studentId: 'student/1', parentSharingEnabled: false })
-  })
-  const signal = new AbortController().signal
-  assert.equal((await sharingApi.get('student/1', 'STUDENT', signal)).parentSharingEnabled, false)
-  await sharingApi.get('student/1', 'PARENT')
-  await sharingApi.save('student/1', false)
-  assert.ok(requests[0].url.endsWith('/students/me/sharing-preferences'))
-  assert.ok(requests[1].url.endsWith('/children/student%2F1/sharing-preferences'))
-  assert.equal(requests[0].init.signal, signal)
-  assert.ok(requests.every(r => r.init.cache === 'no-store'))
-  assert.equal(requests[2].init.method, 'PUT')
-  assert.deepEqual(JSON.parse(String(requests[2].init.body)), { parentSharingEnabled: false })
-})
-
-test('다른 학생·null 공개 설정·조회 실패를 기본값 저장 성공으로 바꾸지 않는다', async t => {
-  for (const value of [{ studentId: 'other', parentSharingEnabled: true }, { studentId: 's', parentSharingEnabled: null }]) {
-    t.mock.method(globalThis, 'fetch', async () => Response.json(value))
-    await assert.rejects(() => sharingApi.get('s', 'STUDENT'), (e: unknown) => e instanceof ApiError && e.problem.code === 'CONTRACT_NOT_READY')
-  }
-  t.mock.method(globalThis, 'fetch', async () => Response.json({ status: 503, code: 'UNAVAILABLE', title: '조회 실패' }, { status: 503 }))
-  await assert.rejects(() => sharingApi.get('s', 'STUDENT'), (e: unknown) => e instanceof ApiError && e.problem.status === 503)
-})
 
 test('비교 API는 이전 원문·판정 보류·문제 버전을 바꾸지 않고 no-store로 조회한다', async t => {
   const value = comparison()

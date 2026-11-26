@@ -19,7 +19,7 @@ export function WeeklyReportOverview({ report, highlighted, thinkingHighlights, 
         return <div key={index} className="report-highlight-target" data-answer-highlight={highlighted.includes(index) || undefined} tabIndex={-1}>
           <dt>{label}</dt><dd><strong>{Number.isFinite(metric.numerator) ? metric.numerator.toLocaleString() : '—'}</strong><span>건</span></dd>
           <div className="weekly-key-context"><span>{metric.state === 'NO_RECORD' ? '기록 없음' : `전체 ${metric.denominator.toLocaleString()}건 중`}</span>
-            {report.parentSharingEnabled === true && <button type="button" aria-label={`${label} 내용 보기`} onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용<ArrowUpRight size={14} aria-hidden="true" /></button>}
+            <button type="button" aria-label={`${label} 내용 보기`} onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용<ArrowUpRight size={14} aria-hidden="true" /></button>
           </div>
         </div>
       })}</dl>
@@ -28,7 +28,7 @@ export function WeeklyReportOverview({ report, highlighted, thinkingHighlights, 
       <section className="weekly-thinking-chart" aria-labelledby="weekly-thinking-chart-title">
         <header><h3 id="weekly-thinking-chart-title"><ChartNoAxesColumnIncreasing size={20} aria-hidden="true" />생각 유형별 활동</h3><span>활동 수</span></header>
         {!report.thinkingTypes.length ? <p>확인할 활동 기록이 없습니다.</p> : <ul>{report.thinkingTypes.map((type, index) => <li key={type.type} className="report-highlight-target" data-answer-highlight={thinkingHighlights.includes(index) || undefined} tabIndex={-1}>
-          <button className="weekly-type-button" disabled={!type.missions.length || report.parentSharingEnabled === false} onClick={() => onCategory(type.type)} aria-label={`${thinkingLabels[type.type]} ${type.missions.length}개 활동 보기`}><span>{thinkingLabels[type.type]}</span><span className="weekly-type-track" aria-hidden="true"><span style={{ width: `${type.missions.length / maximum * 100}%` }} /></span><strong>{type.missions.length}<small>개</small></strong><ArrowUpRight size={14} aria-hidden="true" /></button>
+          <button className="weekly-type-button" disabled={!type.missions.length} onClick={() => onCategory(type.type)} aria-label={`${thinkingLabels[type.type]} ${type.missions.length}개 활동 보기`}><span>{thinkingLabels[type.type]}</span><span className="weekly-type-track" aria-hidden="true"><span style={{ width: `${type.missions.length / maximum * 100}%` }} /></span><strong>{type.missions.length}<small>개</small></strong><ArrowUpRight size={14} aria-hidden="true" /></button>
         </li>)}</ul>}
       </section>
       {theme && <section className="weekly-theme-panel">{theme}</section>}

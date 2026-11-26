@@ -3,7 +3,6 @@ import type { Attempt, Child, ThinkingType } from '../../domain/classroom.ts'
 import { mockAccountChildren } from './accounts.ts'
 import { mockPremium, setMockSubscription } from './payments.ts'
 import { fixtureStore, persistFixtureState } from './student.ts'
-import { saveSharing } from './sharing.ts'
 import { generatedReportDetails, makeWeekly, reports } from './parent.ts'
 import demoData from './structuredReportSamples.json' with { type: 'json' }
 import { structuredReportSummary } from './structuredReportSamples.ts'
@@ -40,11 +39,10 @@ export function seedStructuredReportDemo(cache?: GemmaReportCache) {
   })
   fixtureStore.restoreSnapshot({ ...snapshot, children,
     attempts: [...snapshot.attempts.filter(a => !a.attemptId.startsWith(prefix)), ...attempts] })
-  // Only the opt-in synthetic child is added; existing children and their sharing stay untouched.
+  // Only the opt-in synthetic child is added; existing children stay untouched.
   const owned = mockAccountChildren.get(owner) ?? []
   mockAccountChildren.set(owner, [...owned.filter(c => c.id !== child.id), child])
   if (!mockPremium(child.id)) setMockSubscription(child.id, 'PREMIUM', owner)
-  saveSharing(child.id, true)
   for (const attempt of attempts) {
     const answer = attempt.answers.at(-1)!
     const generated = cache?.items?.find(item => item.attemptId === attempt.attemptId && item.answerVersion === answer.version && item.sourceText === answer.text)

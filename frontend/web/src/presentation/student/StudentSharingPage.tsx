@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useStudentSharing } from '../../data/classroom/useClassroom.ts'
 import { useCommunitySettings, useSaveCommunitySettings } from '../../data/retention/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import type { Child } from '../../domain/classroom.ts'
@@ -8,33 +7,19 @@ import './learning-settings.css'
 
 /**
  * embedded면 학생 설정(#583) 안의 카드 하나로 그린다(제목 h2 "공개 설정", 바깥 main 없음, #648 시안 Settings).
- * 학부모 공개(#206)와 친구 공개(P20)를 같은 카드에 두고 요청·동작은 그대로다.
+ * 학부모 공개는 학생이 고르지 않는다(#1064): 자녀 등록 때 학부모가 법정대리인 동의서(GUARDIAN 1.2)로 동의하고,
+ * 학생에게는 첫 둘러보기(#1038) 첫 대사로 알리기만 한다(user-flow 3.2). 여기에는 친구 공개(P20)만 둔다.
  */
 export function StudentSharingPage({ child, embedded = false }: { child: Child; embedded?: boolean }) {
-  const { query, save } = useStudentSharing(child.id)
-  const value = query.error ? undefined : query.data
   const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
   return <Wrapper className={embedded ? 'st-sharing st-settings-part' : 'st-paper st-sheet st-sharing'} aria-labelledby="sharing-h">
     <Title id="sharing-h" tabIndex={embedded ? -1 : undefined}>{embedded ? '공개 설정' : '내 답 공개 설정'}</Title>
-    {/* 학부모 공개 묶음. 설정 카드(embedded)에서는 친구 공개와 왼쪽·오른쪽 두 칸으로 놓는다(#648, 한 화면) */}
-    <div className="st-sharing-parent">
-    {query.isPending && <p role="status">공개 설정을 읽고 있어요.</p>}
-    <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-    {value && <fieldset disabled={save.isPending}>
-      <legend>학부모님께 내 답 보여 드리기</legend>
-      <label><input type="radio" name="sharing" checked={!(save.isPending ? save.variables : value.parentSharingEnabled)} onChange={() => save.mutate(false)} />비공개로 둘게요</label>
-      <label><input type="radio" name="sharing" checked={save.isPending ? save.variables : value.parentSharingEnabled} onChange={() => save.mutate(true)} />학부모님께 공개할게요</label>
-    </fieldset>}
-    <ErrorNotice error={save.error} />
-    <p role="status">{save.isPending ? '설정을 저장하고 있어요.' : value ? `지금은 ${value.parentSharingEnabled ? '공개' : '비공개'}예요.` : ''}</p>
-    <p className={embedded ? 'st-meta' : undefined}>비공개여도 몇 번 했는지는 학부모님이 볼 수 있어요.</p>
-    </div>
     <CommunitySharing child={child} level={embedded ? 'h3' : 'h2'} />
   </Wrapper>
 }
 
 /**
- * 친구들에게 내 답 보여 주기 (P20, API 명세 2.9). 학부모 공개(#206)와 따로인 설정이다.
+ * 친구들에게 내 답 보여 주기 (P20, API 명세 2.9). 학부모에게 보이는 것과는 따로인 설정이다.
  * 켠 뒤 마무리한 미션의 마지막 답만 자동으로 공유되고, 끄면 바로 비공개가 된다.
  */
 function CommunitySharing({ child, level: Heading }: { child: Child; level: 'h2' | 'h3' }) {

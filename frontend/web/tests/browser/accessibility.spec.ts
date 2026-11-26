@@ -132,7 +132,7 @@ test('#639·#640 학부모 본문 랜드마크·보조 메뉴·본문 건너뛰�
     await landmarks(page)
   }
   await navigate(page, `/parent/journal${scope}`)
-  await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toHaveCount(0)
   for (const link of await page.locator('.ws-side .ws-support a').all()) if (await link.isVisible()) await target44(link)
   const skip = page.getByRole('link', { name: '본문으로 건너뛰기' })
   await skip.focus()

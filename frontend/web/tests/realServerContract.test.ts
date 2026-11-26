@@ -172,16 +172,16 @@ test('학생 PIN 로그인 응답에 plan이 없으면 미확인', async (t) => 
 })
 
 
-test('비공개 리포트는 수치를 표시하면서 학부모 원문을 추가 조회하지 않는다', async t => {
+test('리포트 조회는 원문 공개 확인(sharing-preferences) 없이 리포트만 묻는다 (#1064)', async t => {
   const requests: string[] = []
   setAccessToken('synthetic', 'PARENT')
   t.mock.method(globalThis, 'fetch', async (url: string) => {
     requests.push(String(url))
-    return json(String(url).includes('/children/') ? { items: [summary] } : detail({ parentSharingEnabled: false }))
+    return json(String(url).includes('/children/') ? { items: [summary] } : detail({}))
   })
   const result = await parentApi.report('r-1', child.id)
-  assert.equal(result.parentSharingEnabled, false)
-  assert.ok(requests.every(url => !url.includes('/attempts')))
+  assert.equal('parentSharingEnabled' in result, false)
+  assert.ok(requests.every(url => !url.includes('/sharing-preferences') && !url.includes('/attempts')))
 })
 
 

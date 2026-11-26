@@ -1,18 +1,18 @@
 import { test, expect } from '@playwright/test'
 
-// #803 학부모 일일 리포트 문제별 생각·작성 시간(P28). 원문 비공개여도 시간은 보이고, 시간 없는 답은 줄을 생략한다.
+// #803 학부모 일일 리포트 문제별 생각·작성 시간(P28). 시간 없는 답은 줄을 생략한다.
 test.beforeEach(async ({ page }) => {
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
 })
 
-test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이고 원문 비공개에도 남긴다 @responsive', async ({ page }) => {
+test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보인다 @responsive', async ({ page }) => {
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
   await page.goto('/parent/report')
   await page.locator('.report-period-picker > summary').click()
   await page.getByRole('button', { name: '일일', exact: true }).click()
-  // 시연 목 저장소의 일일 리포트에 report 상세 모양의 문제 하나를 넣는다(원문 비공개, 2번째 답은 시간 없음)
+  // 시연 목 저장소의 일일 리포트에 report 상세 모양의 문제 하나를 넣는다(마지막 답 없음, 2번째 답은 시간 없음)
   await page.evaluate(async () => {
     const { reports } = await import('/src/mocks/fixtures/parent.ts' as string)
     for (const versions of reports.values()) for (const r of versions) if (r.periodType === 'DAILY') {

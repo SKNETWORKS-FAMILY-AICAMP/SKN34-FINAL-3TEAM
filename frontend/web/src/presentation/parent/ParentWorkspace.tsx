@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery, useParentSharingNotice } from '../../data/parent/queries.ts'
+import { useParentQuery } from '../../data/parent/queries.ts'
 import { displayPeriods } from '../../data/classroom/useClassroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
 import { gradeLabel } from '../../domain/grade.ts'
@@ -18,7 +18,6 @@ import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
 import { ParentSettings } from './ParentSettings.tsx'
 import { ParentPayments } from './ParentPayments.tsx'
-import { ParentSharingNotice } from './ParentSharingNotice.tsx'
 import { parentNavigation } from './parentNavigation.tsx'
 import { ParentGuideGate } from './ParentGuide.tsx'
 
@@ -36,8 +35,6 @@ export function ParentWorkspace() {
   const child = consentReady ? children.data?.items.find(c => c.id === childId) : undefined
   const page = location.pathname.split('/')[2] ?? 'journal'
   const hasPeriod = ['journal', 'analysis', 'report'].includes(page)
-  const sharing = useParentSharingNotice(childId, !!child && hasPeriod)
-  const canReadOriginals = sharing.data?.parentSharingEnabled === true && !sharing.error
   function select(c: Child, p: Period = scope) {
     const next = new URLSearchParams(params)
     next.set('childId', c.id); next.set('from', p.from); next.set('to', p.to); next.delete('reportId'); next.delete('revision')
@@ -75,13 +72,12 @@ export function ParentWorkspace() {
       : children.data && !children.error && !children.data.items.length ? <section className="ws-card"><h1>자녀를 등록하고 시작하세요</h1><p>등록한 자녀의 학습 현황과 리포트를 확인할 수 있습니다.</p><Link className="cj-primary" to="/parent/settings?section=profile">계정·자녀 설정에서 자녀 등록</Link></section>
       : childId && !child && children.data && !children.error ? <section className="ws-card"><h1>자녀 연결 확인</h1><p role="alert">연결되지 않은 자녀의 기록은 표시하지 않습니다.</p></section>
       : child && (!hasPeriod || validPeriod(scope)) && !children.error ? <div className="parent-content" key={`${child.id}:${page === 'report' ? 'insights' : hasPeriod ? scope.from + ':' + scope.to : page}`}>
-        {(page === 'journal' || sharing.error || sharing.isPending) && <ParentSharingNotice query={sharing} />}
-        {page === 'report' ? !sharing.error && !sharing.isPending && <ParentInsights key={`${insightsMode}:${scope.from}:${scope.to}:${canReadOriginals}:${sharing.isPending}:${params.get('askReportId') ?? ''}`} mode={insightsMode} child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
+        {page === 'report' ? <ParentInsights key={`${insightsMode}:${scope.from}:${scope.to}:${params.get('askReportId') ?? ''}`} mode={insightsMode} child={child} scope={scope}
           periodControl={<ChatPeriodPicker period={scope} onApply={({ from, to }) => {
             const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
           }} />}
           onScope={s => { const c = children.data?.items.find(c => c.id === s.childId); if (c) select(c, s) }} />
-          : <ParentDashboard sharingKnown={sharing.isSuccess} child={child} scope={scope} canReadOriginals={canReadOriginals} onChangePeriod={() => {
+          : <ParentDashboard child={child} scope={scope} onChangePeriod={() => {
             if (periodFilter.current) {
               periodFilter.current.open = true
               periodFilter.current.querySelector('input')?.focus()

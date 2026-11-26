@@ -11,7 +11,6 @@ export function DailyReportSummary({ report, highlighted, onOpenActivities }: {
 }) {
   const summary = dailyReportSummary(report)
   const problems = report.problems ?? []
-  const privateReport = report.parentSharingEnabled === false
   const count = (value: number | null) => value === null ? <span className="daily-unavailable">확인할 수 없음</span> : <><strong>{value}</strong><span>개</span></>
   const activity = (index: number) => {
     const p = problems[index]
@@ -47,9 +46,8 @@ export function DailyReportSummary({ report, highlighted, onOpenActivities }: {
         { label: '되묻기가 있었던 활동', value: summary.followupActivities, Icon: MessageCircle },
         { label: '되묻기에 대한 답변 기록', value: summary.answeredActivities, Icon: MessageSquare },
         { label: '돌아보기를 작성한 활동', value: summary.reflections, Icon: NotebookPen },
-      ].map(({ label, value, Icon }) => <section className="daily-summary-card daily-stat" key={label} aria-label={label}><h4><Icon size={16} aria-hidden="true" />{label}</h4><div className="daily-number">{value === null && privateReport && label !== '돌아보기를 작성한 활동' ? <span className="daily-unavailable">원문 비공개</span> : count(value)}</div></section>)}
+      ].map(({ label, value, Icon }) => <section className="daily-summary-card daily-stat" key={label} aria-label={label}><h4><Icon size={16} aria-hidden="true" />{label}</h4><div className="daily-number">{count(value)}</div></section>)}
     </div>
-    {privateReport && <p className="daily-summary-note">답변 원문이 비공개여서 되묻기와 보완 답변 건수는 표시하지 않아요.</p>}
     {summary.total === 0 ? <div className="daily-summary-empty"><BookOpen size={26} aria-hidden="true" /><h4>이날은 완료한 활동이 없어요.</h4></div> : !summary.available ? <p className="daily-summary-empty">이 리포트에는 문제별 상세 기록이 없어 추가 요약을 표시할 수 없어요.</p> : <div className="daily-summary-panels">
       <section className="daily-summary-card daily-review" aria-label="다시 살펴볼 활동">
         <header><h4><RotateCcw size={17} aria-hidden="true" />다시 살펴볼 활동</h4><span className="daily-panel-count">{summary.reviewIndices.length}개</span></header>

@@ -30,11 +30,10 @@ import './report-reader.css'
 const ReportExamplePreview = import.meta.env.DEV ? lazy(() => import('./ReportExamplePreview.tsx')) : null
 
 export function ParentReports({
-  child, canReadOriginals,
+  child,
   onAskReport, highlight, revealToken = 0, onReportChange,
 }: {
   child: Child
-  canReadOriginals: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   onReportChange?: () => void
@@ -80,7 +79,6 @@ export function ParentReports({
         <ReportDetail
           key={active.reportId}
           child={child}
-          canReadOriginals={canReadOriginals}
           id={active.reportId}
           revision={activeRevision}
           highlight={selected?.reportId === active.reportId ? selected : undefined}
@@ -169,13 +167,12 @@ function ReportPeriodPicker({ items, selected, onSelect }: {
 }
 
 function ReportDetail({
-  child, canReadOriginals,
+  child,
   id,
   revision,
   onAskReport, highlight, revealToken = 0, periodPicker,
 }: {
   child: Child
-  canReadOriginals: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   id: string
@@ -184,7 +181,7 @@ function ReportDetail({
   onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
-      ['report', child.id, id, revision ?? 'latest', canReadOriginals],
+      ['report', child.id, id, revision ?? 'latest'],
       (signal) => parentApi.report(id, child.id, revision, signal),
       true,
       true,
@@ -195,8 +192,7 @@ function ReportDetail({
     download = useParentMutation(() => parentApi.download(id, 'pdf')),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
-  const awaitingPrivateReport = !canReadOriginals && q.data?.status === 'COMPLETED' && q.data.parentSharingEnabled !== false
-  const r = q.error || awaitingPrivateReport ? undefined : q.data,
+  const r = q.error ? undefined : q.data,
     ready = r?.status === 'COMPLETED',
     daily = !!r && reportPeriodType(r) === 'DAILY'
   const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
@@ -247,7 +243,7 @@ function ReportDetail({
       setNotice(e instanceof Error ? e.message : '파일을 받지 못했습니다.')
     }
   }
-  const proofDialog = proof && r && canReadOriginals && r.parentSharingEnabled !== false ? (
+  const proofDialog = proof && r ? (
     <Modal title="리포트 항목 내용" scrollIndicator onClose={() => setProof(null)}>
       <EvidenceQuery reportLayout queryKey={['report-evidence', child.id, id, proof]}
         load={(signal) => parentApi.reportEvidence(id, proof, signal)} />
@@ -255,14 +251,13 @@ function ReportDetail({
   ) : null
   return (
     <section className="ws-card report-detail" data-period-type={daily ? 'DAILY' : 'WEEKLY'} ref={panel}>
-      {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
       <header className="report-toolbar">
         {periodPicker}
         <div className="report-toolbar-actions">
           {ready && <button className="cj-secondary" onClick={() => daily ? openActivities({ indices: [] }) : setWeeklySelection({ category: null, attemptId: null })}>
             리포트 전체 보기
           </button>}
-          {r && ready && r.parentSharingEnabled !== false && (
+          {r && ready && (
             <button className="cj-secondary" disabled={conversationOff}
               title={conversationOff ? 'AI 질문은 프리미엄 기능입니다.' : undefined}
               onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>
@@ -270,7 +265,7 @@ function ReportDetail({
             </button>
           )}
           {r && ready && (
-            <button className="cj-primary" disabled={download.isPending || r.parentSharingEnabled !== true}
+            <button className="cj-primary" disabled={download.isPending}
               onClick={() => void downloadReport()}>
               {download.isPending ? '다운로드 준비 중' : '리포트 다운로드'}
             </button>
@@ -292,7 +287,7 @@ function ReportDetail({
               {daily ? <section className="daily-report-overview" aria-label="일일 학습 요약">
                 <DailyReportSummary report={r} highlighted={targets.metrics.some(index => r.metrics[index]?.label === '완료한 활동')} onOpenActivities={openActivities} />
                 {additionalDailyMetrics.length > 0 && <details className="report-inclusion" open={additionalDailyHighlights.length > 0 || undefined}><summary>추가 학습 수치</summary>
-                  <ReportMetricCounts metrics={additionalDailyMetrics.map(entry => entry.metric)} highlighted={additionalDailyHighlights} canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} />
+                  <ReportMetricCounts metrics={additionalDailyMetrics.map(entry => entry.metric)} highlighted={additionalDailyHighlights} onProof={setProof} />
                 </details>}
                 <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p><p>판정과 생각 요소는 그날 답변의 기록이며, 아이의 능력 점수가 아니에요.</p></details>
               </section> : <div className="weekly-report-overview">
@@ -304,10 +299,10 @@ function ReportDetail({
                     </div>
                     <button className="cj-secondary" onClick={() => setWeeklySelection({ category: 'narrative', attemptId: null })}>한 주의 기록 읽기</button>
                   </section>
-                ) : entitlement?.narrativeEnabled === false && r.parentSharingEnabled !== false ? (
+                ) : entitlement?.narrativeEnabled === false ? (
                   <PremiumPreview childId={child.id} />
                 ) : (
-                  r.parentSharingEnabled === false ? <p>아이의 답변이 비공개입니다.</p> : null
+                  null
                 ))}
                 <WeeklyReportOverview report={r} highlighted={targets.metrics} thinkingHighlights={targets.thinking} onProof={setProof}
                   onCategory={category => setWeeklySelection({ category, attemptId: null })}
@@ -315,19 +310,18 @@ function ReportDetail({
                 <nav className="weekly-record-links" aria-label="주간 기록 바로가기">
                   {weeklyCategories(r).filter(item => item.kind === 'record').map(item => {
                     const Icon = item.key === 'explanations' ? TextSearch : item.key === 'reflections' ? NotebookPen : GitCompareArrows
-                    return <button key={item.key} aria-label={`${item.label} ${item.ids.length}개`} disabled={!item.ids.length || r.parentSharingEnabled === false} onClick={() => setWeeklySelection({ category: item.key, attemptId: null })}><Icon className="weekly-record-icon" size={21} aria-hidden="true" /><span className="weekly-record-name">{item.label}</span><span className="weekly-record-count"><strong>{item.ids.length}</strong>개</span><ChevronRight size={18} aria-hidden="true" /></button>
+                    return <button key={item.key} aria-label={`${item.label} ${item.ids.length}개`} disabled={!item.ids.length} onClick={() => setWeeklySelection({ category: item.key, attemptId: null })}><Icon className="weekly-record-icon" size={21} aria-hidden="true" /><span className="weekly-record-name">{item.label}</span><span className="weekly-record-count"><strong>{item.ids.length}</strong>개</span><ChevronRight size={18} aria-hidden="true" /></button>
                   })}
                   <button onClick={() => setWeeklySelection({ category: 'metrics', attemptId: null })}><ChartNoAxesColumnIncreasing className="weekly-record-icon" size={21} aria-hidden="true" /><span className="weekly-record-name">학습 수치 전체 보기</span><span className="weekly-record-count"><strong>{r.metrics.length}</strong>항목</span><ChevronRight size={18} aria-hidden="true" /></button>
                   {r.eveningQuestion && !r.narrative && <button onClick={() => setWeeklySelection({ category: 'narrative', attemptId: null })}>이번 주 저녁 질문<ChevronRight size={16} aria-hidden="true" /></button>}
                 </nav>
-                {r.parentSharingEnabled === true && entitlement?.narrativeEnabled !== false && !reportExplanationItems(r).length &&
+                {entitlement?.narrativeEnabled !== false && !reportExplanationItems(r).length &&
                   <ReportExplanations report={r} studentName={child.nickname} narrativeEnabled={entitlement?.narrativeEnabled} />}
               </div>}
             </div>
           )}
         </>
       )}
-      {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
       {notice && <p role="status">{notice}</p>}
       {r && daily && ready && recordSelection?.reportId === r.reportId && recordSelection.revision === r.revision ? (
         <DailyProblemsDialog key={`${r.reportId}-${r.revision}`} report={r} selection={recordSelection} highlighted={targets.problems}
@@ -336,7 +330,7 @@ function ReportDetail({
         </DailyProblemsDialog>
       ) : r && !daily && ready && weeklySelection ? <WeeklyReportDialog key={`${r.reportId}-${r.revision}-${weeklySelection.category}-${weeklySelection.attemptId}`} report={r} initial={weeklySelection} onClose={() => { setWeeklySelection(null); setProof(null) }}
         renderActivity={attemptId => <WeeklyActivityRecords report={r} selectedId={attemptId} studentName={child.nickname} targets={targets} onProof={setProof} narrativeEnabled={entitlement?.narrativeEnabled} />}
-        metrics={<section className="report-stat-panel"><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} /><details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details></section>}
+        metrics={<section className="report-stat-panel"><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} onProof={setProof} /><details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details></section>}
         theme={r.themeSummary ? <ThemeSummaryView summary={r.themeSummary} /> : undefined}>
         {proofDialog}
       </WeeklyReportDialog> : proofDialog}
@@ -346,7 +340,7 @@ function ReportDetail({
 
 /**
  * 무료 주간 리포트의 프리미엄 칸 미리보기(P13, #998). 제목과 한 줄 설명만 보이고 내용은 요청하지 않는다.
- * 누르면 이용권·결제 화면의 비교표(`#plan-compare`)로 간다. 원문 비공개 자녀는 기존 비공개 문구를 쓴다.
+ * 누르면 이용권·결제 화면의 비교표(`#plan-compare`)로 간다.
  */
 function PremiumPreview({ childId }: { childId: string }) {
   const to = `/parent/billing?${new URLSearchParams({ childId })}#plan-compare`
@@ -434,7 +428,7 @@ function DailyProblemsDialog({ report, selection, highlighted, onProof, onClose,
           {!report.problems?.length && <p>이날은 기록이 없습니다.</p>}
           {visibleGroups.some(g => g.key === 'unclassified') && <p className="daily-unclassified-note">이야기 테마를 확인할 수 없는 문제는 ‘테마 미분류 기록’에서 볼 수 있어요.</p>}
         </> : problem && problemIndex !== null ? <DailyProblems completedDate={report.period.from} problems={[problem]} indices={[problemIndex]}
-          highlighted={highlighted} canReadOriginals={report.parentSharingEnabled !== false} onProof={onProof} /> : <>
+          highlighted={highlighted} onProof={onProof} /> : <>
           <p className="daily-navigation-help">{visibleIndices(group.indices).length}개 문제</p>
           <ul className="daily-navigation-list">{visibleIndices(group.indices).map(index => {
             const p = report.problems![index]
@@ -448,7 +442,7 @@ function DailyProblemsDialog({ report, selection, highlighted, onProof, onClose,
   </Modal>
 }
 
-function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted, indices }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[]; indices: number[] }) {
+function DailyProblems({ completedDate, problems, onProof, highlighted, indices }: { completedDate: string; problems: DailyProblem[]; onProof: (itemId: string) => void; highlighted: number[]; indices: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
@@ -461,19 +455,19 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
           <HighlightLabel active={highlighted.includes(i)} />
           <section className="report-final-answer">
             <h4>마지막 답</h4>
-            {canReadOriginals && p.finalAnswer ? <blockquote>{p.finalAnswer}</blockquote>
-              : <p className="report-reader-empty">{canReadOriginals ? '리포트에 마지막 답변이 포함되지 않았어요.' : '아이가 답변 원문을 비공개로 두었어요.'}</p>}
+            {p.finalAnswer ? <blockquote>{p.finalAnswer}</blockquote>
+              : <p className="report-reader-empty">리포트에 마지막 답변이 포함되지 않았어요.</p>}
           </section>
           {p.followups.length > 0 && <section className="report-reader-followups"><h4>되묻기와 답변</h4>{p.followups.map((f, j) => (
             <div className="report-followup" key={j}>
               <div className="report-followup-question"><span className="report-step-label">되묻기 {j + 1}</span><p>{f.question}</p></div>
               <div className="report-student-response"><span className="report-response-label">아이의 답변</span>
-                <blockquote data-empty={!canReadOriginals || !f.answer || undefined}>{canReadOriginals ? f.answer ?? '보완 답변 없음' : '아이가 답변 원문을 비공개로 두었어요.'}</blockquote>
+                <blockquote data-empty={!f.answer || undefined}>{f.answer ?? '보완 답변 없음'}</blockquote>
               </div>
             </div>
           ))}</section>}
-          {!p.itemId && canReadOriginals && <p className="report-reader-empty">이 문제에는 연결된 원문 근거가 없습니다.</p>}
-          {p.itemId && canReadOriginals && <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>내용</button>}
+          {!p.itemId && <p className="report-reader-empty">이 문제에는 연결된 원문 근거가 없습니다.</p>}
+          {p.itemId && <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>내용</button>}
           </div>
           <aside className="report-reader-feedback" aria-label="판정과 돌아보기">
           <section className="report-reader-panel">
@@ -489,7 +483,7 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
             {p.reflection?.written && difficultyText(p.reflection.difficulty) && <span className="report-difficulty" data-difficulty={difficultyText(p.reflection.difficulty)}>{difficultyText(p.reflection.difficulty)}</span>}
             <p>{p.reflection?.written ? p.reflection.text || '작성함' : '쓰지 않음'}</p>
           </section>
-          {/* P28: 생각·작성 시간은 원문 비공개여도 보이고, 시간 없는 답은 생략한다. */}
+          {/* P28: 기록된 생각·작성 시간만 보여 준다. */}
           {!!p.answerTimes?.length && <section className="report-reader-panel"><h4>풀이 기록</h4>{p.answerTimes.map(t => <p key={t.version}>{answerTimeLine(t)}</p>)}</section>}
           </aside>
         </article>
@@ -526,10 +520,9 @@ function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
   )
 }
 
-function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }: {
+function ReportMetricCounts({ metrics, highlighted, onProof }: {
   metrics: (Metric & { itemId?: string })[]
   highlighted: number[]
-  canReadOriginals: boolean
   onProof: (id: string) => void
 }) {
   const [page, setPage] = useState({ index: 0, highlight: '' })
@@ -548,8 +541,8 @@ function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }:
           <span>전체 {metric.denominator.toLocaleString()}건 중</span>{' '}
           <strong>{metric.numerator.toLocaleString()}건</strong>
           {metric.state === 'NO_RECORD' && <small>기록 없음</small>}
-          {canReadOriginals && <button type="button" className="report-metric-proof" aria-label={`${label} 내용 보기`}
-            onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용</button>}
+          <button type="button" className="report-metric-proof" aria-label={`${label} 내용 보기`}
+            onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용</button>
         </dd>
       </div>
     })}</dl>

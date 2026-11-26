@@ -8,9 +8,6 @@ async function login(page: Page) {
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/parent\/journal/)
 }
-async function share(page: Page, childId: string) {
-  await page.evaluate(async id => { const path = '/src/mocks/fixtures/sharing.ts'; const { saveSharing } = await import(path); saveSharing(id, true) }, childId)
-}
 const noOverflow = async (page: Page) =>
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
 /**
@@ -38,7 +35,6 @@ async function stubRounds(page: Page, stub: { status: number; body: unknown; tim
 
 test('유료 자녀: 표지 책장에서 회차마다 그림책 발급, 잠금 안내 없음 @responsive', async ({ page }, info) => {
   await login(page)
-  await share(page, 'demo-seoyun')
   await page.goto('/parent/report?childId=demo-seoyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
   const shelf = books.getByRole('list', { name: '그림책을 발급할 수 있는 회차' })
@@ -65,7 +61,6 @@ test('유료 자녀: 발급 → 받기 옆 "같이 읽었어요" → 누르면 �
     }
   })
   await login(page)
-  await share(page, 'demo-seoyun')
   await page.goto('/parent/report?childId=demo-seoyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
   const row = books.getByRole('list', { name: '그림책을 발급할 수 있는 회차' }).getByRole('listitem').first()
@@ -93,7 +88,6 @@ test('유료 자녀: 발급 → 받기 옆 "같이 읽었어요" → 누르면 �
 
 test('무료 자녀: 최근 4주 표지만, 발급 대신 잠금, 숨긴 회차 수 안내 → 비교표로 @responsive', async ({ page }) => {
   await login(page)
-  await share(page, 'demo-doyun')
   await page.evaluate(() => sessionStorage.setItem('sagomungchi:msw-memory-book-locked', '2'))
   await page.goto('/parent/report?childId=demo-doyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
@@ -111,7 +105,6 @@ test('무료 자녀: 최근 4주 표지만, 발급 대신 잠금, 숨긴 회차 
 
 test('무료 자녀: 숨긴 회차가 없으면 잠긴 책 칸 없이 프리미엄 안내만', async ({ page }) => {
   await login(page)
-  await share(page, 'demo-doyun')
   await page.goto('/parent/report?childId=demo-doyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
   await expect(books.getByRole('list', { name: '최근 4주 그림책 표지' }).getByRole('listitem')).toHaveCount(3)
@@ -119,18 +112,17 @@ test('무료 자녀: 숨긴 회차가 없으면 잠긴 책 칸 없이 프리미�
   await expect(books.getByRole('note')).toContainText('그림책 만들기와 지난 그림책 모아 보기는 프리미엄에서 할 수 있어요.')
 })
 
-test('원문 비공개 자녀는 책장 대신 기존 안내', async ({ page }) => {
+test('#1064: 학생 공개 설정 없이도 책장이 보이고 비공개 안내가 없다', async ({ page }) => {
   await login(page)
   await page.goto('/parent/report?childId=demo-doyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
-  await expect(books.getByRole('alert')).toContainText('답 보여 주기를 켜야')
-  await expect(books.getByRole('list')).toHaveCount(0)
+  await expect(books.getByRole('list').first()).toBeVisible()
+  await expect(books.getByText(/답 보여 주기/)).toHaveCount(0)
 })
 
 test('회차 목록을 못 불러오면 다시 불러오기로 책장을 다시 받는다 @responsive', async ({ page }) => {
   await stubRounds(page, { status: 500, body: { status: 500, code: 'INTERNAL_ERROR', title: '잠시 후 다시 시도해 주세요.', retryable: true }, times: 1 })
   await login(page)
-  await share(page, 'demo-seoyun')
   await page.goto('/parent/report?childId=demo-seoyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
   const alert = books.getByRole('alert')
@@ -146,7 +138,6 @@ test('회차 목록을 못 불러오면 다시 불러오기로 책장을 다시 
 test('무료 자녀: 최근 4주 회차가 없으면 표지 없이 잠긴 책 칸과 안내만 @responsive', async ({ page }) => {
   await stubRounds(page, { status: 200, body: { items: [], page: 0, size: 50, totalElements: 0, lockedCount: 3, canCreate: false } })
   await login(page)
-  await share(page, 'demo-doyun')
   await page.goto('/parent/report?childId=demo-doyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
   await expect(books.getByText('아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 최근 4주에는 새로 받은 액자가 없어요.', { exact: true })).toBeVisible()

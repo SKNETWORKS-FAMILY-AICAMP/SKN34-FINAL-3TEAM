@@ -8,11 +8,10 @@ export const dailyJudgments = [
   { key: 'UNKNOWN', label: '판정 없음', tone: 'slate' },
 ] as const
 
-/** Only facts in this report revision. Missing/private data is not a zero. */
-export function dailyReportSummary(report: Pick<WeeklyReport, 'problems' | 'metrics' | 'parentSharingEnabled'>) {
+/** Only facts in this report revision. Missing data is not a zero. */
+export function dailyReportSummary(report: Pick<WeeklyReport, 'problems' | 'metrics'>) {
   const problems = report.problems ?? []
   const available = Array.isArray(report.problems)
-  const readable = available && report.parentSharingEnabled !== false
   const metric = report.metrics.find(m => m.label === '완료한 활동')
   const total = available ? problems.length : metric?.count ?? null
   const judgments = dailyJudgments.map(j => ({ ...j, count: problems.filter(p => (p.judgment ?? 'UNKNOWN') === j.key).length }))
@@ -35,8 +34,8 @@ export function dailyReportSummary(report: Pick<WeeklyReport, 'problems' | 'metr
   const difficultyMissingIndices = problems.flatMap((_, index) => recordedIndices.has(index) ? [] : [index])
   return {
     total, available, judgments,
-    followupActivities: readable ? problems.filter(p => p.followups.length > 0).length : null,
-    answeredActivities: readable ? problems.filter(p => p.followups.some(f => f.answer?.trim())).length : null,
+    followupActivities: available ? problems.filter(p => p.followups.length > 0).length : null,
+    answeredActivities: available ? problems.filter(p => p.followups.some(f => f.answer?.trim())).length : null,
     reflections: available ? problems.filter(p => p.reflection?.written).length : null,
     reviewIndices: problems.flatMap((p, index) => p.judgment === 'RETHINK' ? [index] : []),
     elements: [...elements].map(([label, indices]) => ({ label, indices })).sort((a, b) => b.indices.length - a.indices.length || a.label.localeCompare(b.label, 'ko')),

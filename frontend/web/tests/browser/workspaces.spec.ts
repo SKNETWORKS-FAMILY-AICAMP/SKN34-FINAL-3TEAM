@@ -29,11 +29,10 @@ test('학생 공개 설정 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
   await page.getByRole('button', { name: '설정', exact: true }).click()
   await expect(page.getByRole('heading', { name: '공개 설정', exact: true })).toBeVisible()
-  await expect(page.getByRole('radio', { name: '비공개로 둘게요' })).toBeChecked()
-  await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-  await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
-  await page.getByRole('radio', { name: '비공개로 둘게요' }).click()
-  await expect(page.getByRole('status').filter({ hasText: '지금은 비공개예요.' })).toBeVisible()
+  // #1064: 학부모 공개 선택지는 없고(고지는 첫 둘러보기) 친구 공개만 고른다
+  await expect(page.getByRole('radio', { name: '비공개로 둘게요' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: '학부모님께 공개할게요' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: '나만 볼게요' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   await page.screenshot({ path: testInfo.outputPath('student-sharing.png'), fullPage: true })
   await writeFile(testInfo.outputPath('sharing-rendered.html'), (await page.content()).replace(/<script\b[\s\S]*?<\/script>/gi, ''))
@@ -229,18 +228,13 @@ test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·�
   await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toHaveCount(1)
   await expect(page).toHaveURL(/childId=/)
   const childId = new URL(page.url()).searchParams.get('childId')!
-  await page.evaluate(async id => {
-    const path = '/src/mocks/fixtures/sharing.ts'
-    const { saveSharing } = await import(path)
-    saveSharing(id, true)
-  }, childId)
   await page.goto('/parent/report?view=chat')
   const examples = page.getByRole('group', { name: '예시 질문' })
   await expect(examples).toBeVisible()
   await expect(examples.getByRole('button')).toHaveCount(5)
   await expect(page.getByRole('button', { name: '질문 보내기', exact: true })).toBeVisible()
   await expect(page.getByLabel('리포트 변경 요청', { exact: true })).toHaveCount(0)
-  // 공개를 허용한 합성 학생으로 고른 질문과 실제 요청 범위를 확인한다.
+  // 합성 학생으로 고른 질문과 실제 요청 범위를 확인한다.
   const scope = new URL(page.url()).searchParams
   const create = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/conversations')
   await examples.getByRole('button', { name: '이번 주 학습 횟수는?' }).click()

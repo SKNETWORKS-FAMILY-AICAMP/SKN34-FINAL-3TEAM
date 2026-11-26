@@ -30,10 +30,10 @@ test('counts activities, not follow-up messages or repeated element labels; pres
   assert.deepEqual(result.difficultyMissingIndices, [3, 4])
 })
 
-test('private text fields do not turn into zero activity counts; public difficulty and judgment stay available', () => {
-  const result = dailyReportSummary({ parentSharingEnabled: false, metrics: [], problems: [problem({ reflection: { written: true, difficulty: 'EASY', text: null } })] })
-  assert.equal(result.followupActivities, null)
-  assert.equal(result.answeredActivities, null)
+test('reports without a sharing preference retain follow-up counts and recorded difficulty', () => {
+  const result = dailyReportSummary({ metrics: [], problems: [problem({ followups: [{ question: '왜?', answer: '내 생각' }], reflection: { written: true, difficulty: 'EASY', text: null } })] })
+  assert.equal(result.followupActivities, 1)
+  assert.equal(result.answeredActivities, 1)
   assert.equal(result.total, 1)
   assert.equal(result.reflections, 1)
   assert.equal(result.difficulties[0].count, 1)
@@ -45,6 +45,8 @@ test('missing details and no-record reports are distinct; unwritten reflections 
   assert.equal(unavailable.total, null)
   assert.equal(unavailable.reflections, null)
   assert.equal(unavailable.available, false)
+  assert.equal(unavailable.followupActivities, null)
+  assert.equal(unavailable.answeredActivities, null)
   const empty = dailyReportSummary({ problems: [], metrics: [] })
   assert.equal(empty.total, 0)
   assert.equal(empty.reflections, 0)

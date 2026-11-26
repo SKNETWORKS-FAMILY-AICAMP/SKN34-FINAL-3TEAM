@@ -47,7 +47,7 @@ const sameText = (a?: string | null, b?: string | null) => !!text(a) && text(a) 
 
 export function reportTargets(report: WeeklyReport, highlight?: ReportHighlight | null): ReportTargets {
   const result = emptyReportTargets()
-  if (!highlight || report.status !== 'COMPLETED' || report.parentSharingEnabled !== true ||
+  if (!highlight || report.status !== 'COMPLETED' ||
     report.verification.numbersMatched !== true || report.verification.quotesMatched !== true || report.childId !== highlight.childId ||
     report.reportId !== highlight.reportId || report.revision !== highlight.revision || reportPeriodType(report) !== highlight.periodType ||
     !samePeriod(report.period, highlight.period)) return result

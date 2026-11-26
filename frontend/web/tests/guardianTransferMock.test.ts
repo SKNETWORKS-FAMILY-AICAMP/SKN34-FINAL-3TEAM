@@ -11,7 +11,6 @@ import { mockAccounts, mockAccountChildren, mockConsentHistory, setWorkspaceScen
 import { mockGuardianTransferConfig, mockTransfers, transferUnavailableChildren } from '../src/mocks/fixtures/guardianTransfers.ts'
 import { conversations, conversationOwners } from '../src/mocks/fixtures/parent.ts'
 import { deviceState } from '../src/mocks/fixtures/studentDevice.ts'
-import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 
 Object.defineProperty(globalThis, 'location', { value: new URL('http://localhost/'), configurable: true })
 const server = setupServer(...guardianTransferHandlers, ...parentHandlers, ...serviceHandlers, ...paymentHandlers, ...studentHandlers)
@@ -126,7 +125,6 @@ test('대기 중 탈퇴·해제·삭제 차단, 본인 취소·거절과 종료 
 })
 
 for (const include of [false, true]) test(`자녀 없는 수신자 수락, 단일 연결·동의·대화 선택(${include})·기기 해제`, async () => {
-  saveSharing(child.id, true)
   conversations.set('conversation', { conversationId: 'conversation', childId: child.id, title: '상담', period: { from: '2026-11-01', to: '2026-11-02' }, createdAt: new Date().toISOString(), messages: [] })
   conversationOwners.set('conversation', sender)
   deviceState.devices.push({ deviceId: 'transfer-device', owner: sender, childIds: [child.id], label: '기기', createdAt: '', lastUsedAt: null, expiresAt: '', revokedAt: null })

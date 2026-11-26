@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { makeWeekly, makeDaily } from '../src/mocks/fixtures/parent.ts'
-import { privateReport } from '../src/mocks/fixtures/sharing.ts'
 import type { Child } from '../src/domain/classroom.ts'
 import { setMockSubscription } from '../src/mocks/fixtures/payments.ts'
 import { explanationBlocks, explanationSections, personalizeExplanation } from '../src/domain/reportExplanation.ts'
@@ -19,16 +18,6 @@ test('#481 목업: 대상 없는 주간은 NO_TARGET, 무료·일일은 null이�
   assert.equal(report.narrative?.modelExplanation, null)
   assert.equal(makeWeekly({ ...child, id: 'explanation-free-child' }, period).explanations, null)
   assert.equal(makeDaily(child, period.from).explanations, null)
-})
-
-test('#481 목업: 비공개 응답은 저장된 설명·인용을 제거하고 수치는 유지한다', () => {
-  const original = { ...makeWeekly(child, period), explanations: { state: 'INCLUDED' as const, items: [{ attemptId: 'a', answerId: 'b', answerVersion: 1,
-    missionTitle: '합성 미션', thinkingType: 'ANALYZE' as const, quote: '목업 비공개 원문', text: '목업 비공개 설명' }] } }
-  const hidden = privateReport(original)
-  assert.deepEqual(hidden.explanations, { state: 'NO_TARGET', items: [] })
-  assert.equal(JSON.stringify(hidden).includes('목업 비공개'), false)
-  assert.deepEqual(hidden.metrics, original.metrics)
-  assert.equal(original.explanations.items.length, 1)
 })
 
 test('상세 설명: 구조화된 본문은 세 구역으로 표시하고 없는 보완점은 만들지 않는다', () => {

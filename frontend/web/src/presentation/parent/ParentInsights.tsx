@@ -22,9 +22,9 @@ function reportFromParams(params: URLSearchParams): ReportContext | null {
 }
 const ASK_KEYS = ['askReportId', 'askRevision', 'askType', 'askFrom', 'askTo']
 
-export function ParentInsights({ child, scope, canReadOriginals, onScope, periodControl, sharingPending = false, mode = 'report' }: {
-  child: Child; scope: Scope; canReadOriginals: boolean; onScope: (scope: Scope) => void
-  periodControl?: ReactNode; sharingPending?: boolean; mode?: 'report' | 'chat'
+export function ParentInsights({ child, scope, onScope, periodControl, mode = 'report' }: {
+  child: Child; scope: Scope; onScope: (scope: Scope) => void
+  periodControl?: ReactNode; mode?: 'report' | 'chat'
 }) {
   const [params] = useSearchParams(), navigate = useNavigate()
   const [report, setReport] = useState<ReportContext | null>(() => mode === 'chat' ? reportFromParams(params) : null)
@@ -60,7 +60,7 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
   }, [abortEvidence])
   const onAnswer = useCallback((answer: ReportAnswer | null, reveal = false) => {
     clearHighlight()
-    if (!answer || !canReadOriginals || !verifiedReportAnswer(answer.message, child.id)) return
+    if (!answer || !verifiedReportAnswer(answer.message, child.id)) return
     const message = answer.message
     let target: ReportContext | null = report
     if (answer.reportId) {
@@ -81,7 +81,7 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
       setHighlight({ ...target!, childId: child.id, messageId: message.messageId, question: message.question, metrics: message.metrics!, evidence: result.items })
       if (reveal) setRevealToken(value => value + 1)
     }).catch(error => { setHighlight(null); setLinkError(error) })
-  }, [child.id, canReadOriginals, report, clearHighlight, loadEvidence])
+  }, [child.id, report, clearHighlight, loadEvidence])
   const chatScope = report ? { childId: child.id, ...report.period } : scope
   const dashboardParams = new URLSearchParams({ childId: child.id, from: scope.from, to: scope.to })
   return <section className={mode === 'chat' ? 'parent-insights parent-insights-unified parent-insights-fullscreen' : 'parent-insights parent-insights-unified'}>
@@ -104,7 +104,7 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
     <div className="parent-insights-content">
     {mode === 'report' && <div className="parent-insights-report">
       <div className="parent-report-workspace">
-      <ParentReports child={child} canReadOriginals={canReadOriginals} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
+      <ParentReports child={child} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
         onAskReport={value => { clearHighlight(); askReport(value) }} />
       </div>
     </div>}
@@ -112,11 +112,10 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
       {linking && <p role="status">답변의 근거 위치를 확인하고 있습니다.</p>}
       {linkNotice && <p role="status">{linkNotice}</p>}
       <ErrorNotice error={linkError} retry={() => onAnswer(selection.current, true)} />
-      {sharingPending ? <p role="status">공개 설정을 확인하고 있습니다.</p> :
       <ParentConversation key={`${child.id}:${report ? report.reportId + ':' + report.revision : scope.from + ':' + scope.to}`}
-        child={child} scope={chatScope} canReadOriginals={canReadOriginals} report={report ?? undefined}
+        child={child} scope={chatScope} report={report ?? undefined}
         onAnswer={onAnswer}
-        onClearReport={() => { clearHighlight(); setReport(null); leaveReport() }} onScope={next => { clearHighlight(); setReport(null); onScope(next) }} />}
+        onClearReport={() => { clearHighlight(); setReport(null); leaveReport() }} onScope={next => { clearHighlight(); setReport(null); onScope(next) }} />
     </div>}
     </div>
   </section>

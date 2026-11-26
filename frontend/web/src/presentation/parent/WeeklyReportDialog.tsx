@@ -44,7 +44,7 @@ export function WeeklyReportDialog({ report, initial, onClose, renderActivity, m
           {theme && <li><button className="daily-navigation-row" onClick={() => history.navigate({ category: 'theme', attemptId: null })}><strong>이번 주 테마</strong><ChevronRight size={16} aria-hidden="true" /></button></li>}
           <li><button className="daily-navigation-row" onClick={() => history.navigate({ category: 'metrics', attemptId: null })}><strong>학습 수치 전체 보기</strong><span>{report.metrics.length}항목</span><ChevronRight size={16} aria-hidden="true" /></button></li>
         </ul></section>
-      </> : category ? report.parentSharingEnabled === false ? <p>아이의 답변이 비공개입니다. 학습 수치는 전체 리포트에서 확인할 수 있어요.</p> : activity ? <>
+      </> : category ? activity ? <>
         <WeeklyActivityPicker activities={activities.filter(item => category.ids.includes(item.id))} selected={activity.id} onSelect={choose} />
         {renderActivity(activity.id)}
       </> : <ul className="daily-navigation-list" aria-label={`${category.label} 활동 목록`}>{activities.filter(item => category.ids.includes(item.id)).map(item => <li key={item.id}><button className="daily-navigation-row weekly-problem-row" onClick={() => choose(item.id)}><strong>{item.title}</strong>{item.type && <span>[{thinkingLabels[item.type]}]</span>}<ChevronRight size={16} aria-hidden="true" /></button></li>)}</ul>

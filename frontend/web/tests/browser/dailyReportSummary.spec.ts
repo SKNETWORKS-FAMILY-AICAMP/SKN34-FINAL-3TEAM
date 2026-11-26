@@ -1,13 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 
-async function openDaily(page: Page, mode: 'normal' | 'private' | 'empty' | 'missing' | 'single-element' = 'normal') {
+async function openDaily(page: Page, mode: 'normal' | 'empty' | 'missing' | 'single-element' = 'normal') {
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await page.evaluate(async sharing => {
-    const { saveSharing } = await import('/src/mocks/fixtures/sharing.ts' as string)
-    saveSharing('demo-seoyun', sharing)
-  }, mode !== 'private')
   await page.goto('/parent/report?childId=demo-seoyun')
   await page.locator('.report-period-picker > summary').click()
   await page.getByRole('button', { name: '일일', exact: true }).click()
@@ -235,10 +231,12 @@ test('difficulty numbers open only matching activities, including missing diffic
   }
 })
 
-test('private daily summary keeps numeric records and labels hidden follow-up counts @responsive', async ({ page }) => {
-  const summary = await openDaily(page, 'private')
-  await expect(summary.getByRole('region', { name: '되묻기가 있었던 활동', exact: true })).toContainText('원문 비공개')
-  await expect(summary.getByRole('region', { name: '되묻기에 대한 답변 기록', exact: true })).not.toContainText('0개')
+test('daily summary and original answers work without a sharing preference @responsive', async ({ page }) => {
+  const sharingRequests: string[] = []
+  page.on('request', request => { if (request.url().includes('sharing-preferences')) sharingRequests.push(request.url()) })
+  const summary = await openDaily(page)
+  await expect(summary.getByRole('region', { name: '되묻기가 있었던 활동', exact: true })).toContainText('15개')
+  await expect(summary.getByRole('region', { name: '되묻기에 대한 답변 기록', exact: true })).toContainText('0개')
   await expect(summary.getByRole('region', { name: '돌아보기를 작성한 활동', exact: true })).toContainText('15개')
   await expect(summary.locator('.daily-difficulty-legend')).toContainText('쉬웠어요8개')
   await expect(summary.getByRole('region', { name: '되묻기가 있었던 활동', exact: true }).getByRole('button')).toHaveCount(0)
@@ -247,10 +245,9 @@ test('private daily summary keeps numeric records and labels hidden follow-up co
   const dialog = page.getByRole('dialog', { name: '일일 리포트 전체 보기', exact: true })
   await expect(dialog.locator('[data-daily-problem-index]')).toHaveCount(1)
   await expect(dialog.locator('[data-daily-problem-index="0"]')).toBeVisible()
-  await expect(dialog.locator('.report-final-answer')).toContainText('아이가 답변 원문을 비공개로 두었어요.')
-  await expect(dialog.locator('.report-final-answer blockquote')).toHaveCount(0)
-  await expect(dialog).not.toContainText('서로의 의견을 듣고 근거를 비교해요.')
-  await expect(dialog.getByRole('button', { name: '내용', exact: true })).toHaveCount(0)
+  await expect(dialog.locator('.report-final-answer blockquote')).toHaveText('서로의 의견을 듣고 근거를 비교해요.')
+  await expect(dialog).not.toContainText('비공개')
+  expect(sharingRequests).toEqual([])
 })
 
 test('empty daily summary has an honest empty state without an invented chart @responsive', async ({ page }) => {

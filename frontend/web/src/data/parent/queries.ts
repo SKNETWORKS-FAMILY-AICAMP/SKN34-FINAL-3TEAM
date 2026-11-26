@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Conversation, MessageResult, Scope, StreamState } from '../../domain/parent.ts'
 import type { DeletionScope } from '../../domain/service.ts'
 import { parentApi } from './api.ts'
-import { sharingApi } from '../classroom/sharingApi.ts'
 import { guardianTransfers } from '../guardianTransfers.ts'
 import { serviceApi } from '../serviceApi.ts'
 export function useParentQuery<T>(
@@ -65,12 +64,6 @@ export function useParentDashboard(scope: Scope, page = 0, recordsEnabled = true
   }
 }
 
-/** 학생이 정한 답 공개 상태(학부모 화면 안내). 학생이 바꿀 수 있어 볼 때마다 다시 묻는다. */
-export function useParentSharingNotice(studentId: string, enabled = true) {
-  return useQuery({ queryKey: ['parent', 'sharing-preferences', studentId],
-    queryFn: ({ signal }) => sharingApi.get(studentId, 'PARENT', signal), retry: false,
-    enabled, staleTime: 0, refetchOnWindowFocus: 'always' })
-}
 /** 보호자 이관 요청 목록. 상대가 수락·거절할 수 있어 5초마다 다시 묻는다. */
 export function useGuardianTransferList() {
   return useQuery({ queryKey: ['parent', 'guardian-transfers'], queryFn: ({ signal }) => guardianTransfers.list(signal), refetchInterval: 5000, retry: false })
