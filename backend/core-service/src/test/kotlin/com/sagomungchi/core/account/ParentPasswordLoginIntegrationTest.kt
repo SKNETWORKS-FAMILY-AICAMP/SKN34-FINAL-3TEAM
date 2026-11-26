@@ -48,11 +48,12 @@ class ParentPasswordLoginIntegrationTest : IntegrationTestSupport() {
             contentType = MediaType.APPLICATION_JSON
             content = json.writeValueAsString(mapOf("loginId" to id, "password" to password, "name" to name))
         }
-    private fun login(id: String, password: String = PASSWORD) = mvc.post("/api/v1/auth/parent/login") {
+    private fun login(id: String, password: String = PASSWORD, ip: String = newIp(), realm: String = "parent") = mvc.post("/api/v1/auth/$realm/login") {
         header("Origin", ORIGIN); header("X-Requested-With", "XMLHttpRequest"); contentType = MediaType.APPLICATION_JSON
+        with { it.remoteAddr = ip; it }
         content = json.writeValueAsString(mapOf("loginId" to id, "password" to password))
     }
-    private fun registered(id: String = newId()): IssuedAuth { signup(id).andExpect { status { isOk() } }; return auth.parentLogin(id, PASSWORD, null) }
+    private fun registered(id: String = newId()): IssuedAuth { signup(id).andExpect { status { isOk() } }; return auth.parentLogin(id, PASSWORD, newIp(), null) }
     private fun userId(id: String) = jdbc.queryForObject("SELECT id FROM user_account WHERE login_id=?", UUID::class.java, id)!!
     private fun failedCount(user: UUID) = jdbc.queryForObject("SELECT failed_count FROM parent_credential WHERE user_id=?", Int::class.java, user)
     private fun code(block: () -> Unit) = assertFailsWith<BusinessException> { block() }.code
@@ -109,28 +110,46 @@ class ParentPasswordLoginIntegrationTest : IntegrationTestSupport() {
         login("nobody${UUID.randomUUID().toString().take(8)}").andExpect { status { isUnauthorized() }; jsonPath("$.code") { value("INVALID_CREDENTIALS") } }
         login(id.uppercase()).andExpect { status { isOk() }; jsonPath("$.role") { value("PARENT") } }
         assertEquals(0, failedCount(user))
-        val second = auth.parentLogin(id, PASSWORD, first.refreshToken)
+        val second = auth.parentLogin(id, PASSWORD, newIp(), first.refreshToken)
         assertFailsWith<BusinessException> { auth.authenticate(first.accessToken) }
         assertEquals("PARENT", auth.authenticate(second.accessToken).session.role)
-        repeat(4) { assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin(id, "wrong-password", null) }) }
-        assertEquals("LOGIN_LOCKED", code { auth.parentLogin(id, "wrong-password", null) })
+        repeat(4) { assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin(id, "wrong-password", newIp(), null) }) }
+        assertEquals("LOGIN_LOCKED", code { auth.parentLogin(id, "wrong-password", newIp(), null) })
         login(id).andExpect { status { isLocked() }; jsonPath("$.code") { value("LOGIN_LOCKED") } }
         jdbc.update("UPDATE parent_credential SET locked_until=? WHERE user_id=?", OffsetDateTime.now().minusSeconds(1), user)
-        auth.parentLogin(id, PASSWORD, null)
+        auth.parentLogin(id, PASSWORD, newIp(), null)
         // registered(), the HTTP upper-case login, the session replacement and the post-lock login.
         assertEquals(4, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='PARENT_PASSWORD_LOGIN'", Int::class.java, user))
+    }
+
+    @Test fun `password logins share an IP quota and rejected requests leave the account counter intact`() {
+        val id = newId()
+        val user = registered(id).identity.account.id
+        val ip = newIp()
+        repeat(5) { login(id, ip = ip).andExpect { status { isOk() } } }
+        repeat(2) {
+            login(newId(), ip = ip, realm = "admin").andExpect { status { isUnauthorized() } }
+            login(id, "wrong-password", ip).andExpect { status { isUnauthorized() } }
+        }
+        login(id, "wrong-password", ip).andExpect {
+            status { isTooManyRequests() }
+            jsonPath("$.code") { value("LOGIN_RATE_LIMITED") }
+        }
+        assertEquals(2, failedCount(user))
+        login(id).andExpect { status { isOk() } }
+        assertEquals(0, failedCount(user))
     }
 
     @Test fun `Google parents and admins cannot use parent password login`() {
         val subject = UUID.randomUUID().toString()
         val google = auth.login(GoogleProfile(subject, "$subject@example.test", "구글"), null)
         // Google login IDs are emails, which the parent ID rule never accepts.
-        assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin("$subject@example.test", PASSWORD, null) })
+        assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin("$subject@example.test", PASSWORD, newIp(), null) })
         assertEquals("REAUTH_METHOD_MISMATCH", code { reauth.withPassword(google.identity, ReauthPurpose.WITHDRAWAL, null, null, PASSWORD) })
         val adminId = newId(); val admin = UUID.randomUUID()
         jdbc.update("INSERT INTO user_account(id,role,login_id,password_hash,display_name,status,is_demo,created_at,updated_at) VALUES(?,'ADMIN',?,NULL,'운영','ACTIVE',false,now(),now())", admin, adminId)
         jdbc.update("INSERT INTO parent_credential(user_id,password_hash,failed_count,locked_until,created_at,updated_at) VALUES(?,?,0,NULL,now(),now())", admin, hasher.hash(PASSWORD))
-        assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin(adminId, PASSWORD, null) })
+        assertEquals("INVALID_CREDENTIALS", code { auth.parentLogin(adminId, PASSWORD, newIp(), null) })
     }
 
     @Test fun `password re-confirmation issues a grant that sets the guardian password`() {
@@ -164,7 +183,7 @@ class ParentPasswordLoginIntegrationTest : IntegrationTestSupport() {
         val id = newId(); val p = registered(id)
         repeat(4) { assertEquals("REAUTH_PASSWORD_INVALID", code { reauth.withPassword(p.identity, ReauthPurpose.WITHDRAWAL, null, null, "wrong-password") }) }
         assertEquals("LOGIN_LOCKED", code { reauth.withPassword(p.identity, ReauthPurpose.WITHDRAWAL, null, null, "wrong-password") })
-        assertEquals("LOGIN_LOCKED", code { auth.parentLogin(id, PASSWORD, null) })
+        assertEquals("LOGIN_LOCKED", code { auth.parentLogin(id, PASSWORD, newIp(), null) })
     }
 
     @Test fun `completed withdrawal deletes the credential and releases the ID`() {

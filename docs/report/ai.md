@@ -1802,6 +1802,9 @@ kind에 `sllm-server`(llm-stub 대역)를 잠시 올리고 ai-service를 이 브
 
 학생이 답변 작성 화면에서 모르는 낱말을 물으면 동행 캐릭터가 국립국어원 사전 뜻을 쉬운 말로 답한다(FN-LRN-21, [API 2.2.1·4.2.8](../design/api-spec.md#227-낱말-물어보기-fn-lrn-21-599)). 경로는 web → core(그대로 전달) → learning(미션 글·학년·교과, 마무리 전이면 유출 검사 값) → ai `app/word_help/`.
 
+- #1052에서 learning 토큰의 허용 목록에 `/internal/word-helps`를 추가했다. 서로 다른 호출자 토큰의 통과·거부와 등록된 내부 경로의 허용 목록을 테스트한다.
+- #1053에서 FastAPI의 문서·스키마 HTTP 경로를 비활성화했다. API 계약은 [ai-service OpenAPI](../../contracts/openapi/ai-service.yaml)에서 확인한다.
+
 ### 26.1 정한 내용
 
 - 뜻은 사전에서만 온다. 표준국어대사전 `search.do`와 온용어 `search.do`의 표제어가 같은 항목만 후보로 쓰고, LLM은 후보 번호 고르기와 쉬운 말·예문 쓰기만 한다. 맞는 후보가 없으면 `NOT_FOUND`

@@ -98,6 +98,8 @@ app:
     new-account-demo: ${AUTH_NEW_ACCOUNT_DEMO:false}
     signup-limit-per-ip: ${AUTH_SIGNUP_LIMIT_PER_IP:5}
     signup-limit-window: ${AUTH_SIGNUP_LIMIT_WINDOW:10m}
+    login-limit-per-ip: ${AUTH_LOGIN_LIMIT_PER_IP:4}
+    login-limit-window: ${AUTH_LOGIN_LIMIT_WINDOW:15m}
   internal:
     token: ${INTERNAL_TOKEN} # 자기 토큰 (보내는 쪽)
     callers: # 받는 쪽 허용 호출자 토큰, 경로 허용 목록은 InternalCallerPolicy (architecture 2.2)

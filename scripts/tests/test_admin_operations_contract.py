@@ -122,9 +122,19 @@ class AdminOperationsContracts(unittest.TestCase):
                     callback['responses']={'200':{'description':'정상 처리','content':{'application/json':{'schema':{'type':'object'}}}},
                         '400':{'description':'유효하지 않은 입력'},'401':{'description':'인증 실패'},
                         '403':{'description':'권한/재인증 실패'},'409':{'description':'정책/상태 충돌'}}
-                if section=='paths' and name=='/auth/refresh':
-                    self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
-                    reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
+                if section == 'paths' and name == '/auth/refresh':
+                    post = reviewed['post']
+                    self.assertIn('PARENT_SESSION_LOCKED', post['responses']['401']['description'])
+                    post['responses']['401'] = {'$ref': '#/components/responses/Unauthenticated'}
+                    # #1055 documents revocation of guardian-entered student sessions.
+                    self.assertEqual(post['description'], (
+                        '부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. '
+                        '재사용 시 해당 세션과 그 세션에서 동석으로 진입한 학생 세션을 함께 폐기한다. 학생은 access만 발급받는다.'
+                    ))
+                    post['description'] = (
+                        '부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. '
+                        '재사용은 해당 세션을 폐기한다. 학생 세션은 refresh를 발급하지 않으며 이 경로를 사용할 수 없다.'
+                    )
                 # #317 documents STUDENT_RECORDS_PRIVATE on the parent record/conversation/report evidence 403s.
                 # Remove only that approved suffix or the added 403 entry before default.
                 if section=='paths':

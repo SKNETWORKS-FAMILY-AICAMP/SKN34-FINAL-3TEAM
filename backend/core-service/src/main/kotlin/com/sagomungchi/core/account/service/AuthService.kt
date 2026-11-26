@@ -5,6 +5,7 @@ import com.sagomungchi.core.account.client.GoogleOAuthClient
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.*
 import com.sagomungchi.core.account.repository.AuthRepository
+import com.sagomungchi.core.account.repository.LoginRateLimiter
 import com.sagomungchi.core.account.repository.SignupRateLimiter
 import com.sagomungchi.core.account.service.PasswordCredentialService.Failure
 import com.sagomungchi.core.account.service.PasswordCredentialService.Realm
@@ -34,6 +35,7 @@ class AuthService(
     private val passwords: GuardianPasswordService,
     private val credentials: PasswordCredentialService,
     private val signupLimiter: SignupRateLimiter,
+    private val loginLimiter: LoginRateLimiter,
     private val accounts: AccountManagementService,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -79,19 +81,19 @@ class AuthService(
      * #369: ID/password login for ADMIN accounts registered in admin_credential (no signup; rows come from a script).
      * Unknown ID and wrong password give the same 401. The 5th consecutive failure locks the ID for 15 minutes.
      */
-    fun adminLogin(loginId: String?, password: String?, previousRefresh: String?): IssuedAuth {
+    fun adminLogin(loginId: String?, password: String?, clientIp: String, previousRefresh: String?): IssuedAuth {
         val id = loginId?.trim().orEmpty()
         val secret = password.orEmpty()
         if (id.isEmpty() || id.length > 254 || secret.isEmpty() || secret.length > PasswordCredentialService.PASSWORD_MAX) throw invalidCredentials()
-        return passwordLogin(Realm.ADMIN, secret, previousRefresh) { repository.adminCredential(id) }
+        return passwordLogin(Realm.ADMIN, secret, clientIp, previousRefresh) { repository.adminCredential(id) }
     }
 
     /** #415: parent ID/password login. Same failure and lock rules as [adminLogin]; Google parents have no credential row. */
-    fun parentLogin(loginId: String?, password: String?, previousRefresh: String?): IssuedAuth {
+    fun parentLogin(loginId: String?, password: String?, clientIp: String, previousRefresh: String?): IssuedAuth {
         val id = PasswordCredentialService.parentLoginId(loginId)
         val secret = password.orEmpty()
         if (id == null || secret.isEmpty() || secret.length > PasswordCredentialService.PASSWORD_MAX) throw invalidCredentials()
-        return passwordLogin(Realm.PARENT, secret, previousRefresh) { repository.parentCredential(id) }
+        return passwordLogin(Realm.PARENT, secret, clientIp, previousRefresh) { repository.parentCredential(id) }
     }
 
     /**
@@ -128,7 +130,12 @@ class AuthService(
             throw BusinessException(HttpStatus.TOO_MANY_REQUESTS, "SIGNUP_RATE_LIMITED", "가입 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
     }
 
-    private fun passwordLogin(realm: Realm, secret: String, previousRefresh: String?, find: () -> PasswordCredential?): IssuedAuth {
+    private fun passwordLogin(realm: Realm, secret: String, clientIp: String, previousRefresh: String?, find: () -> PasswordCredential?): IssuedAuth {
+        val attempt = UUID.randomUUID().toString()
+        val reserved = loginLimiter.reserve(clientIp, attempt)
+            ?: throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "LOGIN_UNAVAILABLE", "지금은 로그인을 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요.")
+        if (!reserved)
+            throw BusinessException(HttpStatus.TOO_MANY_REQUESTS, "LOGIN_RATE_LIMITED", "로그인 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
         val outcome = requireNotNull(transactions.execute {
             val now = now()
             val credential = find()
@@ -139,7 +146,10 @@ class AuthService(
         })
         // Throw after commit so the failure counter is not rolled back.
         return when (outcome.failure) {
-            null -> requireNotNull(outcome.issued)
+            null -> {
+                loginLimiter.release(clientIp, attempt)
+                requireNotNull(outcome.issued)
+            }
             Failure.LOCKED.name -> throw if (realm == Realm.ADMIN)
                 BusinessException(HttpStatus.LOCKED, "ADMIN_LOGIN_LOCKED", "로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.")
                 else loginLocked()
@@ -149,10 +159,15 @@ class AuthService(
 
     /** Caller holds the transaction. Replacing a locked parent session also ends the student sessions entered from it. */
     private fun startSession(account: AuthAccount, previousRefresh: String?, now: OffsetDateTime): IssuedAuth {
-        previousRefresh?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now); repository.revokeGuardianEntries(it, now) }
+        previousRefresh?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { revokeSessionAndGuardianEntries(it, now) }
         val session = AuthSession(UUID.randomUUID(), account.id, account.role, null, 1, now.plus(properties.refreshTtl), null, now)
         repository.insertSession(session)
         return issue(session)
+    }
+
+    private fun revokeSessionAndGuardianEntries(sessionId: UUID, now: OffsetDateTime) {
+        repository.revoke(sessionId, now)
+        repository.revokeGuardianEntries(sessionId, now)
     }
 
     /** Device caller holds the parent account lock and has verified device, child and PIN. */
@@ -209,11 +224,11 @@ class AuthService(
             val hash = tokens.hash(token)
             val first = repository.refresh(hash) ?: throw unauthenticated()
             val session = first.sessionId?.let { repository.session(it, lock = true) } ?: throw unauthenticated()
-            // A former parent refresh cannot restore or revoke the new access-only student session.
+            // Student sessions are access-only and cannot own a refresh token.
             if (session.role == "STUDENT") throw unauthenticated()
             val current = repository.refresh(hash) ?: throw unauthenticated()
             if (current.usedAt != null) {
-                repository.revoke(session.id, now())
+                revokeSessionAndGuardianEntries(session.id, now())
                 return@execute Outcome(null, "REFRESH_REUSED")
             }
             if (current.revokedAt != null || !current.expiresAt.isAfter(now())) throw unauthenticated()
@@ -271,7 +286,7 @@ class AuthService(
                 val identity = try { authenticate(access) } catch (_: BusinessException) { null }
                 identity?.let { repository.revoke(it.session.id, now()) }
             }
-            raw?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now()); repository.revokeGuardianEntries(it, now()) }
+            raw?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { revokeSessionAndGuardianEntries(it, now()) }
         }
     }
 
