@@ -34,7 +34,6 @@ class GenerateReport:
     narrative_enabled: bool
     display_name: str | None = None
     requested_at: datetime | None = None
-    parent_sharing_enabled: bool = False
 
     template_snapshot: dict[str, Any] | None = None
     period_type: PeriodType = PeriodType.WEEKLY
@@ -128,7 +127,6 @@ class ReportEvent:
 class StudentDisplayName:
     student_id: UUID
     nickname: str
-    parent_sharing_enabled: bool = False
     template_snapshot: dict | None = None
     grade: int | None = None
 

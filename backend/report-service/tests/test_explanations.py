@@ -108,7 +108,6 @@ def setup_case(attempts=None, ai=None):
         display_name="합성별명",
         grade=5,
         explanation_enabled=True,
-        parent_sharing_enabled=True,
         narrative_enabled=True,
     )
     learning = Records(attempts if attempts is not None else [scored(report.student_id)])
@@ -247,10 +246,9 @@ def test_total_budget_preserves_already_verified_items(monkeypatch):
     [
         ({"period_type": PeriodType.DAILY}, None),
         ({"explanation_enabled": False}, None),
-        ({"parent_sharing_enabled": False}, "NO_TARGET"),
     ],
 )
-def test_daily_free_private_make_no_explanation_calls(changes, state):
+def test_daily_and_free_make_no_explanation_calls(changes, state):
     command, report, _, learning, ai, generator = setup_case()
     if changes.get("period_type") == PeriodType.DAILY:
         changes = {**changes, "period_to": command.period_from}
@@ -654,14 +652,12 @@ def test_explanation_state_counter_records_each_decision_with_only_the_state(
     assert asyncio.run(failing.generate(command, report)).explanation_state == "NOT_INCLUDED"
     _, _, _, _, _, empty = setup_case([])
     assert asyncio.run(empty.generate(command, report)).explanation_state == "NO_TARGET"
-    private = replace(command, parent_sharing_enabled=False)
-    assert asyncio.run(generator.generate(private, report)).explanation_state == "NO_TARGET"
     # Daily or disabled explanation stages are not decisions and are not counted.
     asyncio.run(generator.generate(replace(command, explanation_enabled=False), report))
     tracing.start_explanation_series()
 
     counts, points = explanation_counts()
-    assert counts == {"INCLUDED": 1, "NOT_INCLUDED": 1, "NO_TARGET": 2}
+    assert counts == {"INCLUDED": 1, "NOT_INCLUDED": 1, "NO_TARGET": 1}
     # NFR-SEC-05: no student, report or answer identifiers and no text in attributes.
     assert all(dict(point.attributes) == {"state": point.attributes["state"]} for point in points)
     assert str(student) not in repr(points) and "PRIVATE RAW TEXT" not in repr(points)

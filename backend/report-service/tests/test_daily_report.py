@@ -61,7 +61,6 @@ def daily_fixture(day="2026-10-24"):
         period_from=period.start,
         period_to=period.end,
         period_type=PeriodType.DAILY,
-        parent_sharing_enabled=True,
         narrative_enabled=True,
     )
     return command, records, learning
@@ -97,31 +96,28 @@ def test_corrected_judgment_shows_new_result_without_original_elements():
     judgment = replace(last.judgment, result="RETHINK", corrected=True)
     corrected = replace(attempt, answers=(*attempt.answers[:-1], replace(last, judgment=judgment)))
     result = asyncio.run(
-        DailyReportBuilder().build(replace(records, attempts=(corrected,)), True, learning)
+        DailyReportBuilder().build(replace(records, attempts=(corrected,)), learning)
     )
     problem = next(i for i in result.items if i.type == ItemType.PROBLEM)
     assert problem.payload["judgment"] == "RETHINK" and problem.payload["elements"] == []
 
 
-def test_private_daily_has_no_answer_quote_or_evidence_before_storage():
+def test_daily_always_keeps_answer_quote_and_evidence():
+    # #1064: 원문은 보호자 필수 동의로 제공되므로 학생별 공개 설정에 따른 제거가 없다.
     command, records, learning = daily_fixture()
-    result = asyncio.run(
-        RecordGenerator(learning).generate(replace(command, parent_sharing_enabled=False), None)
-    )
+    result = asyncio.run(RecordGenerator(learning).generate(command, None))
     problem = result.items[1]
-    assert problem.payload["finalAnswer"] is None
-    assert problem.payload["followups"] == problem.payload["quotes"] == []
-    assert problem.evidence == ()
-    assert problem.payload["reflection"]["text"] is None
-    learning.evidence.assert_not_called()
-    assert "근거를 보완한 답." not in str(result)
+    assert problem.payload["finalAnswer"] == records.attempts[0].answers[-1].text
+    assert problem.payload["followups"] and problem.payload["quotes"]
+    assert problem.evidence
+    learning.evidence.assert_called_once()
 
 
 def test_invalid_quote_does_not_become_verified_or_no_record():
     _, records, learning = daily_fixture()
     learning.evidence.return_value = ()
     with pytest.raises(RecordContractError, match="verified"):
-        asyncio.run(DailyReportBuilder().build(records, True, learning))
+        asyncio.run(DailyReportBuilder().build(records, learning))
 
 
 def test_daily_no_record_and_prior_day_submission():
@@ -131,9 +127,9 @@ def test_daily_no_record_and_prior_day_submission():
         replace(a, submitted_at=a.submitted_at - timedelta(days=1)) for a in attempt.answers
     )
     records = replace(records, attempts=(replace(attempt, answers=prior),))
-    result = asyncio.run(DailyReportBuilder().build(records, False, learning))
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     assert result.state == "OK"  # Completed today, even if submitted yesterday.
-    empty = asyncio.run(DailyReportBuilder().build(replace(records, attempts=()), False, learning))
+    empty = asyncio.run(DailyReportBuilder().build(replace(records, attempts=()), learning))
     assert empty.state == "NO_RECORD" and empty.items[0].payload["count"] == 0
 
 
@@ -200,7 +196,7 @@ def test_daily_persistence_response_and_rendering(db_session):
     records = replace(records, attempts=(replace(records.attempts[0], scheduled_day="TUE"),))
     repo = ReportRepository()
     report, _ = repo.get_or_create(db_session, command)
-    result = asyncio.run(DailyReportBuilder().build(records, True, learning))
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     repo.finish(db_session, report.id, result=result)
     assert (
         db_session.scalar(
@@ -444,7 +440,12 @@ def test_daily_counts_batch_solved_theme_problems_on_completion_day():
     attempt = replace(records.attempts[0], context="THEME_DAY")
     other = replace(attempt, id=uuid4(), mission_id=uuid4())
     records = replace(records, attempts=(attempt, other))
-    result = asyncio.run(DailyReportBuilder().build(records, False, learning))
+    last = other.answers[-1]
+    learning.evidence.return_value = (
+        *learning.evidence.return_value,
+        EvidenceRecord(last.id, other.id, last.version, last.text, True),
+    )
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     problems = [i for i in result.items if i.type == ItemType.PROBLEM]
     assert {p.payload["missionId"] for p in problems} == {
         str(attempt.mission_id),
@@ -525,10 +526,10 @@ def timed_fixture(times):
     return command, replace(records, attempts=(replace(attempt, answers=answers),)), learning
 
 
-def daily_detail(command, records, learning, db_session, sharing=True):
+def daily_detail(command, records, learning, db_session):
     repo = ReportRepository()
-    report, _ = repo.get_or_create(db_session, replace(command, parent_sharing_enabled=sharing))
-    result = asyncio.run(DailyReportBuilder().build(records, sharing, learning))
+    report, _ = repo.get_or_create(db_session, command)
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     repo.finish(db_session, report.id, result=result)
     detail = from_result(report, result)
     ReportDetail.model_validate(detail)
@@ -552,11 +553,10 @@ def test_answer_times_follow_versions_and_render_same_line_everywhere(db_session
     assert b"%PDF" in rendered["PDF"][:10]
 
 
-def test_answer_without_time_is_omitted_and_private_daily_keeps_times(db_session):
+def test_answer_without_time_is_omitted(db_session):
     command, records, learning = timed_fixture((None, (0, 60)))
-    detail = daily_detail(command, records, learning, db_session, sharing=False)
+    detail = daily_detail(command, records, learning, db_session)
     problem = detail["problems"][0]
-    assert problem["finalAnswer"] is None  # #206 원문 비공개
     assert problem["answerTimes"] == [{"version": 2, "thinkingSeconds": 0, "writingSeconds": 60}]
     markdown = ReportRenderer.markdown(detail, "합성학생")
     assert "처음 답:" not in markdown
@@ -578,7 +578,7 @@ def test_stored_daily_problem_without_answer_times_reads_as_empty():
     from app.generation.presentation import assemble
 
     _, records, learning = daily_fixture()
-    result = asyncio.run(DailyReportBuilder().build(records, True, learning))
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     old = [
         (item.type, None, {k: v for k, v in item.payload.items() if k != "answerTimes"})
         for item in result.items
@@ -686,12 +686,10 @@ def test_scheduled_day_detail_and_files(context, scheduled, expected):
     records = replace(
         records, attempts=(replace(records.attempts[0], context=context, scheduled_day=scheduled),)
     )
-    result = asyncio.run(DailyReportBuilder().build(records, False, learning))
+    result = asyncio.run(DailyReportBuilder().build(records, learning))
     problem = next(i.payload for i in result.items if i.type == ItemType.PROBLEM)
     assert problem["scheduledDay"] == (None if context == "EXTRA" else scheduled)
     assert scheduled_day_line(problem, "2026-11-19") == expected
-    # 권한과 무관한 요일 정보는 원문 비공개에도 남는다.
-    assert problem["finalAnswer"] is None
     from app.generation.presentation import assemble
 
     detail = assemble(

@@ -1,10 +1,10 @@
 """추억 그림책 생성 (docs/proposals/memory-book.md 6·12장).
 
-학생 잠금(공유) → 삭제 상태 확인 → 원문 공개 확인(D2) → 이미 만든 파일이면 완료만 다시 알림
+학생 잠금(공유) → 삭제 상태 확인 → 프로필(별명) 조회 → 이미 만든 파일이면 완료만 다시 알림
 → learning 회차 조립 → 그림 받기(data URI) → PDF 렌더링 → S3 저장 → Outbox `memorybook.completed`.
 report DB에는 그림책 행을 두지 않는다
 (키 규칙 `reports/memory-books/{studentId}/{bookId}/pdf`, 8.1·#975 C3).
-영구 실패(비공개·미보유·계약 오류·삭제)는 FAILED 완료 이벤트로 알리고,
+영구 실패(미보유·계약 오류·삭제)는 FAILED 완료 이벤트로 알리고,
 일시 장애는 예외로 올려 큐 재시도(1·5·15분)에 맡긴다.
 """
 
@@ -79,8 +79,6 @@ class MemoryBookService:
         storage: ObjectStorage = self._storage()
         key = memory_book_key(command.student_id, command.book_id)
         profile = await self._profiles.lookup(command.student_id)
-        if not profile.parent_sharing_enabled:
-            return BookOutcome(BookStatus.FAILED, FailureCode.STUDENT_RECORDS_PRIVATE)
         if await run_blocking(lambda: storage.exists(key)):
             # 재전달: 이미 저장했으면 다시 만들지 않고 완료만 다시 알린다(core가 멱등 처리)
             return BookOutcome(BookStatus.READY)

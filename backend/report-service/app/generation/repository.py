@@ -194,8 +194,9 @@ class ReportRepository:
         )
 
     def correction_impact(self, session, student_id, attempt_id):
-        """Completed revisions built from an attempt (#244). Evidence links are dropped when
-        parent sharing is off, so match the attempt IDs every payload keeps."""
+        """Completed revisions built from an attempt (#244). Older versions built while
+        #206 sharing was off have no evidence links, so match the attempt IDs every payload
+        keeps."""
         attempt = str(attempt_id)
         weekly = and_(
             weekly_report.c.period_type == PeriodType.WEEKLY,

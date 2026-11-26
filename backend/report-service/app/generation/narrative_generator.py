@@ -39,7 +39,6 @@ class NarrativeGenerator:
         if (
             command.period_type == "DAILY"
             or not command.narrative_enabled
-            or not command.parent_sharing_enabled
             or result.state == ReportState.NO_RECORD
         ):
             return replace(
