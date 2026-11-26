@@ -8,7 +8,7 @@ import { expect, type Page } from '@playwright/test'
 export async function orderPremium(page: Page) {
   await page.getByRole('link', { name: '이용권·결제' }).click()
   await expect(page.getByRole('heading', { name: '이용권·결제' })).toBeVisible()
-  await expect(page.getByRole('region', { name: '프리미엄 이용권', exact: true }).getByRole('heading', { name: /E2E 프리미엄/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'E2E 프리미엄 이용권', exact: true }).getByRole('heading', { name: 'E2E 프리미엄', exact: true })).toBeVisible()
   const popup = page.waitForEvent('popup')
   await page.getByRole('button', { name: '결제수단 선택' }).click()
   const checkout = await popup

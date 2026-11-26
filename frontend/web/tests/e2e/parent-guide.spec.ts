@@ -49,7 +49,11 @@ test('마지막 단계에서 기기 등록하러 가면 기기 화면으로 가�
   await guide.getByRole('button', { name: '기기 등록하러 가기', exact: true }).click()
   const first = await (await saved).json() as { completedAt: string }
   await page.waitForURL('**/parent/devices**')
-  await expect(page.getByRole('form', { name: `${nickname} PIN`, exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '기기 및 PIN', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: `${nickname} PIN 관리`, exact: true }).click()
+  const pinDialog = page.getByRole('dialog', { name: `${nickname} PIN 관리`, exact: true })
+  await expect(pinDialog.getByRole('form', { name: `${nickname} PIN`, exact: true })).toBeVisible()
+  await pinDialog.getByRole('button', { name: '창 닫기', exact: true }).click()
   await expect(guide).toHaveCount(0)
 
   const writes: string[] = []

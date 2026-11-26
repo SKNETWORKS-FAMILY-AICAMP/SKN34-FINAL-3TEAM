@@ -10,7 +10,7 @@ export function PremiumOffer({ product, childName, subscribed, current, disabled
 }) {
   // Reuse the established plan rules; only the premium column is displayed here.
   const groups = planComparison(product, product).groups
-  return <section className="premium-offer" aria-label={`${product.name} 이용권`}>
+  return <section className="premium-offer" aria-label={product.name.endsWith('이용권') ? product.name : `${product.name} 이용권`}>
     <div className="premium-purchase">
       <div className="premium-price-panel">
         <h2>{product.name}</h2>
