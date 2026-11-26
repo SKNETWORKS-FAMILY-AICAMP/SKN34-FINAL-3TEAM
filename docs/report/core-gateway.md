@@ -1060,3 +1060,74 @@ ROLLBACK;
 
 - 웹 화면 표시는 #1026. 그 전까지 웹 알림 설정 화면에 새 유형이 이름 없이 보일 수 있다
 - "학부모 2명이면 각 1건"은 자녀당 연결 학부모가 한 명이라(V26) 시험 데이터로 만들 수 없다. 코드는 `notificationParents`가 돌려준 학부모마다 1건을 만든다
+
+## 37. 관리자 AI 사용량 LLMOps 지표 (#1051, 2026-11-26)
+
+관리자 AI 사용량 화면(`/admin/usage`, FN-ADM-19)에 실패율·지연 p50·p95와 묶음 기준을 더했다. Grafana `LLM 호출`(#1028)과 같은 `llm_usage` 원천이지만 Prometheus 보존(3일)을 넘는 주간 추세·프롬프트 교체 전후 비교를 DB 기간 집계로 본다. 실시간 지연·오류율·경보는 그대로 Grafana가 맡는다(화면 안내 한 줄).
+
+### API
+
+- `GET /admin/ai-usage?from&to&callType&groupBy`: `groupBy`는 `CALL_TYPE`(기본)·`MODEL`·`PROMPT_VERSION`·`ERROR_CODE`·`DAY`(KST 달력 일)만 받는다. 그 밖의 값(소문자 포함)은 enum 변환 실패로 400 `VALIDATION_FAILED`
+- 응답 `{period, groupBy, items:[{key, callType, ..., p50LatencyMs, p95LatencyMs, ...}]}`. `callType`은 `CALL_TYPE` 묶음에서만 값이 있고, 기록되지 않은 프롬프트 버전·오류 코드(성공 호출 포함)는 `key: null` 한 묶음(목록 끝). 기존 평균 지연·토큰·비용·미산정·별도 청구 필드는 그대로
+- 실패율은 응답에 두지 않고 화면에서 `failures / calls`로 계산한다
+- 묶음 식은 매퍼 `<choose>`의 고정 식에서 고르며 요청 문자열을 SQL에 넣지 않는다. `callType` 필터·366일 제한은 묶음과 함께 그대로
+
+### 정한 것 (동섭 11/26 확인, 이슈의 "확인 필요")
+
+1. `groupBy`는 별도 엔드포인트가 아니라 기존 엔드포인트 파라미터. 기본값이면 기존 호출과 같은 묶음이고 권한·기간 검사·KST 처리를 한 곳에서 쓴다
+2. p50·p95는 정확값(`percentile_cont`)을 유지하고 새 인덱스·설정을 더하지 않는다. 근거는 아래 실측
+
+### 366일 `percentile_cont` 실측
+
+임시 컨테이너 `postgres:17.11-alpine`(시험과 같은 이미지, 기본 설정 work_mem 4MB·병렬 작업자 2), 365일 × 하루 20,000건 = 730만 건(1.8GB), 인덱스는 `ix_llm_usage_occurred_call (occurred_at, call_type)`만. `EXPLAIN ANALYZE` 실행 시간 3회.
+
+| 쿼리 | 실행 시간(ms) | 계획 |
+|---|---|---|
+| 366일, 기존(평균만) | 471~511 | Parallel Seq Scan |
+| 366일, CALL_TYPE + p50·p95 | 4,339~5,575 | Seq Scan(병렬 꺼짐), 정렬 디스크 182MB |
+| 366일, MODEL + p50·p95 | 4,357~4,897 | 같음 |
+| 366일, DAY + p50·p95 | 4,346~4,381 | 같음 |
+| 366일, callType=JUDGMENT + p50·p95 | 680~851 | Seq Scan |
+| 90일, CALL_TYPE + p50·p95 | 815~819 | |
+| 30일, CALL_TYPE + p50·p95 | 341~351 | |
+| 7일, CALL_TYPE·DAY + p50·p95 | 102~115 | Index Scan |
+
+- 1년 전체는 인덱스가 있어도 전체를 훑는다. 느려지는 원인은 순서 집계가 병렬 실행을 끄고 정렬이 디스크로 넘치는 것이라 인덱스로 풀리지 않는다. work_mem 16·64·256MB에서도 3.2~3.9초
+- 하루 2만 건은 현재 서비스 규모보다 크게 잡은 가정이다. 관리자 화면 한 번 조회의 최악값으로 받아들이고, 규모가 커지면 일별 사전 집계 표를 검토한다
+
+### 화면 (web `AdminOperations.tsx` `Usage`)
+
+- 묶음 기준 선택(호출 종류·모델·프롬프트 버전·오류 코드·일별)과 기존 호출 종류 필터, 열: 묶음 값 · 호출/실패 · 실패율 · 평균 · p50 · p95 지연 · 토큰 · 비용. 일별은 KST 날짜(요일)별 표. 차트 라이브러리는 더하지 않음
+- 안내 "실시간 지연·경보는 Grafana, 이 화면은 DB 기록 기간 집계입니다."
+- MSW 목업은 날짜 씨앗의 합성 `llm_usage` 행을 core와 같은 규칙(키 오름차순·null 끝, 연속 백분위, 토큰·비용 null 전파)으로 묶는다. 빈 시나리오는 빈 목록
+- 원문·학생 ID·업무 ID는 응답·화면·목업 어디에도 없다(NFR-SEC-05)
+
+### 검증
+
+- core `LlmUsageQueryTest` 18개(새 3개): p50·p95 값(5건 300·880, 1건 50·50), 묶음 기준 5종별 키·호출·실패와 KST 일 경계, `callType` 필터 조합·다른 묶음의 `callType` null, HTTP 기본 `CALL_TYPE`·`DAY` 응답, 허용 외 `groupBy`(`day`·`call_type`·`WEEK`·`occurred_at`·`MODEL;DROP TABLE llm_usage`) 400. `ModelVersionHttpTest` 15개 통과
+- web 단위 시험(`tests/adminOperations.test.ts` 새 3개: 쿼리의 `groupBy`, 열·묶음 값 표시·실패율, 목업 집계·400), 타입 검사, lint, 빌드
+- 계약 시험 `test_admin_operations_contract`: 새 `groupBy`·`key`·p50·p95만 걷어 내고 나머지 지문 유지
+- MSW 개발 서버에서 1440·390px, 호출 종류·일별 화면 확인(페이지 가로 넘침 없음, 표는 영역 안에서 가로 스크롤)
+- Playwright `admin-contrast`·`admin-workspace-design` 35개 통과. 8열이 되어 1024px에서도 표가 영역 안에서 가로로 밀리므로 넘침 기대를 `390px만` → `1440px 미만`으로 바꿨다
+
+### 로컬 kind 대조 (2026-11-26)
+
+이 브랜치 core 이미지를 kind에 임시로 올리고, ai-service가 LLM stub(지연 0.2~1.7초)을 부르게 임시로 바꾼 뒤 되묻기(FOLLOWUP) 26건과 추억 검색 질의 변환(MEMORY_QUERY) 8건을 호출했다. MEMORY_QUERY는 stub이 응답 형식을 지원하지 않아 모두 `LLM_BAD_REQUEST`로 실패했다. 관리자 화면 기간은 2026-11-26 하루다. 처음 1건은 ai-service가 실제 OpenAI를 부르는 설정이라 실제 호출이었고 26건에 들어 있다.
+
+| 값 | 관리자 화면(DB 정확값) | Prometheus·Grafana `LLM 호출` |
+|---|---|---|
+| FOLLOWUP 호출·실패 | 26 / 0 | 누적 26 / 0 |
+| MEMORY_QUERY 호출·실패 | 8 / 8 (`LLM_BAD_REQUEST`) | 누적 8 / 8 (`LLM_BAD_REQUEST`) |
+| FOLLOWUP 평균 | 1,019ms | 1,019ms (`sum / count`) |
+| FOLLOWUP p50 | 841ms | 875ms (버킷 근사) |
+| FOLLOWUP p95 | 1,613ms | 1,970ms (버킷 1~2초 안 보간) |
+| MEMORY_QUERY 평균·p50·p95 | 744 / 535 / 1,514ms | 744 / 500 / 1,867ms |
+
+- 건수·실패·오류 코드·평균은 같다. p50·p95는 Grafana가 히스토그램 버킷(0.25·0.5·1·2·3초…)으로 어림하므로 한 버킷 폭 안에서 다르다. 정확값이 필요한 기간 비교는 이 화면, 실시간 추세·경보는 Grafana로 나눈 근거다
+- 묶음 기준별 화면(호출 종류·오류 코드·프롬프트 버전·일별)은 같은 34건을 각 기준으로 나눠 합이 맞았다(일별 34 / 8, 실패율 23.5%)
+- Grafana 패널은 `rate`·`increase`라 새 속성 조합이 처음 나타난 값은 그래프에 덜 잡힌다(#1028 한계와 같음). 누적 값은 Prometheus에서 직접 확인했다
+
+### 한계
+
+- Grafana p95는 히스토그램 버킷 근사라 이 화면의 정확값과 다를 수 있다(위 표)
+- 브라우저 회귀 `parent-admin-browser.mjs`의 AI 사용량 기대(빈 안내 → 판정 행·p95 열)를 고쳤다. 이 스크립트와 `admin-model-browser.mjs`·`admin-completion-browser.mjs`는 AI 사용량에 닿기 전 다른 화면 단계(자녀 등록 안내·모델 평가 근거·문의 답변)에서 멈춰 AI 사용량 부분은 이 스크립트들로 확인하지 못했다

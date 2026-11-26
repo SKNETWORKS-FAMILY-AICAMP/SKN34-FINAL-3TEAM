@@ -7,8 +7,10 @@ import type {
   MissionVersion,
   Rubric,
   ModelVersion,
+  UsageGroupBy,
 } from '../../domain/admin/operations.ts'
-import { essayTypes, missingMissionFields } from '../../domain/admin/operations.ts'
+import { callTypeLabels, essayTypes, missingMissionFields, usageGroupByLabels } from '../../domain/admin/operations.ts'
+import { summarizeUsage, usageRows } from '../fixtures/admin/aiUsage.ts'
 import type { AchievementStandard, GeneratedDraft, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
 import {
   answerKeyInputs, commonElementsOf, discardableDraft, draftRequestErrors, gradeBands, isLevelShape, isValidElementCode,
@@ -656,12 +658,16 @@ export const adminHandlers = [
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      const p = period(request),
-        filter = new URL(request.url).searchParams.get('callType')
-      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','REPORT_EXPLANATION','KNOWLEDGE_EMBEDDING','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
+      const p = period(request), q = new URL(request.url).searchParams,
+        filter = q.get('callType'), groupBy = q.get('groupBy') || 'CALL_TYPE'
+      // core와 같이 정해진 값만 받는다 (#1051): 호출 종류 15가지, 묶음 기준 5가지, 양 끝 포함 366일
+      if (filter && !Object.hasOwn(callTypeLabels, filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
+      if (!Object.hasOwn(usageGroupByLabels, groupBy)) fail('VALIDATION_FAILED','묶음 기준을 확인해 주세요.',400)
+      if ((Date.parse(p.to) - Date.parse(p.from)) / 86_400_000 >= 366) fail('VALIDATION_FAILED','조회 기간은 최대 366일입니다.',400)
       return {
         period: p,
-        items: [],
+        groupBy,
+        items: mode === 'empty' ? [] : summarizeUsage(usageRows(p), groupBy as UsageGroupBy, filter || null),
       }
     }),
   ),

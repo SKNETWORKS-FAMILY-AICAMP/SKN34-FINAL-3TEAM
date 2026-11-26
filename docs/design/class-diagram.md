@@ -1212,7 +1212,7 @@ classDiagram
   class LlmUsageService {
     <<service>>
     +record(envelope)
-    +summarize(from, to, callType) List~UsageSummary~
+    +summarize(from, to, callType, groupBy) List~UsageSummary~
   }
   class AdminController {
     <<controller>>
@@ -1238,7 +1238,7 @@ classDiagram
   }
   class AiUsageController {
     <<controller>>
-    +usage(from, to, callType) AiUsageResponse
+    +usage(from, to, callType, groupBy) AiUsageResponse
   }
   class InternalModelVersionController {
     <<controller>>
@@ -1338,7 +1338,7 @@ classDiagram
   class LlmUsageRepository {
     <<mapper>>
     +insertIfAbsent(usage) Int
-    +summarize(from, until, callType) List~UsageSummary~
+    +summarize(from, until, callType, groupBy) List~UsageSummary~
   }
   class OperationsQueueService {
     <<service>>

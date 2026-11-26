@@ -48,7 +48,7 @@ class AuthController(
     /** #369: registered admins only. No signup; a previous refresh cookie's session is replaced like Google login. */
     @PostMapping("/api/v1/auth/admin/login")
     fun adminLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
-        issue(service.adminLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+        issue(service.adminLogin(body.loginId, body.password, request.remoteAddr, cookies.read(request, AuthCookies.REFRESH)), response)
 
     /** #415: parent ID/password signup. Rate-limited per client IP; starts a PARENT session like Google signup. */
     @PostMapping("/api/v1/auth/parent/signup")
@@ -57,7 +57,7 @@ class AuthController(
 
     @PostMapping("/api/v1/auth/parent/login")
     fun parentLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
-        issue(service.parentLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+        issue(service.parentLogin(body.loginId, body.password, request.remoteAddr, cookies.read(request, AuthCookies.REFRESH)), response)
 
     @PostMapping("/api/v1/auth/refresh")
     fun refresh(request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =

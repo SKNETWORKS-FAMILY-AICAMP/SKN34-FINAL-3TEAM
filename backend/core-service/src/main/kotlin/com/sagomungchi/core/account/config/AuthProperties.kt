@@ -23,6 +23,8 @@ data class AuthProperties(
     /** #415: parent ID/password signups allowed per client IP within [signupLimitWindow] (PBKDF2 is CPU-heavy). */
     val signupLimitPerIp: Int = 5,
     val signupLimitWindow: Duration = Duration.ofMinutes(10),
+    val loginLimitPerIp: Int = 4,
+    val loginLimitWindow: Duration = Duration.ofMinutes(15),
 ) {
     init {
         val origin = URI(webOrigin)
@@ -36,6 +38,7 @@ data class AuthProperties(
         require(accessTtl < refreshTtl)
         require(!reauthTtl.isNegative && !reauthTtl.isZero && reauthTtl <= Duration.ofMinutes(5))
         require(!studentAccessTtl.isNegative && !studentAccessTtl.isZero)
+        require(loginLimitPerIp > 0 && loginLimitWindow.toMillis() > 0)
         require(signupLimitPerIp > 0 && !signupLimitWindow.isNegative && !signupLimitWindow.isZero)
     }
     val callbackUrl: String get() = "$webOrigin/api/v1/auth/google/callback"

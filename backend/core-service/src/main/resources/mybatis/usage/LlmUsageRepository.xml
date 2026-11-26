@@ -15,10 +15,13 @@
     </insert>
     <resultMap id="summary" type="com.sagomungchi.core.usage.domain.UsageSummary">
         <constructor>
+            <arg column="group_key" javaType="java.lang.String"/>
             <arg column="call_type" javaType="java.lang.String"/>
             <arg column="calls" javaType="_long"/>
             <arg column="failures" javaType="_long"/>
             <arg column="latency_ms" javaType="java.math.BigDecimal"/>
+            <arg column="p50_latency_ms" javaType="java.math.BigDecimal"/>
+            <arg column="p95_latency_ms" javaType="java.math.BigDecimal"/>
             <arg column="input_tokens" javaType="java.lang.Long"/>
             <arg column="output_tokens" javaType="java.lang.Long"/>
             <arg column="cost_usd" javaType="java.math.BigDecimal"/>
@@ -26,11 +29,24 @@
             <arg column="externally_billed_calls" javaType="_long"/>
         </constructor>
     </resultMap>
-    <!-- 별도 청구(billed_externally) 행은 비용 합계와 미산정에서 빠지고 따로 센다 (#764) -->
+    <!-- 묶음 식은 허용한 groupBy 이름마다 고정해 두고 요청 문자열을 SQL에 넣지 않는다 (#1051). DAY는 KST 달력 일 -->
+    <sql id="groupKey"><choose>
+        <when test='groupBy == "MODEL"'>model</when>
+        <when test='groupBy == "PROMPT_VERSION"'>prompt_version</when>
+        <when test='groupBy == "ERROR_CODE"'>error_code</when>
+        <when test='groupBy == "DAY"'>to_char(occurred_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')</when>
+        <otherwise>call_type</otherwise>
+    </choose></sql>
+    <!-- 별도 청구(billed_externally) 행은 비용 합계와 미산정에서 빠지고 따로 센다 (#764).
+         p50·p95는 성공·실패를 포함한 정확값(percentile_cont). 1년 전체는 인덱스와 관계없이 전체를 훑는다 (#1051 실측) -->
     <select id="summarize" resultMap="summary">
-        SELECT call_type, count(*) AS calls,
+        SELECT <include refid="groupKey"/> AS group_key,
+               <choose><when test='groupBy == "CALL_TYPE"'>call_type</when><otherwise>NULL</otherwise></choose> AS call_type,
+               count(*) AS calls,
                count(*) FILTER (WHERE NOT success) AS failures,
                avg(latency_ms) AS latency_ms,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::numeric AS p50_latency_ms,
+               percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::numeric AS p95_latency_ms,
                CASE WHEN count(input_tokens) = count(*) THEN sum(input_tokens) END AS input_tokens,
                CASE WHEN count(output_tokens) = count(*) THEN sum(output_tokens) END AS output_tokens,
                CASE WHEN count(*) FILTER (WHERE cost_usd IS NULL AND NOT billed_externally) = 0
@@ -40,7 +56,7 @@
         FROM llm_usage
         WHERE occurred_at &gt;= #{from} AND occurred_at &lt; #{until}
         <if test="callType != null">AND call_type = #{callType}</if>
-        GROUP BY call_type ORDER BY call_type
+        GROUP BY 1 ORDER BY 1 NULLS LAST
     </select>
     <resultMap id="monthToDate" type="com.sagomungchi.core.usage.domain.MonthToDateCost">
         <constructor>
