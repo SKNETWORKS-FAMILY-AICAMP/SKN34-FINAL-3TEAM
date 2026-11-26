@@ -24,6 +24,20 @@ Remove-Item Env:VITE_API_MOCK   # 끝나면 지워야 API 모드로 돌아감
 
 자녀 단독 진입(P01)은 학부모 `/parent/devices`에서 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 → 로그아웃 → `/student/login`에서 코드 → PIN 순서입니다. 목업은 httpOnly 기기 쿠키 대신 sessionStorage를 쓰고 "기기 상태 시연" 선택기로 해제·만료·잠김을 보여 줍니다.
 
+### 주간 리포트 RunPod 상세 설명 시연
+
+저장소 루트에서 Python 평가 환경(`httpx`)으로 실행합니다. 로컬 환경 파일에
+`SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`와 `SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`를 둡니다.
+
+```powershell
+python evaluation/runners/structured_report_demo.py --env-file .env
+```
+
+스크립트는 목업 화면에 쓰는 가상 답변 3건을 RunPod Gemma의 `explain` 어댑터에 보내고, 결과를
+`frontend/web/.taste-skill/structured-report-demo/gemma-explanations.json`에 저장합니다. 목업 모드에서
+[주간 리포트 시연](http://localhost:5173/parent/report?reportDemo=structured&childId=demo-report-grade5&reportId=demo-report-grade5-2026-11-09)을 열면
+답변 원문과 버전이 일치하는 상세 설명을 표시합니다. 새로고침해도 저장된 결과만 읽습니다.
+
 ### 노트북·태블릿 QR 등록 시연
 
 ```powershell
