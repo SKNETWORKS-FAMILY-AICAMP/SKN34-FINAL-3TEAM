@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    # 문서 경로는 인증 미들웨어(/internal/만 검사) 밖이라 끈다 (#1053). 계약은 contracts/openapi
     app = FastAPI(
         title=get_settings().service_name,
         lifespan=lifespan,
