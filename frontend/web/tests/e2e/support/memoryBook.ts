@@ -26,10 +26,22 @@ export function psql(database: string, sql: string) {
 export const studentIdOf = (nickname: string) =>
   psql('core_db', `SELECT id FROM student WHERE nickname = '${nickname.replaceAll("'", "''")}'`)
 
-/** 원문 공개·프리미엄 구독(지금 기간)·그림책 하루 한도. 학부모 = 그 학생의 보호자 */
-export function premiumShared(studentId: string, shared = true) {
+/**
+ * 임시(#1064): core #1061이 `student.parent_sharing_enabled`를 지우기 전 서버는 학생 기본 비공개라 원문이 403이다.
+ * 웹에는 이제 켜는 화면이 없으므로 컬럼이 있을 때만 DB에서 켠다. #1061 병합 뒤에는 아무 일도 하지 않으며, 그때 이 함수와 호출을 지운다.
+ */
+export function allowParentOriginals(studentId: string) {
+  psql('core_db', `DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'student' AND column_name = 'parent_sharing_enabled') THEN
+    EXECUTE format('UPDATE student SET parent_sharing_enabled = true WHERE id = %L', '${studentId}');
+  END IF;
+END $$;`)
+}
+
+/** 프리미엄 구독(지금 기간)·그림책 하루 한도. 학부모 = 그 학생의 보호자. 원문 공개 설정은 없어졌다(#1064) */
+export function premium(studentId: string) {
+  allowParentOriginals(studentId)
   psql('core_db', `
-UPDATE student SET parent_sharing_enabled = ${shared} WHERE id = '${studentId}';
 UPDATE product SET limits = limits || '{"dailyMemoryBooks":3}'::jsonb;
 INSERT INTO subscription (id, parent_user_id, student_id, product_id, status, period_start, period_end, auto_renew, created_at, updated_at, product_snapshot, revision)
 SELECT gen_random_uuid(), g.parent_user_id, g.student_id, p.id, 'ACTIVE', current_date - 1, current_date + 29, false, now(), now(),
@@ -39,9 +51,6 @@ FROM guardianship g JOIN product p ON p.code = 'E2E-PLUS'
 WHERE g.student_id = '${studentId}' AND g.status = 'LINKED'
   AND NOT EXISTS (SELECT 1 FROM subscription s WHERE s.student_id = g.student_id AND s.status = 'ACTIVE');`)
 }
-
-export const setSharing = (studentId: string, shared: boolean) =>
-  psql('core_db', `UPDATE student SET parent_sharing_enabled = ${shared} WHERE id = '${studentId}'`)
 
 /** public/demo 그림을 MinIO missions 버킷의 테마 그림 키로 올린다(ai 테마 초안이 올리는 키 모양) */
 export function uploadSceneImages(prefix: string) {

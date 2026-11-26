@@ -16,10 +16,10 @@ const when = (iso: string) =>
  * 자녀의 참여 기록 (P20·P21, API 명세 2.9·2.10). 자녀 공유물·받은 반응·포인트만 본다.
  * 다른 학생의 글·잔액·순위는 보여 주지 않는다.
  */
-export function ChildParticipation({ child, canReadOriginals = false }: { child: Child; canReadOriginals?: boolean }) {
+export function ChildParticipation({ child }: { child: Child }) {
   const [tab, setTab] = useState<'posts' | 'points'>('posts')
   const [postPage, setPostPage] = useState(0), [pointPage, setPointPage] = useState(0)
-  const posts = useChildPosts(child.id, canReadOriginals)
+  const posts = useChildPosts(child.id)
   const points = useChildPoints(child.id, pointPage)
   const items = !posts.error ? posts.data ?? [] : []
   return <section className="pd-participation" aria-labelledby="participation-h">
@@ -39,15 +39,15 @@ export function ChildParticipation({ child, canReadOriginals = false }: { child:
       <p className="pd-date-note">포인트는 참여 기록이며 판정 결과나 순위와는 관계없습니다.</p>
     </> : <>
       <CommunityConsentStatus child={child} />
-      {canReadOriginals ? <QueryFeedback query={posts} /> : <p>공유한 답변 원문은 아이가 학부모 공개를 켠 뒤 확인할 수 있습니다.</p>}
-      {canReadOriginals && <div className="pd-shared-list">
+      <QueryFeedback query={posts} />
+      <div className="pd-shared-list">
         <div className="pd-shared-labels"><span>활동</span><span>공유 상태</span><span>날짜</span></div>
         {items.slice(postPage * 10, postPage * 10 + 10).map(p => <details key={p.postId} className="pd-shared-row"><summary><strong>{p.missionTitle}</strong><span className="pd-shared-status" data-status={p.status}>{POST_STATUS_LABELS[p.status]}</span><time>{p.createdAt ? when(p.createdAt) : '—'}</time><ChevronDown size={16} aria-hidden="true" /></summary>
           <div className="pd-shared-detail"><blockquote>{p.answer}</blockquote><p>받은 반응 · {REACTIONS.filter(r => p.reactions[r] > 0).map(r => `${REACTION_LABELS[r]} ${p.reactions[r]}`).join(' · ') || '없음'}</p></div>
         </details>)}
         {!posts.isPending && !posts.error && !items.length && <p>아직 나눈 생각이 없습니다.</p>}
         <nav className="pd-explorer-pagination" aria-label="나눈 생각 페이지"><span>총 {items.length}건</span><button type="button" disabled={postPage === 0} onClick={() => setPostPage(postPage - 1)}>이전</button><span>{postPage + 1}</span><button type="button" disabled={(postPage + 1) * 10 >= items.length} onClick={() => setPostPage(postPage + 1)}>다음</button></nav>
-      </div>}
+      </div>
     </>}
   </section>
 }

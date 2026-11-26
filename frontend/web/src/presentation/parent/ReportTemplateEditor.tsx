@@ -53,7 +53,6 @@ export function ReportTemplateEditor({ conversationId }: { conversationId: strin
     <h2>리포트 표시 설정</h2>
     <p>원하는 순서, 강조할 수치, 설명 말투를 적어 주세요. 변경안을 확인한 뒤 저장합니다.</p>
     <p>연결된 모든 자녀의 다음 리포트 생성부터 적용됩니다. 기존 리포트는 바뀌지 않습니다.</p>
-    <small>원문 공개 여부는 학생의 별도 설정을 따릅니다. 이 화면에서는 바꿀 수 없습니다.</small>
     <QueryFeedback query={current} />
     {current.data && !current.error && <div aria-label="현재 리포트 설정"><h3>현재 설정</h3><Settings value={current.data.settings} /></div>}
     <form className="ws-form" onSubmit={(e) => { e.preventDefault(); void submit(false) }}>

@@ -36,7 +36,7 @@ function Cover({ round, lockedIssue }: { round: MemoryBookRoundItem; lockedIssue
  * - 유료(`canCreate`): 회차마다 "그림책 발급" → 만드는 중 → "받기"(지금 흐름 그대로)
  * - 무료(`canCreate === false`): 서버가 보낸 끝난 최근 4주 표지만, 발급 대신 잠금. 숨긴 회차는 `lockedCount` 숫자로만 알리고 비교표로 잇는다
  * - 발급 여부를 모르면(#999 전 서버, `canCreate` 없음) 지금처럼 발급 단추를 두고 서버가 거절한다
- * 아이가 답 보여 주기를 꺼 두면 목록 대신 기존 안내만 보인다(D2, 403 STUDENT_RECORDS_PRIVATE). 아이 화면에는 없다(FN-DSH-01).
+ * 아이 화면에는 없다(FN-DSH-01).
  */
 export function ParentMemoryBooks({ child }: { child: Child }) {
   const rounds = useMemoryBookRounds(child.id)

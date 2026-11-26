@@ -1,7 +1,6 @@
 import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import { frameImageOf, framesOf, weekStart } from '../fixtures/retention.ts'
-import { requireShared } from '../fixtures/sharing.ts'
 import { mockPremium } from '../fixtures/payments.ts'
 import { respond } from './student.ts'
 import { demoMissions } from '../../data/classroom/demoGateway.ts'
@@ -10,18 +9,17 @@ import { parentChild } from './parent.ts'
 
 /**
  * 추억 그림책 목업 (docs/proposals/memory-book.md 7.1). 학부모만 발급한다. core 규칙을 흉내 낸다:
- * 원문 공개 학생만(403 STUDENT_RECORDS_PRIVATE), 프리미엄만(403 PREMIUM_REQUIRED), 보유 액자만(404), 하루 3개(429),
+ * 프리미엄만(403 PREMIUM_REQUIRED), 보유 액자만(404), 하루 3개(429),
  * 같은 회차는 만드는 중·완성본을 재사용(200). 만들고 4초 뒤 완성(READY)으로 바뀐다. 받기 주소는 표본 PDF.
  *
  * 상태 확인: sessionStorage 'sagomungchi:msw-memory-book' = 'FAIL'이면 새 그림책이 만들기 실패(FAILED)로 끝난다.
  */
 export const MOCK_MEMORY_BOOK_SCENARIO_KEY = 'sagomungchi:msw-memory-book'
-/** 시연 스위치: 주소에 ?memoryBookDemo=1을 붙여 열면(browser.ts) 이 탭에서 그림책 목업만 자녀를 유료·원문 공개로 본다 */
+/** 시연 스위치: 주소에 ?memoryBookDemo=1을 붙여 열면(browser.ts) 이 탭에서 그림책 목업만 자녀를 유료로 본다 */
 export const MOCK_MEMORY_BOOK_DEMO_KEY = 'sagomungchi:msw-memory-book-demo'
 const demo = () => {
   try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem(MOCK_MEMORY_BOOK_DEMO_KEY) === '1' } catch { return false }
 }
-const shared = (id: string) => { if (!demo()) requireShared(id) }
 const premium = (id: string) => demo() || mockPremium(id)
 /**
  * 시연·시험 스위치: sessionStorage에 숨긴 회차 수를 두면 무료 책장의 `lockedCount`에 더한다(목업 지난 액자는 3주뿐이라 4주 밖 회차가 없음).
@@ -112,7 +110,6 @@ export const memoryBookHandlers = [
   http.get('/api/v1/children/:childId/memory-books/rounds', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      shared(c.id)
       const now = Date.now()
       const paid = premium(c.id)
       const frames = await framesOfChild(c.id)
@@ -133,7 +130,6 @@ export const memoryBookHandlers = [
     return respond(async () => {
       const c = await parentChild(request, String(params.childId))
       const r = await round(request)
-      shared(c.id)
       const now = Date.now()
       const existing = books.find((b) => b.studentId === c.id && b.themeId === r.themeId && b.weekStart === r.weekStart && view(b, now).status !== 'FAILED')
       if (existing) { created = false; return view(existing, now) }
@@ -150,14 +146,12 @@ export const memoryBookHandlers = [
   http.get('/api/v1/children/:childId/memory-books', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      shared(c.id)
       return pageOf(c.id)
     }),
   ),
   http.get('/api/v1/children/:childId/memory-books/:bookId/download', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      shared(c.id)
       return downloadOf(c.id, String(params.bookId))
     }),
   ),
@@ -165,7 +159,6 @@ export const memoryBookHandlers = [
   http.put('/api/v1/children/:childId/memory-books/:bookId/read-together', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      shared(c.id)
       return readTogetherOf(c.id, String(params.bookId))
     }),
   ),

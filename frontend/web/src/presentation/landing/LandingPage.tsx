@@ -141,8 +141,8 @@ function ParentStory({ friends }: { friends: FriendId[] }) {
       </div>
         <ul className="lp-family-points">
           <li><BookOpen size={21} aria-hidden="true" /><span><strong>오늘 얼마나 했는지 확인해요</strong>일일·주간 리포트에서 학습 현황을 볼 수 있어요.</span></li>
-          <li><MessageCircle size={21} aria-hidden="true" /><span><strong>궁금한 점은 기록에 질문</strong>공개된 답변을 근거로 AI와 대화해요.</span></li>
-          <li><Sparkles size={21} aria-hidden="true" /><span><strong>공개 여부는 아이가 골라요</strong>글이 비공개여도 학습 수치는 확인할 수 있어요.</span></li>
+          <li><MessageCircle size={21} aria-hidden="true" /><span><strong>궁금한 점은 기록에 질문</strong>아이의 답변을 근거로 AI와 대화해요.</span></li>
+          <li><Sparkles size={21} aria-hidden="true" /><span><strong>아이의 글도 함께 읽어요</strong>숫자만이 아니라 아이가 쓴 답에서 생각을 살펴봐요.</span></li>
         </ul>
         <div className="lp-parent-bottom"><Link className="lp-text-link" to={landingEntryHref('/login')}>학부모로 시작하기 <ArrowRight size={18} aria-hidden="true" /></Link></div>
     </div>
@@ -343,7 +343,7 @@ export function LandingPage() {
           <div className="lp-features">
           <article><span className="lp-feature-icon lp-icon-orange"><Sparkles size={27} aria-hidden="true" /></span><h3>생각하는 재미</h3><p>주간 이야기 속 미션을 풀어요.<br />모은 포인트로 뭉치와 내 방을 꾸며요.</p></article>
           <article><span className="lp-feature-icon lp-icon-blue"><BookOpen size={27} aria-hidden="true" /></span><h3>처음 답도, 고친 답도</h3><p>내 공책에서 두 답을 비교해요.<br />무엇을 덧붙였는지 다시 읽어 볼 수 있어요.</p></article>
-          <article><span className="lp-feature-icon lp-icon-green"><MessageCircle size={27} aria-hidden="true" /></span><h3>아이의 기록에 질문하기</h3><p>학부모는 학습 현황과 리포트를 보고,<br />공개된 자녀 기록에 관해 AI에게 물어봐요.</p></article>
+          <article><span className="lp-feature-icon lp-icon-green"><MessageCircle size={27} aria-hidden="true" /></span><h3>아이의 기록에 질문하기</h3><p>학부모는 학습 현황과 리포트를 보고,<br />자녀 기록에 관해 AI에게 물어봐요.</p></article>
           </div>
         </div>
       </section>

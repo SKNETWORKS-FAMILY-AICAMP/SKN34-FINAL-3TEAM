@@ -53,7 +53,7 @@ test('MSW consent APIs keep the new onboarding and device child list contracts c
 test('#912 동의 문서는 core V54 현재본이고, 개정 시연은 계정·자녀 재동의를 다시 요구한다', async () => {
   token = ''
   const docs = (await call('/consent-documents')).items as { documentId: string; version: string; kind: string }[]
-  assert.deepEqual(Object.fromEntries(docs.map((d) => [d.kind, d.version])), { TERMS: '1.1', PRIVACY: '1.2', GUARDIAN: '1.1' })
+  assert.deepEqual(Object.fromEntries(docs.map((d) => [d.kind, d.version])), { TERMS: '1.1', PRIVACY: '1.2', GUARDIAN: '1.2' })
   const current = (kind: string) => docs.filter((d) => kind === 'GUARDIAN' ? d.kind === kind : d.kind !== 'GUARDIAN')
     .map((d) => ({ documentId: d.documentId, version: d.version, agreed: true }))
   const email = `revised-${Date.now()}@example.test`
