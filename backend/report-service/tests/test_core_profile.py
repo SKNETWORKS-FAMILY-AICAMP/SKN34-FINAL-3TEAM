@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from uuid import uuid4
 
 import httpx
@@ -12,8 +13,15 @@ from app.security import UserContext, bind_user_context, reset_user_context
 from tests.report_helpers import EmptyGenerator, command_for
 
 
-def call(handler):
-    command, previous = command_for(uuid4()), EmptyGenerator()
+class Capture(EmptyGenerator):
+    async def generate(self, command, report):
+        self.command = command
+        return await super().generate(command, report)
+
+
+def call(handler, previous=None, **changes):
+    command = replace(command_for(uuid4()), **changes)
+    previous = previous or EmptyGenerator()
 
     async def run():
         token = bind_user_context(UserContext(None, "SYSTEM", frozenset([str(command.student_id)])))
@@ -70,3 +78,23 @@ def test_profile_failure_never_retries_or_calls_downstream(fault):
     with pytest.raises((httpx.HTTPError, RecordContractError, KeyError)):
         asyncio.run(run())
     assert len(requests) == 1 and previous.calls == 0
+
+
+@pytest.mark.parametrize(
+    "extra", [{}, {"parentSharingEnabled": False}, {"parentSharingEnabled": "legacy"}]
+)
+def test_weekly_generation_ignores_profile_sharing_field(extra):
+    # #1064: 원문은 보호자 필수 동의로 제공된다. core #1061 전(옛 필드)·후(필드 없음) 모두 같다.
+    def handler(request):
+        if request.url.path.endswith("/report-template"):
+            return httpx.Response(200, json={"settings": {}, "revision": 0})
+        body = {"studentId": str(command.student_id), "nickname": "학생", **extra}
+        return httpx.Response(200, json=body)
+
+    capture = Capture()
+    command, _, run = call(handler, capture, narrative_enabled=True)
+    asyncio.run(run())
+    assert capture.calls == 1
+    assert capture.command.narrative_enabled is True
+    assert capture.command.explanation_enabled is True
+    assert not hasattr(capture.command, "parent_sharing_enabled")

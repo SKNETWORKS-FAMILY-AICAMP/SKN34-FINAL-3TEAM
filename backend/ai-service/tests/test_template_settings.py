@@ -39,7 +39,7 @@ def test_proposal_has_no_records_and_uses_structured_result():
         async def generate(self, **kwargs):
             assert kwargs["output"] is TemplateProposal
             assert kwargs["call_type"] == "ANALYSIS"
-            assert "학생 원문 공개는 학생 본인의" in kwargs["system"]
+            assert "보호자 필수 동의로 정해지며 표시 설정으로 바꿀 수 없다" in kwargs["system"]
             assert "studentId" not in kwargs["user"]
             assert kwargs["prompt_version"] == "analysis-template@1"
             return SimpleNamespace(data=TemplateProposal(settings=TemplateSettings(tone="CONCISE")))

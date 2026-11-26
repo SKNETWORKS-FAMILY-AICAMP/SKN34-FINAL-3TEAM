@@ -17,9 +17,6 @@ class CoreClient:
         response = await self._client.get(f"/internal/students/{student_id}/profile")
         response.raise_for_status()
         profile = response.json()
-        sharing = profile.get("parentSharingEnabled", False)
-        if not isinstance(sharing, bool):
-            raise ValueError("Invalid student sharing preference")
         if (
             profile.get("studentId") != str(student_id)
             or not isinstance(profile.get("nickname"), str)
@@ -31,7 +28,6 @@ class CoreClient:
         return StudentDisplayName(
             student_id=UUID(profile["studentId"]),
             nickname=profile["nickname"],
-            parent_sharing_enabled=sharing,
             template_snapshot=validate_snapshot(settings.json()),
             grade=profile.get("grade") if type(profile.get("grade")) is int else None,
         )

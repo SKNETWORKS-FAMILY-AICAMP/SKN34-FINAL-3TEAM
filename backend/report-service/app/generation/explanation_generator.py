@@ -195,9 +195,6 @@ class ExplanationGenerator:
         result = await self._previous.generate(command, report)
         if command.period_type != "WEEKLY" or not command.explanation_enabled:
             return result
-        if not command.parent_sharing_enabled:
-            tracing.record_explanation_state("NO_TARGET")
-            return replace(result, explanation_state="NO_TARGET")
         settings = get_settings()
         all_activities = settings.report_local_all_activity_explanations
         budget = None if all_activities else settings.report_explanation_budget_seconds
