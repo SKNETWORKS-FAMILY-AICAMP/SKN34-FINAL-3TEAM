@@ -11,6 +11,7 @@
 | `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. 2026-11-17 재가동 때 이 값으로 적용([infra 9.8.3](../../../../docs/report/infra.md#983-a-계정-재가동-확인-결과-2026-11-17)). `ai-service.json`의 리포트 Gemma는 SageMaker 엔드포인트(`REPORT_LLM_*`, #747)이고 클러스터 밖이라 공인 443 허용으로 나간다 |
 | `images/<앱>.json` (앱 6개) | 위 앱과 같음 | 이미지만 담는 파일(#857). `image.repository`·`image.digest`, migration이 있는 core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. 설정 파일(`<앱>.json`)에는 이 키를 두지 않는다. main에서는 cd-release의 digest 갱신 PR(#858)이 바꾸고 develop은 건드리지 않는다(아래 "Argo CD 배포") |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
+| `tox-retrain.json` + `images/tox-retrain.json` | app / tox-retrain | `../../charts/tox-retrain`(#730). 표현 분류 재학습 CronJob, `suspend: true`(A 야간 정지와 일요일 03:00이 겹쳐 손 실행만). S3·Pod Identity(`app/tox-retrain`)·Karpenter `application-burst` 노드. Application은 ApplicationSet이 아니라 [`argocd/prod/apps/tox-retrain.yaml`](../../argocd/prod/apps/tox-retrain.yaml)(`prod-tox-retrain`, wave 10). 이미지 파일은 cd-release `jobImageFiles`(#985) |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
 | `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 14개. 비밀 값 없이 원격 이름·키만 보존 |

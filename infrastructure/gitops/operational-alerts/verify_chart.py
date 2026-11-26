@@ -126,6 +126,21 @@ def main():
         local_grafana = local_rendered["Deployment", "grafana"]["spec"]["template"]["spec"]["containers"][0]
         assert "DISCORD_WEBHOOK_URL" not in {env["name"] for env in local_grafana["env"]}
         print("PASS local retraining scrape, namespace-scoped read permissions and Grafana rules without Discord", flush=True)
+        # #730 prod: the same scrape and rules, with a standard NetworkPolicy to the EKS API server instead of Calico.
+        prod_scrape = yaml.safe_load(prod_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"])
+        assert any(job["job_name"] == "tox-retrain-state" for job in prod_scrape["scrape_configs"])
+        assert prod_rendered["Role", "tox-retrain-state"]["rules"] == role["rules"]
+        api_policy = prod_rendered["NetworkPolicy", "tox-retrain-state-api"]
+        assert api_policy["apiVersion"] == "networking.k8s.io/v1" and api_policy["spec"]["policyTypes"] == ["Egress"]
+        assert [p["port"] for rule in api_policy["spec"]["egress"] for p in rule["ports"]] == [443]
+        assert local_rendered["NetworkPolicy", "tox-retrain-state-api"]["apiVersion"] == "projectcalico.org/v3"
+        prod_alerts = yaml.safe_load(prod_rendered["ConfigMap", "grafana-alerting"]["data"]["alerting.yaml"])
+        prod_rules = {rule["uid"]: rule for group in prod_alerts["groups"] for rule in group["rules"]}
+        local_rules = {rule["uid"]: rule for group in local_alerts["groups"] for rule in group["rules"]}
+        for uid in ("tox-retrain-failed", "tox-retrain-missed"):
+            assert prod_rules[uid]["data"] == local_rules[uid]["data"], uid + " must match the kind-verified rule"
+        assert prod_alerts.get("contactPoints") and prod_alerts.get("policies")
+        print("PASS prod retraining scrape, EKS API egress and the kind-verified rules routed to Discord", flush=True)
         for rendered in (local_rendered, prod_rendered):
             data = rendered["ConfigMap", "grafana-dashboards"]["data"]
             provider = yaml.safe_load(data["provider.yaml"])["providers"][0]
@@ -156,7 +171,8 @@ def main():
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
-        rules = [dict(rule, **{"for": "10s"}) for rule in alerting["rules"]]
+        # tox-retrain rules read kube-state-metrics, which this Docker check does not run (checked in kind, #730).
+        rules = [dict(rule, **{"for": "10s"}) for rule in alerting["rules"] if not rule["uid"].startswith("tox-retrain-")]
         unpriced = next(rule for rule in rules if rule["uid"] == "llm-unpriced-calls")
         # #764: only newly added unpriced calls fire; a 1h window would keep the test firing for an hour.
         assert unpriced["expr"] == "max(delta(llm_usage_month_to_date_unpriced_calls[1h]))"
