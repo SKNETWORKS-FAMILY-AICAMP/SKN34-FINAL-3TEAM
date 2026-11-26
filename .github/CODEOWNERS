@@ -1,4 +1,4 @@
 # #858 prod 배포 승인: digest PR(environments/prod/images/**)은 김동섭·김태윤 중 1명이 승인한다.
-# main 보호 규칙의 "Require review from Code Owners"를 켜야 강제된다(infrastructure/cd/README.md 저장소 설정).
+# main 보호 규칙의 "Require review from Code Owners"를 켜야 강제된다(infrastructure/cd/README.md 저장소 설정). #1004 확인용
 /infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001
 /.github/CODEOWNERS @20220348-kim @kty2001
