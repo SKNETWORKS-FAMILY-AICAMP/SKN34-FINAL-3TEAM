@@ -284,6 +284,23 @@ class AdminOperationsContracts(unittest.TestCase):
                         content=reviewed[method]['responses'][status]['content']['application/json']
                         self.assertEqual(content['schema'],{'$ref':'#/components/schemas/'+ref})
                         content['schema']={'type':'object'}
+                # #1051 adds the groupBy parameter, group key and p50/p95 latency only; callType becomes null outside CALL_TYPE grouping.
+                if section=='paths' and name=='/admin/ai-usage':
+                    params=reviewed['get']['parameters']
+                    added=[q for q in params if q.get('name')=='groupBy']
+                    self.assertEqual([q['schema'] for q in added],[{'$ref':'#/components/schemas/UsageGroupBy'}])
+                    reviewed['get']['parameters']=[q for q in params if q.get('name')!='groupBy']
+                    ok=reviewed['get']['responses']['200']
+                    self.assertIn('묶음별 집계',ok['description'])
+                    ok['description']='기간 내 호출이 있는 종류별 집계. 빈 기간은 items 빈 배열.'
+                if section=='schemas' and name=='AiUsageResponse':
+                    self.assertEqual(reviewed['properties'].pop('groupBy'),{'$ref':'#/components/schemas/UsageGroupBy'})
+                    reviewed['required'].remove('groupBy')
+                if section=='schemas' and name=='UsageSummary':
+                    for added in ['key','p50LatencyMs','p95LatencyMs']:
+                        reviewed['properties'].pop(added); reviewed['required'].remove(added)
+                    self.assertIn({'type':'null'},reviewed['properties']['callType'].pop('oneOf'))
+                    reviewed['properties']['callType']={'$ref':'#/components/schemas/CallType'}
                 # #764 separates externally billed calls from unpriced ones; retain the original usage fingerprints.
                 if section=='paths' and name=='/admin/ai-usage':
                     original,added=reviewed['get']['description'].split(' 서비스 밖에서 따로 청구되는')

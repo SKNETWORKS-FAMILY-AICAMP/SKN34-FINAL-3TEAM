@@ -89,8 +89,8 @@ test('390px에서 넘치는 표는 이름 있는 영역으로 키보드 초점�
   const region = page.getByRole('region', { name: 'AI 사용량 표', exact: true })
   await expect(region).toBeVisible()
   const overflows = await region.evaluate(el => el.scrollWidth > el.clientWidth + 1)
-  // 시험 자료로 390px에서는 넘치고 1440px에서는 넘치지 않는다.
-  expect(overflows).toBe(page.viewportSize()!.width <= 390)
+  // 시험 자료로 390·1024px에서는 넘치고 1440px에서는 넘치지 않는다(#1051 실패율·p50·p95 열 추가로 8열).
+  expect(overflows).toBe(page.viewportSize()!.width < 1440)
   if (!overflows) {
     // 넓은 화면에서 넘치지 않으면 Tab 순서에 끼지 않는다.
     await expect(region).not.toHaveAttribute('tabindex')

@@ -129,3 +129,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''scripts[/\\]tests[/\\]test_sagemaker_model_check\.py$''']
 regexes = ['''^explanation/other/x$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "OpenAPI field name listed after 'key' in a contract fingerprint test, not a credential (#1051)"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]test_admin_operations_contract\.py$''']
+regexes = ['''^p50LatencyMs$''']

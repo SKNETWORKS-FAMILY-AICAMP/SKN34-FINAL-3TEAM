@@ -227,19 +227,31 @@ export function correctionImpactText(impact: ErrorReport['corrections'][number][
   return areas.map(([key, label]) => `${label}: ${text(key)}`).join(' / ')
 }
 
+/** AI 사용량 묶음 기준(#1051). core `UsageGroupBy`·OpenAPI와 같은 5개. DAY는 KST 달력 일 */
+export const usageGroupByLabels = {
+  CALL_TYPE: '호출 종류', MODEL: '모델', PROMPT_VERSION: '프롬프트 버전', ERROR_CODE: '오류 코드', DAY: '일별',
+} as const
+export type UsageGroupBy = keyof typeof usageGroupByLabels
+export interface UsageItem {
+  /** 묶음 값. 기록되지 않은 프롬프트 버전·오류 코드(성공 호출 포함)는 null 한 묶음 */
+  key: string | null
+  /** groupBy가 CALL_TYPE일 때만 값이 있다 */
+  callType: string | null
+  calls: number
+  failures: number
+  latencyMs: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  inputTokens: number | null
+  outputTokens: number | null
+  costUsd: number | null
+  unpricedCalls: number
+  externallyBilledCalls: number
+}
 export interface Usage {
   period: Period
-  items: {
-    callType: string
-    calls: number
-    failures: number
-    latencyMs: number
-    inputTokens: number | null
-    outputTokens: number | null
-    costUsd: number | null
-    unpricedCalls: number
-    externallyBilledCalls: number
-  }[]
+  groupBy: UsageGroupBy
+  items: UsageItem[]
 }
 export const hasPermission = (permissions: Permission[] | undefined, p: Permission) =>
   !!permissions?.includes(p)

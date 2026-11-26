@@ -5453,9 +5453,13 @@ paths:
       - name: callType
         in: query
         schema: {$ref: '#/components/schemas/CallType'}
+      - name: groupBy
+        in: query
+        description: '묶음 기준(#1051). 허용 외 값은 400 VALIDATION_FAILED. DAY는 KST 달력 일'
+        schema: {$ref: '#/components/schemas/UsageGroupBy'}
       responses:
         '200':
-          description: 기간 내 호출이 있는 종류별 집계. 빈 기간은 items 빈 배열.
+          description: 기간 내 호출이 있는 묶음별 집계(key 오름차순, null은 끝). 빈 기간은 items 빈 배열.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AiUsageResponse'}
@@ -13110,7 +13114,7 @@ components:
     AiUsageResponse:
       type: object
       additionalProperties: false
-      required: [period, items]
+      required: [period, groupBy, items]
       properties:
         period:
           type: object
@@ -13122,15 +13126,27 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/UsageSummary'}
+        groupBy: {$ref: '#/components/schemas/UsageGroupBy'}
+    UsageGroupBy:
+      type: string
+      enum: [CALL_TYPE, MODEL, PROMPT_VERSION, ERROR_CODE, DAY]
+      default: CALL_TYPE
     UsageSummary:
       type: object
       additionalProperties: false
-      required: [callType, calls, failures, latencyMs, inputTokens, outputTokens, costUsd, unpricedCalls, externallyBilledCalls]
+      required: [callType, calls, failures, latencyMs, inputTokens, outputTokens, costUsd, unpricedCalls, externallyBilledCalls, key, p50LatencyMs, p95LatencyMs]
       properties:
-        callType: {$ref: '#/components/schemas/CallType'}
+        callType:
+          description: 'groupBy가 CALL_TYPE일 때만 값이 있고 다른 묶음에서는 null (#1051)'
+          oneOf:
+          - {$ref: '#/components/schemas/CallType'}
+          - {type: 'null'}
+        key: {type: [string, 'null'], description: '묶음 값(호출 종류·모델·프롬프트 버전·오류 코드·KST 날짜 YYYY-MM-DD). 기록되지 않은 프롬프트 버전·오류 코드(성공 호출 포함)는 null 한 묶음 (#1051)'}
         calls: {type: integer, format: int64, minimum: 1}
         failures: {type: integer, format: int64, minimum: 0}
         latencyMs: {type: number, minimum: 0, description: 성공·실패를 포함한 평균 지연 ms}
+        p50LatencyMs: {type: number, minimum: 0, description: '성공·실패를 포함한 지연 중앙값 ms(percentile_cont, #1051)'}
+        p95LatencyMs: {type: number, minimum: 0, description: '성공·실패를 포함한 지연 95백분위 ms(percentile_cont, #1051)'}
         inputTokens: {type: [integer, 'null'], format: int64, description: 미기록 호출이 있으면 null}
         outputTokens: {type: [integer, 'null'], format: int64, description: 미기록 호출이 있으면 null}
         costUsd: {type: [number, 'null'], description: 미산정 호출이 있으면 null. 별도 청구 호출은 합계에 들어가지 않음}

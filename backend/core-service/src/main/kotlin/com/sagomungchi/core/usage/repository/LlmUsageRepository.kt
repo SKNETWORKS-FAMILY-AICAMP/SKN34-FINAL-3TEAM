@@ -31,6 +31,6 @@ data class LlmUsage(
 interface LlmUsageRepository {
     fun insertIfAbsent(usage: LlmUsage): Int
     fun summarize(@Param("from") from: OffsetDateTime, @Param("until") until: OffsetDateTime,
-                  @Param("callType") callType: String?): List<UsageSummary>
+                  @Param("callType") callType: String?, @Param("groupBy") groupBy: String): List<UsageSummary>
     fun monthToDate(@Param("from") from: OffsetDateTime, @Param("until") until: OffsetDateTime): MonthToDateCost
 }

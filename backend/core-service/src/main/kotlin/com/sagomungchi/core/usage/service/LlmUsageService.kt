@@ -11,6 +11,7 @@ import java.util.UUID
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.usage.domain.CallType
 import com.sagomungchi.core.usage.domain.MonthToDateCost
+import com.sagomungchi.core.usage.domain.UsageGroupBy
 import com.sagomungchi.core.usage.domain.UsageSummary
 import org.springframework.http.HttpStatus
 import java.time.Instant
@@ -25,14 +26,15 @@ class LlmUsageService(
     private val properties: AppProperties,
     private val callMetrics: LlmCallMetrics,
 ) {
-    fun summarize(from: LocalDate, to: LocalDate, callType: CallType?): List<UsageSummary> {
+    fun summarize(from: LocalDate, to: LocalDate, callType: CallType?,
+                  groupBy: UsageGroupBy = UsageGroupBy.CALL_TYPE): List<UsageSummary> {
         if (from.year !in 1..9999 || to.year !in 1..9999 || from > to ||
             ChronoUnit.DAYS.between(from, to) >= MAX_QUERY_DAYS) {
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "조회 기간은 0001~9999 연도에서 양 끝 포함 최대 366일이어야 합니다.")
         }
         val zone = ZoneId.of("Asia/Seoul")
         return repository.summarize(from.atStartOfDay(zone).toOffsetDateTime(),
-            to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name)
+            to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name, groupBy.name)
     }
 
     /** KST 달력 월 1일 00:00부터 now까지 (P13 월 예산 기준) */

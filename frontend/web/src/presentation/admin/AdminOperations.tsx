@@ -5,14 +5,15 @@ import { WorkloadCards, ThemeWorkQueue } from './AdminReviewHome.tsx'
 import './review-home.css'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
-import type { Audit, Permission } from '../../domain/admin/operations.ts'
-import { auditTargetLabels, callTypeLabels, hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, labelOf, missionLabels } from '../../domain/admin/operations.ts'
+import type { Audit, Permission, UsageGroupBy } from '../../domain/admin/operations.ts'
+import { auditTargetLabels, callTypeLabels, hasPermission, usageGroupByLabels, jobLabels, jobTypeLabels, jobRetryMessage, labelOf, missionLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { Badge, Empty, Inspector, TableScroll } from './AdminUi.tsx'
 import { auditActionLabel, date, modelScopeLabel, number, queueHeading } from './adminFormatting.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { busyProps } from './busyButton.ts'
+import { failureRate, latency, usageColumns, usageKeyLabel } from './usageFormatting.ts'
 export function AdminOperations({
   page,
   period,
@@ -277,10 +278,15 @@ function AuditModelDetail({ detail }: { detail: Audit['detail'] }) {
   </details>
 }
 function Usage({ period }: { period: Period }) {
-  const [type, setType] = useState(''), q = useAdminQuery(['usage', period, type], signal => adminApi.usage(period, type, signal))
+  const [type, setType] = useState(''), [groupBy, setGroupBy] = useState<UsageGroupBy>('CALL_TYPE')
+  const q = useAdminQuery(['usage', period, type, groupBy], signal => adminApi.usage(period, type, groupBy, signal))
+  // 응답이 오기 전에는 고른 묶음 기준이 아니라 받은 응답의 기준으로 표를 그린다
+  const shown = q.data?.groupBy ?? groupBy
   return <section className="ad-data-surface">
-    <div className="ad-data-toolbar"><div><h2>호출별 사용량</h2><p>확인하지 못한 비용은 미측정으로 표시합니다.</p></div><label>호출 종류<select aria-label="호출 종류" value={type} onChange={e => setType(e.target.value)}><option value="">전체</option>{Object.entries(callTypeLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
+    <div className="ad-data-toolbar"><div><h2>{shown === 'DAY' ? '일별' : `${usageGroupByLabels[shown]}별`} 사용량</h2><p>확인하지 못한 비용은 미측정으로 표시합니다.</p><p className="ad-usage-source">실시간 지연·경보는 Grafana, 이 화면은 DB 기록 기간 집계입니다.</p></div>
+      <div className="ad-usage-filters"><label>묶음 기준<select aria-label="묶음 기준" value={groupBy} onChange={e => setGroupBy(e.target.value as UsageGroupBy)}>{Object.entries(usageGroupByLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+      <label>호출 종류<select aria-label="호출 종류" value={type} onChange={e => setType(e.target.value)}><option value="">전체</option>{Object.entries(callTypeLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div></div>
     <QueryFeedback query={q} />
-    {q.data && !q.error && <><TableScroll label="AI 사용량 표"><table className="ad-table"><thead><tr><th>호출 종류</th><th className="num">호출 / 실패</th><th className="num">평균 지연</th><th className="num">입력 / 출력 토큰</th><th className="num">비용 (USD)</th></tr></thead><tbody>{q.data.items.map(u => <tr key={u.callType}><td><strong>{labelOf(callTypeLabels,u.callType)}</strong></td><td className="num">{number(u.calls)} / <span className={u.failures ? 'ad-text-danger' : ''}>{number(u.failures)}</span></td><td className="num">{u.calls ? `${number(u.latencyMs)}ms` : '미측정'}</td><td className="num">{u.inputTokens == null ? '미측정' : number(u.inputTokens)} / {u.outputTokens == null ? '미측정' : number(u.outputTokens)}</td><td className="num"><strong>{u.costUsd ?? '미측정'}</strong><small>비용 미산정 {number(u.unpricedCalls)}건{u.externallyBilledCalls > 0 && ` · 별도 청구 ${number(u.externallyBilledCalls)}건`}</small></td></tr>)}</tbody></table></TableScroll>{!q.data.items.length && <Empty>이 기간에 기록된 AI 호출이 없습니다.</Empty>}<div className="ad-list-footer"><span>실제 조회 기간 {q.data.period.from} ~ {q.data.period.to}</span></div></>}
+    {q.data && !q.error && <><TableScroll label="AI 사용량 표"><table className="ad-table ad-usage-table"><thead><tr>{usageColumns(shown).map((c, i) => <th key={c} className={i ? 'num' : undefined}>{c}</th>)}</tr></thead><tbody>{q.data.items.map(u => <tr key={u.key ?? '__none'}><td><strong>{usageKeyLabel(shown, u.key)}</strong></td><td className="num">{number(u.calls)} / <span className={u.failures ? 'ad-text-danger' : ''}>{number(u.failures)}</span></td><td className="num"><span className={u.failures ? 'ad-text-danger' : ''}>{failureRate(u)}</span></td><td className="num">{u.calls ? latency(u.latencyMs) : '미측정'}</td><td className="num">{u.calls ? latency(u.p50LatencyMs) : '미측정'}</td><td className="num">{u.calls ? latency(u.p95LatencyMs) : '미측정'}</td><td className="num">{u.inputTokens == null ? '미측정' : number(u.inputTokens)} / {u.outputTokens == null ? '미측정' : number(u.outputTokens)}</td><td className="num"><strong>{u.costUsd ?? '미측정'}</strong><small>비용 미산정 {number(u.unpricedCalls)}건{u.externallyBilledCalls > 0 && ` · 별도 청구 ${number(u.externallyBilledCalls)}건`}</small></td></tr>)}</tbody></table></TableScroll>{!q.data.items.length && <Empty>이 기간에 기록된 AI 호출이 없습니다.</Empty>}<div className="ad-list-footer"><span>실제 조회 기간 {q.data.period.from} ~ {q.data.period.to}</span></div></>}
   </section>
 }
