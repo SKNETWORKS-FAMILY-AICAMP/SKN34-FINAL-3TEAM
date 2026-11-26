@@ -147,13 +147,13 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
    - 초5 테마의 서술 미션 기준표에 M2 핵심어(`keywords`), 논술은 `essayType`. 저장소 시드(`demo_missions.sql`)에는 넣지 않고 순서 3의 `m2-rubric`이 채운다(#668). 관리자 화면·초안으로 만든 테마 미션은 `--m2-input` JSON으로 핵심어를 준다. 설명은 생각 유형이 겹치지 않는 답변 최대 3개이고 초5 M2 활성 범위는 서술이라, 주마다 생각 유형이 다른 서술 미션 3개에 핵심어가 있어야 카드 3개가 나온다
    - M2 `m2-klue-narrative` 활성(scope `judgment/grade-5/narrative`), 설명 모델 `report-explanation` 활성(scope `explanation/grade-5/narrative`)과 sLLM 서버(#476)
    - ai `M2_CROSS_CHECK_ENABLED=true`. prod 값(`gitops/environments/prod/ai-service.json`)에 켜 두었다(#668, 앱 기본값은 false). 재배포가 이 파일로 helm upgrade를 하므로 `kubectl set env`로 켜면 다음 ai 재배포 때 꺼진다. M2는 기준표에 M2 입력이 있는 미션에서만 불리므로 영향은 `m2-rubric`으로 보강한 미션뿐이다. 켜 두면 LLM이 `CORRECT`인데 M2 평균이 낮거나 `RETHINK`인데 높으면 판정 보류 `HELD(MODEL_DISAGREEMENT)`가 생길 수 있다(api-spec 4.2.2, 글자 수 하한 미만은 제외). 보류 답변에는 M2 점수가 남아 설명 후보는 되지만 학생 화면에는 보류로 보이므로, `solve` 뒤 `audit-demo-data.sql`의 `demo668_recent_judgments`로 보류 건수를 확인한다
-   - 학생 원문 공개(`solve`가 켬)·프리미엄 구독
+   - 자녀 법정대리인 동의서 현재 판 동의(`children`, 학부모 원문 제공 포함 #1064)·프리미엄 구독
 
 ### 순서
 
 환경 변수는 스크립트 머리말을 따른다(`DEMO_API_BASE`, `DEMO_PARENT_*`, `DEMO_ADMIN_*`). 값은 출력하지 않는다.
 
-1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`. 이미 있는 자녀는 그대로 둔다. 필수 동의 문서 새 버전 시행일(예: #732 처리방침 1.2·법정대리인 동의서 1.1, 2026-11-23) 뒤에는 같은 명령을 다시 돌려 계정 동의(`/me` `CONSENT_REQUIRED`일 때)와 기존 자녀 법정대리인 재동의(`guardianConsentRequired`일 때)를 보낸다. 안 하면 `student`·`solve`의 학생 세션이 403이다(#894)
+1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`. 이미 있는 자녀는 그대로 둔다. 필수 동의 문서 새 버전 시행일(예: #732 처리방침 1.2·법정대리인 동의서 1.1, 2026-11-23, #1061 법정대리인 동의서 1.2) 뒤에는 같은 명령을 다시 돌려 계정 동의(`/me` `CONSENT_REQUIRED`일 때)와 기존 자녀 법정대리인 재동의(`guardianConsentRequired`일 때)를 보낸다. 안 하면 `student`·`solve`의 학생 세션이 403이다(#894)
 2. 시연 표시·프리미엄: `demo-db-oneoff.k8s.yaml`로 `prepare-demo-account-students.sql` 실행(`psql -v g3=<초3> -v g5=<초5> -v product_code=PREMIUM`). Pod의 `command`에 `-v` 세 개를 더한다.
 3. 설명 카드용 기준표(첫 `solve` 전에): `python demo_account_data.py m2-rubric --weeks 2026-11-16,2026-11-23,2026-11-30 [--m2-input <JSON>]`. 먼저 `--dry-run`으로 채울 미션을 본다. 공개 기준표를 복사해 M2 입력만 더한 새 기준표 버전을 저장·검토 승인·재게시하고, 이미 있으면 그대로 둔다. 주마다 "M2 입력 서술 3유형"이 나와야 한다. 입력이 없는 미션이나 공개 안 된 수정본이 걸린 미션이 있으면 실패하고 이름을 알려 준다. 판정은 답변 때의 공개 기준표로 하므로 보강 전에 푼 답변에는 M2 점수가 생기지 않는다
 4. 앞선 2회차(시험 시계):
@@ -178,7 +178,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | `dummy854-families.json` | 가족 목록(로그인 ID `dm854p01`~`30`·이름 `가상가족01`~`30`·자녀 별명·학년·무리·프리미엄·공개)과 무리별 주 문제 수. 비밀값 없음. 앞 6가족(자녀 8명)이 kind 리허설용 |
 | `evaluation/load/prepare_accounts.py --families` | 가입·계정 동의·자녀(GUARDIAN)·자녀별 COMMUNITY 동의·기기·PIN. 비밀번호·PIN은 저장소 밖 비밀 파일. 가입 직후 비밀번호를 먼저 저장해 중간에 멈춰도 다음 실행이 이어서 한다. 다시 돌리면 준비된 가족도 로그인해 계정 동의와 기존 자녀 법정대리인 재동의(`guardianConsentRequired`일 때)를 다시 보낸다(#894) |
 | `add-dummy854-subscriptions.sql` | dm854p 자녀 중 프리미엄 학생에게 결제 없는 시험 구독(`product_snapshot.demoAccount = '854'`), dm854p 학부모·자녀 `is_demo` 표시 |
-| `dummy854_data.py` | `plan`(API 없이 무리·주별 문제 수·구독 SQL 값) → `community`(원문 공개·커뮤니티 공개) → `solve --stage wed\|sat`(무리별 문제 수만큼) → `react` → `room` → `converse` → `support` → `admin-ops`. `demo_account_data.py`의 풀이 흐름을 그대로 쓰고 학생마다 답변 소재가 다르다 |
+| `dummy854_data.py` | `plan`(API 없이 무리·주별 문제 수·구독 SQL 값) → `community`(공개 대상 커뮤니티 공개) → `solve --stage wed\|sat`(무리별 문제 수만큼) → `react` → `room` → `converse` → `support` → `admin-ops`. `demo_account_data.py`의 풀이 흐름을 그대로 쓰고 학생마다 답변 소재가 다르다 |
 | `audit-demo-data.sql` | `dummy854_*`: core 학년별 학생·구독·주별 리포트 작업·신고·문의·대화·공지·결제(시연 표시별), learning 주별 완료 문제 수 분포·액자·공유물·반응, report 주별 리포트 상태 |
 
 ### 사전 조건(0단계)
