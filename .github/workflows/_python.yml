@@ -20,12 +20,71 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
       - run: uv sync --frozen
-      # apt 미러 지연 시 무한 대기 방지
+      # report PDF 런타임 캐시: Chromium은 playwright 버전, apt .deb는 러너 이미지 기준으로 재사용
+      - name: Resolve report PDF cache keys
+        id: pdf-keys
+        if: inputs.service-path == 'backend/report-service'
+        run: |
+          version=$(awk '/^name = "playwright"$/{getline; gsub(/"/,"",$3); print $3}' uv.lock)
+          {
+            echo "playwright=${version:-unknown}"
+            echo "image=${ImageOS:-unknown}"
+            echo "debs-dir=$HOME/.cache/report-pdf-debs"
+          } >> "$GITHUB_OUTPUT"
+      - name: Restore Playwright Chromium cache
+        id: pw-cache
+        if: inputs.service-path == 'backend/report-service'
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: report-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.pdf-keys.outputs.playwright }}
+      - name: Restore report apt .deb cache
+        id: deb-cache
+        if: inputs.service-path == 'backend/report-service'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pdf-keys.outputs.debs-dir }}
+          key: report-pdf-debs-${{ runner.os }}-${{ steps.pdf-keys.outputs.image }}-${{ steps.pdf-keys.outputs.playwright }}
+          restore-keys: |
+            report-pdf-debs-${{ runner.os }}-${{ steps.pdf-keys.outputs.image }}-
+      # 캐시한 .deb를 apt 보관함에 미리 넣고, dpkg 실행 뒤 새로 받은 .deb를 캐시 폴더로 복사.
+      # 스크립트 끝의 apt-get clean이 보관함을 비워도 캐시 폴더는 남는다. 캐시가 없거나 낡으면 apt가 미러에서 받는다.
+      - name: Seed apt archives from cache
+        if: inputs.service-path == 'backend/report-service'
+        env:
+          DEBS_DIR: ${{ steps.pdf-keys.outputs.debs-dir }}
+        run: |
+          mkdir -p "$DEBS_DIR"
+          for deb in "$DEBS_DIR"/*.deb; do
+            [ -e "$deb" ] || continue
+            if dpkg-deb --fsys-tarfile "$deb" >/dev/null 2>&1; then
+              sudo cp "$deb" /var/cache/apt/archives/
+            else
+              echo "skip broken cached deb: $deb"
+              rm -f "$deb"
+            fi
+          done
+          printf 'DPkg::Post-Invoke { "cp -n /var/cache/apt/archives/*.deb %s/ 2>/dev/null || true"; };\n' "$DEBS_DIR" \
+            | sudo tee /etc/apt/apt.conf.d/81report-pdf-deb-cache >/dev/null
+      # apt 미러가 느릴 때 캐시 없는 첫 실행도 끝나도록 여유를 둠(무한 대기 방지는 유지)
       - name: Prepare report PDF runtime
         if: inputs.service-path == 'backend/report-service'
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           sh scripts/install_pdf_runtime.sh uv run playwright
+      # 뒤 단계(pytest) 성패와 무관하게 설치가 끝나면 바로 저장
+      - name: Save Playwright Chromium cache
+        if: inputs.service-path == 'backend/report-service' && steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.pw-cache.outputs.cache-primary-key }}
+      - name: Save report apt .deb cache
+        if: inputs.service-path == 'backend/report-service' && steps.deb-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pdf-keys.outputs.debs-dir }}
+          key: ${{ steps.deb-cache.outputs.cache-primary-key }}
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
