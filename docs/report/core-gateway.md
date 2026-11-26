@@ -1131,3 +1131,42 @@ ROLLBACK;
 
 - Grafana p95는 히스토그램 버킷 근사라 이 화면의 정확값과 다를 수 있다(위 표)
 - 브라우저 회귀 `parent-admin-browser.mjs`의 AI 사용량 기대(빈 안내 → 판정 행·p95 열)를 고쳤다. 이 스크립트와 `admin-model-browser.mjs`·`admin-completion-browser.mjs`는 AI 사용량에 닿기 전 다른 화면 단계(자녀 등록 안내·모델 평가 근거·문의 답변)에서 멈춰 AI 사용량 부분은 이 스크립트들로 확인하지 못했다
+
+## 38. 학생 원문 공개 비공개 차단 제거와 법정대리인 동의서 1.2 (#1061, 2026-11-26)
+
+에픽 #1064의 core 몫. 학부모 원문 제공 조건을 학생 전역 공개 설정(#206)에서 연결 + 현재 법정대리인 동의(GUARDIAN 1.2)로 바꿨다. 문구·결정은 [auth-account 20절](auth-account.md#20-원문-제공-법정대리인-필수-동의-1064)(#1058), report·ai는 [report 34절](report.md#34-학생-원문-공개-분기-제거-1060-2026-11-26)(#1060), migration은 [infra 9.33](infra.md#933-법정대리인-동의서-12-시드-1061-v60-2026-11-26).
+
+### API
+
+| 구분 | 바뀐 것 |
+|---|---|
+| 삭제 | 오류 코드 403 `STUDENT_RECORDS_PRIVATE`. 학부모 답변 목록·상세·근거, 분석 대화(생성·질문·재시도·근거·후보 확인), 리포트 근거·고정 대화·받기, 추억 그림책 회차 목록·발급·목록·받기·같이 읽음에서 뺐다. 동의가 없거나 낡으면 기존대로 403 `CHILD_NOT_LINKED`. 오류를 없애는 쪽이라 옛 웹도 그대로 동작 |
+| 호환 유지(폐지 예정) | `GET·PUT /students/me/sharing-preferences`, `GET /children/{childId}/sharing-preferences`는 경로·권한·본문 검사(누락·null 400)를 그대로 두고 항상 `parentSharingEnabled: true`. PUT은 값을 저장하지 않는다. 리포트 상세·내부 학생 프로필의 `parentSharingEnabled`도 항상 true. 계약에 `deprecated: true`·`const: true` 표시 |
+| 리포트 상세 | 공개 설정으로 원문·인용·돌아보기·되묻기를 지우지 않는다(서술은 이용권, 일일 문제 원문은 기존 P13 스위치 그대로) |
+| 분석 대화 리포트 설명 | 주간 리포트 설명을 분석 에이전트에 넘기는 조건이 프리미엄(`narrativeEnabled`)만 남음 |
+| 토요일 같이 읽기 알림 | 원문 비공개 자녀 제외 조건을 뺐다(수신자는 기존 연결 + 필수 동의 + 법정대리인 동의) |
+| 계약 | `contracts/openapi/core-service.yaml` 위 오류 설명·폐지 예정 표시, `report-service.yaml` `answerTimes` 설명의 "원문 비공개(#206)" 문구(report `app/query/schemas.py`와 같이) |
+
+호환으로 남긴 이유: `docs/README.md` DB migration·API 변경 규칙(#1076). 지금 웹(#1062 전)은 공개 설정 API를 부르고, 리포트 화면은 `parentSharingEnabled === true`일 때만 파일 받기·원문 근거를 켠다. 경로·필드·칼럼 삭제는 #1062 배포 뒤 #1078에서 한다.
+
+### 구현
+
+- `StudentLearningContextService`: `sharingEnabled`·`requireShared`와 매퍼 `sharingEnabled`·`updateSharing`을 지웠다. `ownSharing`·`parentSharing`은 권한·연결 확인 뒤 상수 true만 돌려준다(DB 읽기·쓰기 없음)
+- 리포트 상세·받기(`ReportViewService.record`)는 공개 확인이 학생 행 잠금(`FOR UPDATE`, 부모 → 학생 순서)을 겸하고 있었다. 같은 순서를 지키려고 `StudentAccessService.lockStatus`로 학생 행을 잠그고 ACTIVE가 아니면 기존과 같은 404 `NOT_FOUND`
+- 분석 대화는 이미 `lockStudent`로 잠그므로 공개 확인만 뺐다. `ReportDocument.withoutOriginals`는 쓰는 곳이 없어 지웠다
+- 동의서 1.2는 V60 시드뿐이다. 현재 판 조회·재동의 화면·이관 수락(`/guardian-transfers/{id}/accept`의 낡은 문서 거부)은 기존 코드 그대로 1.2를 요구한다
+
+### 시험
+
+- 삭제: `StudentSharingTest`·`StudentSharingBoundaryTest`·`StudentSharingDatabaseTest`(저장·잠금 규칙이 없어짐). `StudentSharingHttpTest`는 호환 동작(항상 true, PUT 무시·검사 유지, 권한 그대로)으로 바꿈
+- `ConsentChildrenTest`: 시드 시험에 GUARDIAN 1.2(2026-11-27, 1.1 본문 + 한 구절) 반영. 새 시험: 실제 V54 1.1로 등록한 자녀가 V60 1.2가 현재 판이 되면 `CONSENT_REQUIRED`·학생 세션·학부모 자녀 화면 403이고, 1.2 재동의 뒤 복구(시험 안에서 시행일을 옮겨 날짜와 관계없이 돎)
+- `GuardianTransferIntegrationTest`: 새 GUARDIAN 판이 나오면 낡은 판으로 수락은 `CONSENT_DOCUMENT_CHANGED`, 보내는 학부모도 재동의 전에는 `CHILD_NOT_LINKED`, 현재 판으로 수락하면 그 판에 동의가 저장됨
+- `ReportEntitlementIntegrationTest`: 공개 설정 없이 리포트 상세가 원문을 그대로 주고 `parentSharingEnabled`는 true. 상세·파일 서명 중 법정대리인 동의가 사라지면 403 `CHILD_NOT_LINKED`이고 조회·사용 기록이 남지 않음
+- `MemoryBookIntegrationTest`: 비공개 403 시험을 법정대리인 동의 없음 403 `CHILD_NOT_LINKED`로 바꿈(learning 호출 없음, 같이 읽음·토요일 알림 포함)
+- 고정값 정리: `ReportFixtures`·`ReportHttpTest`·`ReportExplanationsForAnalysisTest`·`ReportClientTest`·`ReportTemplateHttpIntegrationTest`(선택 실행 Python 검증의 비공개 모드 삭제, `scripts/verify_report_template_rendering.py`)·`DashboardIntegrationTest`·`LearningProxyIntegrationTest`
+- scripts: `test_memory_book_contract`, `test_admin_operations_contract`(#317 403 정규화), `test_dashboard_openapi`의 비공개 코드 시험은 "계약에 남지 않음" 확인으로 바꿈
+
+### 남은 것
+
+- 호환 경로·필드와 `student.parent_sharing_enabled` 삭제는 #1078(#1061 릴리스와 #1062 배포 뒤)
+- 웹 학생 공개 설정 화면·비공개 안내 제거와 첫 둘러보기 고지는 #1062, 데이터 스크립트 호출 제거는 #1063(PR #1066, 이 PR 뒤 병합)

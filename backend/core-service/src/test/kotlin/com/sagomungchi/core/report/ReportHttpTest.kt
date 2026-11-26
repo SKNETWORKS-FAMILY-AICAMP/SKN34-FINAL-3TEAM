@@ -209,19 +209,7 @@ class ReportHttpTest : IntegrationTestSupport() {
         mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
             .andExpect { status { isOk() }; jsonPath("$.problems[0].judgment") { value("PARTIAL") }; jsonPath("$.problems[0].finalAnswer") { value(null) } }
         `when`(entitlement.dailyDetailEnabled(student)).thenReturn(true)
-        jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
-        val hidden = mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
-            .andExpect { status { isOk() }; jsonPath("$.problems[0].judgment") { value("PARTIAL") }
-                jsonPath("$.problems[0].elements[0].label") { value("근거") }; jsonPath("$.problems[0].finalAnswer") { value(null) }
-                jsonPath("$.problems[0].reflection") { value(null) }; jsonPath("$.problems[0].followups.length()") { value(0) }
-                jsonPath("$.problems[0].quotes.length()") { value(0) }
-                // P28 (#803): answer times are numbers, not originals, so they stay when sharing is off.
-                jsonPath("$.problems[0].answerTimes[0].thinkingSeconds") { value(45) }
-                jsonPath("$.problems[0].answerTimes[0].writingSeconds") { value(130) } }
-            .andReturn().response.contentAsString
-        assertFalse(hidden.contains("합성비밀"))
         // The job says DAILY; a report-api body claiming a week for it is a contract violation.
-        jdbc.update("UPDATE student SET parent_sharing_enabled=true WHERE id=?", student)
         response = json.writeValueAsString(detail(daily))
         mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }.andExpect { status { isBadGateway() } }
     }

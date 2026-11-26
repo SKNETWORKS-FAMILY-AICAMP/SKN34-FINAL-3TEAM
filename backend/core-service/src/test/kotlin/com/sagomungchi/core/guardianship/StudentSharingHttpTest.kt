@@ -23,7 +23,8 @@ import kotlin.test.assertNull
 
 /**
  * #206 student sharing preferences through the real auth filter, JWT and PostgreSQL (#317 T1).
- * Service and DB rules are covered by StudentSharingTest·StudentSharingDatabaseTest; this checks the HTTP surface.
+ * #1061 (epic #1064): originals follow GUARDIAN 1.2 consent, so this API only stays for the web before #1062. It keeps the
+ * same auth surface but always answers true and never writes; the follow-up issue removes it with the column.
  */
 @AutoConfigureMockMvc
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -78,41 +79,36 @@ class StudentSharingHttpTest : PostgresRepositoryTest() {
         // Forged identity headers from the client must never select the student.
         .header("X-User-Id", UUID.randomUUID().toString()).header("X-User-Role", "STUDENT").header("X-Student-Scope", UUID.randomUUID().toString())
         .also { req -> content?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) } })
+    /** The unused V21 column keeps its default; the follow-up issue drops it. */
     private fun stored() = jdbc.queryForObject("SELECT parent_sharing_enabled FROM student WHERE id=?", Boolean::class.java, child)
 
-    @Test fun `student reads and changes only the own sharing preference with no-store`() {
+    @Test fun `student reads true and a change is accepted but ignored with no-store`() {
         val token = studentToken()
         call(HttpMethod.GET, "/api/v1/students/me/sharing-preferences", token).andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.studentId").value(child.toString()))
-            .andExpect(jsonPath("$.parentSharingEnabled").value(false))
-        call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, "{\"parentSharingEnabled\":true}")
+            .andExpect(jsonPath("$.parentSharingEnabled").value(true))
+        call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, "{\"parentSharingEnabled\":false}")
             .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.studentId").value(child.toString()))
             .andExpect(jsonPath("$.parentSharingEnabled").value(true))
-        assertEquals(true, stored())
-        call(HttpMethod.GET, "/api/v1/students/me/sharing-preferences", token).andExpect(jsonPath("$.parentSharingEnabled").value(true))
-        // Missing or null values are 400 and never change the stored preference.
+        assertEquals(false, stored())
+        // Missing or null values stay 400 so the old web sees the same validation.
         listOf("{}", "{\"parentSharingEnabled\":null}").forEach { body ->
             call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, body).andExpect(status().isBadRequest())
         }
-        assertEquals(true, stored())
-        call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, "{\"parentSharingEnabled\":false}")
-            .andExpect(jsonPath("$.parentSharingEnabled").value(false))
-        assertEquals(false, stored())
     }
 
     @Test fun `parents only read their linked child preference and cannot use the student endpoints`() {
-        jdbc.update("UPDATE student SET parent_sharing_enabled=true WHERE id=?", child)
         val token = parentToken()
         call(HttpMethod.GET, "/api/v1/children/$child/sharing-preferences", token).andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.studentId").value(child.toString()))
             .andExpect(jsonPath("$.parentSharingEnabled").value(true))
         call(HttpMethod.GET, "/api/v1/students/me/sharing-preferences", token).andExpect(status().isForbidden())
-        call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, "{\"parentSharingEnabled\":false}")
+        call(HttpMethod.PUT, "/api/v1/students/me/sharing-preferences", token, "{\"parentSharingEnabled\":true}")
             .andExpect(status().isForbidden())
-        assertEquals(true, stored())
+        assertEquals(false, stored())
         // Another family's child is not readable even with a valid parent session.
         val foreign = student(null).also { others += it }
         call(HttpMethod.GET, "/api/v1/children/$foreign/sharing-preferences", token).andExpect(status().isForbidden())

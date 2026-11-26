@@ -166,38 +166,46 @@ class ReportEntitlementIntegrationTest : IntegrationTestSupport() {
         assertEquals("true", requests.single().narrative); assertEquals(0, used()); assertEquals(1, views())
     }
 
-    @Test fun `student revokes sharing during detail and old originals are removed at final authorization`() {
+    @Test fun `originals pass through without any student sharing setting and the flag stays true (#1064)`() {
         subscribe()
         val raw = json.readTree(detail) as com.fasterxml.jackson.databind.node.ObjectNode
-        raw.putArray("quotes").addObject().put("text", "합성 비밀 원문")
+        raw.putArray("quotes").addObject().put("text", "합성 원문")
         raw.putArray("changes").addObject().apply {
-            putObject("first").put("text", "합성 비밀 첫답")
-            putObject("revised").put("text", "합성 비밀 새답")
+            putObject("first").put("text", "합성 첫답")
+            putObject("revised").put("text", "합성 새답")
             putObject("counts").putArray("chars").add(1).add(2)
         }
         detail = raw.toString()
-        duringRequest = { jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student) }
         read().andExpect {
             status { isOk() }
-            jsonPath("$.parentSharingEnabled") { value(false) }
-            jsonPath("$.narrative") { value(null) }
-            jsonPath("$.quotes.length()") { value(0) }
-            jsonPath("$.changes[0].first.text") { value(null) }
-            jsonPath("$.changes[0].revised.text") { value(null) }
-            jsonPath("$.metrics[0].count") { value(3) }
+            // Kept as a constant until web #1062 stops reading it.
+            jsonPath("$.parentSharingEnabled") { value(true) }
+            jsonPath("$.quotes[0].text") { value("합성 원문") }
+            jsonPath("$.changes[0].first.text") { value("합성 첫답") }
+            jsonPath("$.changes[0].revised.text") { value("합성 새답") }
         }
-        assertEquals(0, used())
-        assertEquals(1, views())
     }
 
-    @Test fun `student revokes sharing during file signing and the URL is never returned`() {
+    @Test fun `guardian consent withdrawn during detail fails at final authorization`() {
+        subscribe()
+        duringRequest = { jdbc.update("DELETE FROM consent WHERE student_id=?", student) }
+        read().andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("CHILD_NOT_LINKED") }
+            jsonPath("$.narrative") { doesNotExist() }
+        }
+        assertEquals(0, used())
+        assertEquals(0, views())
+    }
+
+    @Test fun `guardian consent withdrawn during file signing and the URL is never returned`() {
         subscribe()
         duringRequest = { path -> if (path.contains("/files/")) {
-            jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
+            jdbc.update("DELETE FROM consent WHERE student_id=?", student)
         } }
         download().andExpect {
             status { isForbidden() }
-            jsonPath("$.code") { value("STUDENT_RECORDS_PRIVATE") }
+            jsonPath("$.code") { value("CHILD_NOT_LINKED") }
             jsonPath("$.url") { doesNotExist() }
         }
         assertEquals(0, used())

@@ -198,13 +198,10 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             .andExpect(jsonPath("$.code").value("REVEAL_CONDITION_UNMET"))
     }
 
-    @Test fun `attempt comparison is student only so parents get 403 whether records are private or shared`() {
+    @Test fun `attempt comparison is student only so parents get 403`() {
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", null), null)
-        listOf(false, true).forEach { shared ->
-            jdbc.update("UPDATE student SET parent_sharing_enabled=? WHERE id=?", shared, child)
-            call("GET", "/api/v1/attempts/$attempt/comparison", bearer = parent.accessToken)
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"))
-        }
+        call("GET", "/api/v1/attempts/$attempt/comparison", bearer = parent.accessToken)
+            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"))
         assertTrue(stub.requests.isEmpty())
     }
 

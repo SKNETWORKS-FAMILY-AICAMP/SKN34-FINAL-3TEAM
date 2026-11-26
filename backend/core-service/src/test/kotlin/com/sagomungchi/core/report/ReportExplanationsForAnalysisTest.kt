@@ -7,7 +7,6 @@ import com.sagomungchi.core.conversation.domain.AnalysisScope
 import com.sagomungchi.core.conversation.domain.ConversationRow
 import com.sagomungchi.core.conversation.service.AnalysisTicket
 import com.sagomungchi.core.conversation.service.ConversationService
-import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.report.client.ReportClient
 import com.sagomungchi.core.report.client.ReportDocument
 import com.sagomungchi.core.report.domain.ReportJob
@@ -35,9 +34,8 @@ class ReportExplanationsForAnalysisTest {
     private val repository = mock(ReportJobRepository::class.java)
     private val client = mock(ReportClient::class.java)
     private val entitlements = mock(ReportEntitlementService::class.java)
-    private val learningContext = mock(StudentLearningContextService::class.java)
     private val service = ReportQueryService(repository, mock(ReportAccessService::class.java), client,
-        mock(ReportViewService::class.java), entitlements, learningContext, mock(CorrectionNoticeService::class.java))
+        mock(ReportViewService::class.java), entitlements, mock(CorrectionNoticeService::class.java))
 
     private val earlier = week("2026-11-09")
     private val latest = week("2026-11-16")
@@ -67,8 +65,7 @@ class ReportExplanationsForAnalysisTest {
         `when`(client.report(w.job, w.reportId, null, true)).thenReturn(ReportDocument(body, w.reportId))
     }
 
-    private fun allowed(shared: Boolean = true, premium: Boolean = true) {
-        `when`(learningContext.sharingEnabled(student)).thenReturn(shared)
+    private fun allowed(premium: Boolean = true) {
         `when`(entitlements.narrativeEnabled(student)).thenReturn(premium)
     }
 
@@ -97,10 +94,8 @@ class ReportExplanationsForAnalysisTest {
         verify(client, never()).report(latest.job, latest.reportId, null, true)
     }
 
-    @Test fun `private originals or free plan send no explanations and never read reports`() {
-        allowed(shared = false)
-        assertTrue(service.explanations(student, LocalDate.parse("2026-11-18"), LocalDate.parse("2026-11-24")).isEmpty())
-        allowed(shared = true, premium = false)
+    @Test fun `free plan sends no explanations and never reads reports`() {
+        allowed(premium = false)
         assertTrue(service.explanations(student, LocalDate.parse("2026-11-18"), LocalDate.parse("2026-11-24")).isEmpty())
         verifyNoInteractions(client)
     }
@@ -126,7 +121,7 @@ class ReportExplanationsForAnalysisTest {
             mock(com.sagomungchi.core.conversation.service.AnalysisUsageService::class.java),
             mock(com.sagomungchi.core.learning.service.LearningRecordService::class.java),
             mock(org.springframework.transaction.support.TransactionTemplate::class.java), json,
-            mock(org.springframework.context.ApplicationEventPublisher::class.java), learningContext, reports,
+            mock(org.springframework.context.ApplicationEventPublisher::class.java), reports,
             mock(CorrectionNoticeService::class.java))
         val day = LocalDate.parse("2026-11-20")
         val pinned = ConversationRow(UUID.randomUUID(), UUID.randomUUID(), student, day, day, OffsetDateTime.now(), OffsetDateTime.now(),

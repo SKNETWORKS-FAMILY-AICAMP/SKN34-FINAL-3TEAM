@@ -16,7 +16,6 @@ import java.util.UUID
 @Service
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
     private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService,
-    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
     private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
     /** [periodType] null lists daily and weekly together (P24 FN-RPT-15); every report-api page is gathered (#500). */
     fun list(childId: UUID, status: ReportJobStatus?, periodType: ReportPeriodType? = null): JsonNode {
@@ -35,17 +34,15 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         if (revision != null && revision < 1) invalidRequest()
         val job = owned(reportId)
         val parent = access.parent(job.studentId)
-        val shared = learningContext.sharingEnabled(job.studentId)
-        val requestedNarrative = shared && job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
+        val requestedNarrative = job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
         val report = client.report(job, reportId, revision, requestedNarrative)
-        val allowed = views.recordWithSharing(report.reportId, job.studentId, parent, requestedNarrative)
-        if (!allowed.narrativeEnabled) report.withoutNarrative()
-        if (!allowed.parentSharingEnabled) report.withoutOriginals()
+        if (!views.record(report.reportId, job.studentId, parent, requestedNarrative)) report.withoutNarrative()
         // P24 free/premium alike; the open P13 decision is the single switch in ReportEntitlementService.
-        else if (job.periodType == ReportPeriodType.DAILY && !entitlements.dailyDetailEnabled(job.studentId))
+        if (job.periodType == ReportPeriodType.DAILY && !entitlements.dailyDetailEnabled(job.studentId))
             report.withoutProblemOriginals()
         val body = report.body
-        body.put("parentSharingEnabled", allowed.parentSharingEnabled)
+        // #1064: always true (originals follow GUARDIAN consent); kept until web #1062 stops reading it.
+        body.put("parentSharingEnabled", true)
         body.put("periodType", job.periodType.name)
         body.put("correctionNotice", corrections.report(report.reportId))
         return body
@@ -53,12 +50,12 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
 
     /**
      * Weekly report explanations for the analysis agent: the latest COMPLETED weekly report whose period overlaps
-     * [from]..[to] (#1012: the default last-7-days scope rarely holds a whole Monday-Sunday week), only when originals
-     * are shared and the narrative entitlement is on (the same gates as [detail]).
+     * [from]..[to] (#1012: the default last-7-days scope rarely holds a whole Monday-Sunday week), only when the
+     * narrative entitlement is on (the same gate as [detail]).
      * Returns `{missionTitle, text}` of INCLUDED explanations; any report-api failure yields none so chat still answers.
      */
     fun explanations(childId: UUID, from: java.time.LocalDate, to: java.time.LocalDate): List<Map<String, String>> = try {
-        if (!learningContext.sharingEnabled(childId) || !entitlements.narrativeEnabled(childId)) emptyList()
+        if (!entitlements.narrativeEnabled(childId)) emptyList()
         else {
             val latest = client.reports(childId, ReportJobStatus.COMPLETED, ReportPeriodType.WEEKLY)
                 .filter { item ->
@@ -93,27 +90,21 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
      */
     fun pinned(reportId: UUID, revision: Int?): PinnedReport {
         val job = owned(reportId)
-        learningContext.requireShared(job.studentId)
         return client.pinned(job, reportId, revision)
     }
 
     fun evidence(reportId: UUID, itemId: UUID): JsonNode {
         val job = owned(reportId)
-        learningContext.requireShared(job.studentId)
-        return client.evidence(job, reportId, itemId).also {
-            access.parent(job.studentId)
-            learningContext.requireShared(job.studentId)
-        }
+        return client.evidence(job, reportId, itemId).also { access.parent(job.studentId) }
     }
 
     fun download(reportId: UUID, format: String): JsonNode {
         if (format !in setOf("pdf", "md")) invalidRequest()
         val job = owned(reportId)
         val parent = access.parent(job.studentId)
-        learningContext.requireShared(job.studentId)
         val requestedNarrative = job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
         val (actual, body) = client.file(job, reportId, format, requestedNarrative)
-        views.record(actual, job.studentId, parent, requestedNarrative, premiumRequired = requestedNarrative, sharingRequired = true)
+        views.record(actual, job.studentId, parent, requestedNarrative, premiumRequired = requestedNarrative)
         return body
     }
 

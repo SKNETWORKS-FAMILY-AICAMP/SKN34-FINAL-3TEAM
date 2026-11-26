@@ -99,7 +99,7 @@ paths:
         '401':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '403':
-          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209) · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)'
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '404':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '409':
@@ -135,7 +135,7 @@ paths:
         '401':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '403':
-          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209) · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)'
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '404':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '409':
@@ -184,7 +184,7 @@ paths:
         '401':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '403':
-          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209) · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)'
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '404':
           description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
         '409':
@@ -239,7 +239,9 @@ paths:
     get:
       tags: [Students]
       operationId: getStudentSharingPreference
-      summary: 학생 본인의 전역 학부모 공개 설정
+      summary: 학생 본인의 전역 학부모 공개 설정 (폐지 예정)
+      deprecated: true
+      description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제'
       responses:
         '200':
           description: 현재 공개 설정 (Cache-Control no-store)
@@ -250,7 +252,9 @@ paths:
     put:
       tags: [Students]
       operationId: updateStudentSharingPreference
-      summary: 학생 본인만 공개 설정 변경 (기본 비공개)
+      summary: 학생 공개 설정 변경 (폐지 예정, 값은 검사만 하고 저장하지 않음)
+      deprecated: true
+      description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제. 본문 검사(누락·null 400)는 그대로이고 응답은 항상 true'
       requestBody:
         required: true
         content:
@@ -610,7 +614,9 @@ paths:
     get:
       tags: [Children]
       operationId: getChildSharingPreference
-      summary: 연결된 자녀 공개 상태 조회 (학부모 변경 불가)
+      summary: 연결된 자녀 공개 상태 조회 (폐지 예정)
+      deprecated: true
+      description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제'
       parameters:
       - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
       responses:
@@ -624,7 +630,7 @@ paths:
     get:
       tags: [Children]
       operationId: getChildPoints
-      summary: 연결 자녀 포인트 잔액·내역 (#389, P21). 학생 공개 설정(#206)과 무관, Cache-Control no-store
+      summary: 연결 자녀 포인트 잔액·내역 (#389, P21). Cache-Control no-store
       parameters:
       - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
       - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
@@ -662,7 +668,7 @@ paths:
         schema: {type: string}
       responses:
         '200':
-          description: 활성 학생의 UUID·별명·학부모 공유 설정(parentSharingEnabled)만 반환
+          description: 활성 학생의 UUID·별명·학년과 폐지 예정 parentSharingEnabled(항상 true)만 반환
           headers:
             Cache-Control:
               schema: {type: string, const: no-store}
@@ -6849,8 +6855,8 @@ paths:
       operationId: listMemoryBookRounds
       summary: 추억 그림책 발급 화면의 자녀 회차 목록
       description: >-
-        학부모 전용. 연결·법정대리인 동의를 확인한 뒤, 자녀가 원문을 공개했을 때만 learning 기념 액자 앨범(진행 중인 주 제외, 최근 회차순)을
-        자녀 범위로 읽고 회차마다 가장 최근 그림책을 붙인다(없으면 book null). 원문 비공개면 learning을 부르지 않는다.
+        학부모 전용. 연결·법정대리인 동의를 확인한 뒤 learning 기념 액자 앨범(진행 중인 주 제외, 최근 회차순)을
+        자녀 범위로 읽고 회차마다 가장 최근 그림책을 붙인다(없으면 book null).
         무료(발급과 같은 features.memoryBook 판정)는 끝난 최근 4주(weekStart ≥ 이번 주 KST 월요일 − 28일) 회차만 반환하고
         totalElements·쪽 나누기는 노출 회차 기준, lockedCount는 숨긴 회차 수(유료 0). 숨긴 회차의 기록·이미 만든 그림책은 지우지 않으며
         결제하면 다음 조회부터 전체가 보인다(#999, api-spec 2.5.1 무료 책장).
@@ -6879,7 +6885,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: FORBIDDEN(학부모 세션 아님)·CHILD_NOT_LINKED(연결·동의 없음)·STUDENT_RECORDS_PRIVATE(자녀가 원문 비공개)
+          description: FORBIDDEN(학부모 세션 아님)·CHILD_NOT_LINKED(연결·동의 없음)
           content:
             application/problem+json:
               schema:
@@ -6909,7 +6915,7 @@ paths:
       operationId: listMemoryBooks
       summary: 자녀의 추억 그림책 발급 목록
       description: >-
-        학부모 전용. 최근 발급순. 보관 기간(30일)이 지난 완성본은 status EXPIRED로 보여 준다. 원문 비공개면 403.
+        학부모 전용. 최근 발급순. 보관 기간(30일)이 지난 완성본은 status EXPIRED로 보여 준다.
         응답 Cache-Control no-store.
       parameters:
       - $ref: '#/components/parameters/MemoryBookChildId'
@@ -6935,7 +6941,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: FORBIDDEN·CHILD_NOT_LINKED·STUDENT_RECORDS_PRIVATE
+          description: FORBIDDEN·CHILD_NOT_LINKED
           content:
             application/problem+json:
               schema:
@@ -6946,7 +6952,7 @@ paths:
       operationId: createMemoryBook
       summary: 추억 그림책 발급
       description: >-
-        학부모 전용. 순서: 연결·동의 → 원문 공개 → 같은 회차의 만드는 중(QUEUED)·보관 기간 안 완성(READY) 그림책이 있으면 그것을 200으로
+        학부모 전용. 순서: 연결·동의 → 같은 회차의 만드는 중(QUEUED)·보관 기간 안 완성(READY) 그림책이 있으면 그것을 200으로
         → learning 보유 확인(트랜잭션 밖) → 하루 한도(limits.dailyMemoryBooks, KST 하루, 재사용은 세지 않음)
         → 유료 판정(features.memoryBook)·MEMORY_BOOK 사용 예약 → 작업 행·memorybook.generate 명령 저장.
         1차는 rounds 길이 1, weekStart는 월요일. Idempotency-Key는 받지 않고 같은 회차 재사용으로 중복을 막는다. 응답 Cache-Control no-store.
@@ -6984,7 +6990,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: FORBIDDEN·CHILD_NOT_LINKED·STUDENT_RECORDS_PRIVATE·PREMIUM_REQUIRED(무료 상품 또는 features.memoryBook=false)
+          description: FORBIDDEN·CHILD_NOT_LINKED·PREMIUM_REQUIRED(무료 상품 또는 features.memoryBook=false)
           content:
             application/problem+json:
               schema:
@@ -7032,7 +7038,7 @@ paths:
       operationId: downloadMemoryBook
       summary: 추억 그림책 PDF 받기 주소
       description: >-
-        학부모 전용. 요청마다 현재 원문 공개를 다시 확인한다(비공개면 파일이 남아 있어도 403). report-api가 서명한 짧은 주소(TTL 300초,
+        학부모 전용. 요청마다 연결·법정대리인 동의를 다시 확인한다. report-api가 서명한 짧은 주소(TTL 300초,
         attachment)를 돌려주고 memory_book_download에 받기 기록을 남긴다. 구독이 끝나도 보관 기간 안이면 받을 수 있다.
         응답 Cache-Control no-store.
       parameters:
@@ -7057,7 +7063,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: FORBIDDEN·CHILD_NOT_LINKED·STUDENT_RECORDS_PRIVATE
+          description: FORBIDDEN·CHILD_NOT_LINKED
           content:
             application/problem+json:
               schema:
@@ -7099,7 +7105,7 @@ paths:
       operationId: markMemoryBookReadTogether
       summary: 추억 그림책 "같이 읽었어요" 표시
       description: >-
-        학부모 전용(#1025). 본문 없음. 권한·확인 순서는 받기와 같다(학부모 세션 → 연결·법정대리인 동의 → 현재 원문 공개 → 그림책 → 상태).
+        학부모 전용(#1025). 본문 없음. 권한·확인 순서는 받기와 같다(학부모 세션 → 연결·법정대리인 동의 → 그림책 → 상태).
         READY만 표시할 수 있고, 보관 기간이 지나 EXPIRED로 보이는 책도 표시할 수 있다(파일이 없어도 읽은 기록은 맞음). 유료 판정은 하지 않는다.
         멱등: 이미 표시했으면 처음 시각(readTogetherAt)을 그대로 둔 채 200. 취소 API는 없다. 응답 Cache-Control no-store.
       parameters:
@@ -7124,7 +7130,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: FORBIDDEN(학부모 세션 아님)·CHILD_NOT_LINKED·STUDENT_RECORDS_PRIVATE
+          description: FORBIDDEN(학부모 세션 아님)·CHILD_NOT_LINKED
           content:
             application/problem+json:
               schema:
@@ -7248,7 +7254,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: 다른 보호자·동의 없음·권한 없음 · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)
+          description: 다른 보호자·동의 없음·권한 없음
           content:
             application/problem+json:
               schema:
@@ -7317,7 +7323,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: 다른 보호자·동의 없음·권한 없음 · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)
+          description: 다른 보호자·동의 없음·권한 없음
           content:
             application/problem+json:
               schema:
@@ -8129,7 +8135,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: Problem Details · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)
+          description: Problem Details
           content:
             application/problem+json:
               schema:
@@ -8209,7 +8215,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: Problem Details · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)
+          description: Problem Details
           content:
             application/problem+json:
               schema:
@@ -8994,7 +9000,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9049,7 +9055,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnalysisConversations'
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9078,7 +9084,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnalysisConversation'
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9109,7 +9115,7 @@ paths:
               schema:
                 type: string
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9168,7 +9174,7 @@ paths:
               schema:
                 type: string
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9203,7 +9209,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnalysisEvidenceResponse'
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9238,7 +9244,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnalysisExamples'
         '403':
-          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)
           content:
             application/problem+json:
               schema:
@@ -9626,7 +9632,7 @@ components:
           description: EXPIRED는 보관 기간이 지난 READY를 읽을 때 보여 주는 값(저장 상태 아님)
         failureCode:
           type: [string, 'null']
-          description: FAILED일 때 report 영구 실패 코드(STUDENT_RECORDS_PRIVATE·THEME_FRAME_NOT_FOUND·STUDENT_DELETED·INVALID_ROUND·ASSET_UNAVAILABLE 등). ASSET_UNAVAILABLE은 그림 주소가 있는데 한 장도 받지 못한 경우
+          description: FAILED일 때 report 영구 실패 코드(THEME_FRAME_NOT_FOUND·STUDENT_DELETED·INVALID_ROUND·ASSET_UNAVAILABLE 등). ASSET_UNAVAILABLE은 그림 주소가 있는데 한 장도 받지 못한 경우
         rounds:
           type: array
           minItems: 1
@@ -9677,7 +9683,7 @@ components:
         size: {type: integer, minimum: 1, maximum: 100}
         totalElements: {type: integer, minimum: 0, description: 노출 회차 수(무료는 끝난 최근 4주 안 회차만)}
         lockedCount: {type: integer, minimum: 0, description: 무료라 숨긴 회차 수. 유료는 0}
-        canCreate: {type: boolean, description: 그림책 발급 가능 여부(발급과 같은 features.memoryBook 판정). 하루 한도·원문 공개는 발급 오류로 따로 알린다}
+        canCreate: {type: boolean, description: 그림책 발급 가능 여부(발급과 같은 features.memoryBook 판정). 하루 한도는 발급 오류로 따로 알린다}
     MemoryBookDownload:
       type: object
       additionalProperties: false
@@ -9980,7 +9986,7 @@ components:
       required: [studentId, parentSharingEnabled]
       properties:
         studentId: {type: string, format: uuid}
-        parentSharingEnabled: {type: boolean, default: false}
+        parentSharingEnabled: {type: boolean, const: true, description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제'}
     CommunityReaction: {type: string, enum: [NEW_IDEA, CLEAR_REASON, DIFFERENT_VIEW, WANT_MORE]}
     CommunityPostStatus: {type: string, enum: [VISIBLE, HIDDEN_SETTING, HIDDEN_REPORT, REMOVED]}
     CommunitySettings:
@@ -10903,7 +10909,7 @@ components:
       properties:
         studentId: {type: string, format: uuid}
         nickname: {type: string}
-        parentSharingEnabled: {type: boolean, default: false}
+        parentSharingEnabled: {type: boolean, const: true, deprecated: true, description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제. report는 #1060부터 읽지 않음'}
         grade: {type: integer, minimum: 3, maximum: 9, description: '저장 학년. report 설명의 승인 범위 확인용 (#479)'}
     OperationPeriod:
       type: object
@@ -12410,9 +12416,11 @@ components:
         properties:
           parentSharingEnabled:
             type: boolean
-            description: 'core가 조회 시점의 학생 공유 설정으로 채운다. false면 원문·근거 링크를 뺀 응답 (#206, #614)'
+            const: true
+            deprecated: true
+            description: '#1064부터 항상 true(원문은 법정대리인 동의서 1.2로 제공). 웹 #1062 배포 뒤 후속 이슈에서 삭제(#614에서 추가)'
           explanations:
-            description: '#479 검증된 대표 답변 설명. 일일·무료·현재 원문 비공개이면 null. 과거 리포트는 누락/null 허용.'
+            description: '#479 검증된 대표 답변 설명. 일일·무료이면 null. 과거 리포트는 누락/null 허용.'
             oneOf:
             - type: 'null'
             - type: object
@@ -12486,7 +12494,7 @@ components:
           versions:
             type: object
           problems:
-            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다(answerTimes는 유지). 일일은 eveningQuestion·narrative가 항상 null이다.'
+            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 일일은 eveningQuestion·narrative가 항상 null이다.'
             type: array
             items:
               $ref: '#/components/schemas/DailyReportProblem'
@@ -12552,7 +12560,7 @@ components:
           items:
             type: object
         answerTimes:
-          description: '답변별 생각·작성 시간(P28, #803). 시간이 있는 답만 버전 순, 없으면 []. 원문이 아닌 수치라 보호자 공개(#206)가 꺼져도 core가 지우지 않는다. 이전 저장본은 report가 []로 준다.'
+          description: '답변별 생각·작성 시간(P28, #803). 시간이 있는 답만 버전 순, 없으면 []. 이전 저장본은 report가 []로 준다.'
           type: array
           items:
             type: object

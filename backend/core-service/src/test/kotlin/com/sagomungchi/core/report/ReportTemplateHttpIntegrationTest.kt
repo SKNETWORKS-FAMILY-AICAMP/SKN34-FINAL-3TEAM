@@ -96,11 +96,9 @@ class ReportTemplateHttpIntegrationTest : IntegrationTestSupport() {
         // 선택 실행: 실제 core의 저장 설정을 Python report 클라이언트로 읽어 파일까지 검증.
         // 미설정 시 이 검증을 수행했다고 집계하지 않는다. 서비스 CI에는 Python 환경을 요구하지 않음.
         System.getenv("REPORT_TEMPLATE_PROBE_PYTHON")?.let { python ->
-            for (privacy in listOf("public", "private")) {
-            jdbc.update("UPDATE student SET parent_sharing_enabled=? WHERE id=?", privacy == "public", student)
             val script=java.nio.file.Path.of("../../scripts/verify_report_template_rendering.py").toAbsolutePath()
-            val log=java.nio.file.Path.of("build/report-template-probe-$privacy.log").toAbsolutePath()
-            val process=ProcessBuilder(python,"-X","utf8",script.toString(),"http://127.0.0.1:$port",student.toString(),privacy)
+            val log=java.nio.file.Path.of("build/report-template-probe.log").toAbsolutePath()
+            val process=ProcessBuilder(python,"-X","utf8",script.toString(),"http://127.0.0.1:$port",student.toString())
                 .redirectErrorStream(true).redirectOutput(log.toFile()).apply {
                     environment()["INTERNAL_TOKEN"]="test-token"
                     environment()["DATABASE_URL"]="postgresql+psycopg://unused:unused@127.0.0.1:1/unused"
@@ -110,8 +108,6 @@ class ReportTemplateHttpIntegrationTest : IntegrationTestSupport() {
                 assertTrue(process.waitFor(90,java.util.concurrent.TimeUnit.SECONDS),"report 연결 검증 시간 초과")
                 assertEquals(0,process.exitValue(),java.nio.file.Files.readString(log))
             } finally { if(process.isAlive) process.destroyForcibly() }
-            }
-            jdbc.update("UPDATE student SET parent_sharing_enabled=true WHERE id=?",student)
         }
         assertEquals(409,call(path()+"/confirm",mapOf("proposalId" to id)).statusCode())
         val recorded=org.mockito.Mockito.mockingDetails(entitlement).invocations.filter { it.method.name=="recordAttempt" }

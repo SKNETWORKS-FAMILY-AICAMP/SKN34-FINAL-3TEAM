@@ -19,9 +19,8 @@ class LearningRecordService(private val client: LearningRecordClient, private va
         if (context.role != "PARENT" || context.userId == null || context.studentScope != setOf(studentId.toString()))
             throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "단일 자녀의 검증된 범위가 필요합니다.")
         context.requireStudent(studentId.toString())
-        learningContext.requireShared(studentId)
         require(answerIds.isNotEmpty() && answerIds.size <= 100)
-        return client.evidence(answerIds).also { learningContext.requireShared(studentId) }
+        return client.evidence(answerIds)
     }
     fun studentDashboard(resource: String, query: DashboardQuery) = run {
         val context = UserContextHolder.currentOrNull()
@@ -42,10 +41,7 @@ class LearningRecordService(private val client: LearningRecordClient, private va
         context.requireStudent(studentId.toString())
         UserContextHolder.set(context.copy(studentScope = setOf(studentId.toString())))
         try {
-            if (resource == "attempts" || resource.startsWith("attempts/")) learningContext.requireShared(studentId)
-            client.dashboard(studentId, resource, query.parameters(resource == "attempts"), true).also {
-                if (resource == "attempts" || resource.startsWith("attempts/")) learningContext.requireShared(studentId)
-            }
+            client.dashboard(studentId, resource, query.parameters(resource == "attempts"), true)
         }
         finally { UserContextHolder.set(context) }
     }

@@ -3,7 +3,6 @@ package com.sagomungchi.core.memorybook.service
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.guardianship.service.StudentAccessService
-import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.memorybook.client.MemoryBookFileResult
 import com.sagomungchi.core.memorybook.client.MemoryBookLearningClient
 import com.sagomungchi.core.memorybook.client.MemoryBookReportClient
@@ -30,8 +29,8 @@ data class MemoryBookCreated(val view: MemoryBookView, val created: Boolean)
 /**
  * 추억 그림책 공개 API 흐름 (docs/proposals/memory-book.md 6·7·10장).
  * 발급은 학부모만(2026-11-23 결정, D1 변경): 연결된 자녀의 보유 액자 회차를 골라 만들고 받는다. 학생 경로는 없다.
- * 원문 공개 자녀만(D2): 회차 목록·생성·목록·내려받기·같이 읽음 표시 모두 지금 `parentSharingEnabled`가 false면 403 `STUDENT_RECORDS_PRIVATE`.
- * 생성 순서: 공개 확인 → 같은 회차 재사용 → learning 보유 확인(외부 호출, 트랜잭션 밖) → 하루 한도 → 유료 판정·사용 예약
+ * 원문 제공은 연결 + 현재 법정대리인 동의(GUARDIAN 1.2, #1064)로 정해져 따로 공개 확인을 하지 않는다.
+ * 생성 순서: 같은 회차 재사용 → learning 보유 확인(외부 호출, 트랜잭션 밖) → 하루 한도 → 유료 판정·사용 예약
  * → 작업 행·명령 저장(실패하면 예약을 미사용으로 마감)
  */
 @Service
@@ -41,7 +40,6 @@ class MemoryBookService(
     private val learning: MemoryBookLearningClient,
     private val report: MemoryBookReportClient,
     private val entitlements: ProductEntitlementService,
-    private val learningContext: StudentLearningContextService,
     private val students: StudentAccessService,
 ) {
     /**
@@ -52,7 +50,6 @@ class MemoryBookService(
     fun rounds(childId: UUID, page: Int?, size: Int?): MemoryBookRoundPage {
         verifiedParent(childId)
         val (p, s) = paging(page, size)
-        learningContext.requireShared(childId)
         val canCreate = entitlements.memoryBookEnabled(childId)
         val (items, total, locked) = if (canCreate) learning.album(childId, p, s).let { (items, total) -> Triple(items, total, 0L) } else {
             val since = jobs.todayStart().toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).minusDays(FREE_DAYS)
@@ -72,7 +69,6 @@ class MemoryBookService(
     fun create(childId: UUID, round: MemoryBookRound?): MemoryBookCreated {
         val parent = verifiedParent(childId)
         val key = validRound(round)
-        learningContext.requireShared(childId)
         repository.reusable(childId, key.themeId, key.weekStart, jobs.now())?.let { return MemoryBookCreated(MemoryBookView.of(it, jobs.now()), false) }
         if (!learning.owned(childId, key)) throw BusinessException(HttpStatus.NOT_FOUND, "THEME_FRAME_NOT_FOUND", "보유하지 않은 기념 액자", "아직 받지 않은 기념 액자예요.")
         val limit = entitlements.memoryBookLimit(childId)
@@ -90,14 +86,12 @@ class MemoryBookService(
     fun books(childId: UUID, page: Int?, size: Int?): MemoryBookPage {
         verifiedParent(childId)
         val (p, s) = paging(page, size)
-        learningContext.requireShared(childId)
         val now = jobs.now()
         return MemoryBookPage(repository.page(childId, p, s).map { MemoryBookView.of(it, now) }, p, s, repository.count(childId))
     }
 
     fun download(childId: UUID, bookId: UUID): MemoryBookDownload {
         val parent = verifiedParent(childId)
-        learningContext.requireShared(childId)
         val job = readyBook(childId, bookId)
         if (job.expired(jobs.now())) expired()
         val download = when (val result = report.fileUrl(childId, bookId)) {
@@ -110,13 +104,12 @@ class MemoryBookService(
     }
 
     /**
-     * "같이 읽었어요" 표시(#1025). 권한·확인 순서와 오류는 받기와 같다(연결·동의 → 현재 원문 공개 → 404 → 만드는 중·실패 409).
+     * "같이 읽었어요" 표시(#1025). 권한·확인 순서와 오류는 받기와 같다(연결·동의 → 404 → 만드는 중·실패 409).
      * 보관 기간이 지난 책도 표시할 수 있다(파일이 없어도 읽은 기록은 맞음). 유료 판정은 하지 않는다.
      * 이미 표시했으면 처음 시각을 그대로 돌려준다(취소 없음)
      */
     fun readTogether(childId: UUID, bookId: UUID): MemoryBookView {
         verifiedParent(childId)
-        learningContext.requireShared(childId)
         val marked = jobs.readTogether(readyBook(childId, bookId)) ?: notFound()
         return MemoryBookView.of(marked, jobs.now())
     }
