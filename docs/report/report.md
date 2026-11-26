@@ -183,6 +183,8 @@ report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2
 
 ## 16. 학생 공개 설정과 원문 제외 (#206)
 
+> 2026-11-26 에픽 #1064로 폐지. report·ai 쪽 제거는 [34절](#34-학생-원문-공개-분기-제거-1060-2026-11-26). 아래는 당시 기록이다.
+
 - 생성 입력은 메시지의 과거 공개 값에 의존하지 않음. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략
 - 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 유지. 원문을 새 문장으로 대체 생성하지 않음
 - 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거. 비공개 중 파일 URL 재발급과 근거 조회는 403. 이미 전달한 파일은 회수하지 못함
@@ -495,3 +497,17 @@ kind 확인(2026-11-20 11:42~11:46 KST, 공유 `kind-sagomungchi-local`): 이 �
 - 넓은 쪽은 오른쪽 칸이 좁아 답 1개가 한 쪽에 들어가는 글자 수가 줄었다(500자 → 400자, 위 표). 넘치면 다음 쪽으로 이어진다. 넓은 쪽 규칙은 실제 답 길이(#974)를 보고 다시 정한다.
 - 1:1·세로 그림은 흰 틀 안 좌우 여백이 생긴다(실제 테마 그림은 16:9).
 - 한 날 글이 한 쪽을 넘으면 뒤 목차 번호가 밀리는 한계는 그대로다(11.2).
+
+## 34. 학생 원문 공개 분기 제거 (#1060, 2026-11-26)
+
+에픽 #1064 결정: 학부모 원문 제공을 학생 선택(#206, 기본 비공개)에서 자녀 등록 때 법정대리인 동의서(GUARDIAN 1.2) 필수 동의 + 학생 고지로 바꾸고 학생별 공개 설정을 없앤다. 이 절은 report·ai 몫이다. core 필드·API 제거는 #1061, 화면은 #1062, 설계 문서는 #1058.
+
+- 내부 프로필: `CoreClient.lookup`이 `parentSharingEnabled`를 읽지 않는다. core #1061 전(옛 필드가 `false`·`true`·잘못된 값)과 후(필드 없음) 모두 같은 결과다. `StudentDisplayName`·`GenerateReport`에서 `parent_sharing_enabled`를 뺐다
+- 주간·일일 리포트: 원문·돌아보기 문장·인용·근거 링크·되묻기 답을 지우던 분기를 없앴다. 생성 조건은 기간 종류·이용권만 본다(AI 서술은 주간 + `narrativeEnabled`)
+- AI 관찰 설명(FN-RPT-09): 주간 + 프리미엄(`narrativeEnabled`)만 조건. 원문 비공개로 `NO_TARGET`이 되는 경우가 없어졌다(대상 답변이 없을 때만 `NO_TARGET`). 위 25절의 "원문 공개 대상만"·분석 대화 전달 조건 "원문 공개"는 이 절로 대체(core 쪽 분석 대화 조건은 #1061)
+- 추억 그림책: 생성 전 프로필 원문 공개 재확인과 실패 코드 `STUDENT_RECORDS_PRIVATE`를 뺐다. 프로필은 별명 조회에만 쓴다. 영구 실패 코드는 `THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`
+- 파일 문구: 값이 빈 칸의 대체 문구 "원문 비공개"를 "답변 없음"으로 바꿨다(돌아보기는 썼으면 빈 칸, 안 썼으면 "미작성")
+- 이미 만든 판: 비공개 중 만든 리포트(원문 없음)는 그대로 둔다. 자동 재생성하지 않는다. `correction_impact`가 근거 링크 대신 `attemptId`로 찾는 동작은 그런 옛 판 때문에 유지
+- ai 리포트 표시 설정 제안 프롬프트(`analysis_agent/template_prompts.py`): 정책 문장을 "학생 원문 제공은 자녀 등록 때 보호자 필수 동의로 정해지며 표시 설정으로 바꿀 수 없다"로 바꿨다. 공개 설정 변경 요청은 계속 보류한다. 버전 `analysis-template@1`은 올리지 않았다(이미지가 한 버전 본문만 가지므로 올리면 core 레지스트리 활성화가 함께 필요하다. 응답 구조·허용 범위는 그대로)
+- 그대로 둔 것: 생각 메모는 리포트·분석에 넣지 않는다. 친구 공개(COMMUNITY)는 관련 없음. `contracts/openapi/report-service.yaml`의 `answerTimes` 설명에 남은 "원문 비공개(#206)여도" 문구와 core 계약의 `STUDENT_RECORDS_PRIVATE`는 #1061·#1058에서 정리
+- 시험: `tests/test_student_sharing.py` 삭제. `test_core_profile.py`(필드 없음·`false`·잘못된 값에서도 주간 서술·설명 조건 유지), `test_memory_book_generation.py`(실제 `CoreClient`로 필드 없음·`false`·`true` 모두 READY), `test_daily_report.py`(일일 원문·인용·근거 항상 포함), `test_explanations.py`(비공개 `NO_TARGET` 경우 제거)

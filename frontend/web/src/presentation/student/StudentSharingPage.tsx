@@ -8,17 +8,12 @@ import './learning-settings.css'
 /**
  * embedded면 학생 설정(#583) 안의 카드 하나로 그린다(제목 h2 "공개 설정", 바깥 main 없음, #648 시안 Settings).
  * 학부모 공개는 학생이 고르지 않는다(#1064): 자녀 등록 때 학부모가 법정대리인 동의서(GUARDIAN 1.2)로 동의하고,
- * 학생에게는 여기와 첫 둘러보기(#1038)에서 알리기만 한다. 고를 수 있는 것은 친구 공개(P20)뿐이다.
+ * 학생에게는 첫 둘러보기(#1038) 첫 대사로 알리기만 한다(user-flow 3.2). 여기에는 친구 공개(P20)만 둔다.
  */
 export function StudentSharingPage({ child, embedded = false }: { child: Child; embedded?: boolean }) {
   const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
   return <Wrapper className={embedded ? 'st-sharing st-settings-part' : 'st-paper st-sheet st-sharing'} aria-labelledby="sharing-h">
     <Title id="sharing-h" tabIndex={embedded ? -1 : undefined}>{embedded ? '공개 설정' : '내 답 공개 설정'}</Title>
-    {/* 학부모 안내 묶음. 설정 카드(embedded)에서는 친구 공개와 왼쪽·오른쪽 두 칸으로 놓는다(#648, 한 화면) */}
-    <div className="st-sharing-parent" role="note" aria-label="학부모님께 보이는 답">
-      <p><strong>내가 쓴 답은 학부모님이 보실 수 있어요.</strong></p>
-      <p className={embedded ? 'st-meta' : undefined}>학부모님이 가입할 때 동의해 주셨어요. 학부모님은 내 답과 리포트로 내가 어떻게 생각했는지 살펴봐요.</p>
-    </div>
     <CommunitySharing child={child} level={embedded ? 'h3' : 'h2'} />
   </Wrapper>
 }

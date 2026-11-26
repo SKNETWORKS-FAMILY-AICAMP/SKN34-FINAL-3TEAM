@@ -20,6 +20,7 @@ from pypdf import PdfReader
 
 from app.bootstrap import create_app
 from app.clients.asset_fetcher import AssetFetcher, parse_internal_origins, parse_origins
+from app.clients.core_client import CoreClient
 from app.clients.memory_book_client import (
     MemoryBookLearningClient,
     MemoryBookRound,
@@ -329,11 +330,21 @@ class Locks:
 
 
 class Profiles:
-    def __init__(self, shared=True):
-        self.shared = shared
+    """실제 CoreClient로 내부 프로필을 읽는다. extra는 core가 더 보내는 필드(#1061 전 옛 필드)."""
+
+    def __init__(self, extra=None):
+        self.extra = extra or {}
 
     async def lookup(self, student_id):
-        return SimpleNamespace(nickname="합성학생", parent_sharing_enabled=self.shared)
+        def handler(request):
+            if request.url.path.endswith("/report-template"):
+                return httpx.Response(200, json={"settings": {}, "revision": 0})
+            body = {"studentId": str(student_id), "nickname": "합성학생", **self.extra}
+            return httpx.Response(200, json=body)
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(base_url="http://core", transport=transport) as http:
+            return await CoreClient(http).lookup(student_id)
 
 
 class Learning:
@@ -482,19 +493,18 @@ def test_round_without_any_image_url_is_still_ready(db_session_factory, s3):
     assert events[0].data["status"] == "READY"
 
 
-def test_private_student_fails_without_calling_learning(db_session_factory, s3):
+@pytest.mark.parametrize(
+    "extra", [{}, {"parentSharingEnabled": False}, {"parentSharingEnabled": True}]
+)
+def test_profile_sharing_field_is_ignored(db_session_factory, s3, extra):
+    # #1064: 원문은 보호자 필수 동의로 제공된다. core #1061 전후(옛 필드 있음·없음) 모두 만든다.
     student, learning_ = uuid4(), Learning(round_json())
     command, events, _ = run_service(
-        db_session_factory, s3, student, profiles=Profiles(shared=False), learning_=learning_
+        db_session_factory, s3, student, profiles=Profiles(extra), learning_=learning_
     )
-    assert learning_.calls == 0
-    assert not s3.exists(memory_book_key(student, command.book_id))
-    assert events[0].data == {
-        "bookId": str(command.book_id),
-        "studentId": str(student),
-        "status": "FAILED",
-        "failureCode": "STUDENT_RECORDS_PRIVATE",
-    }
+    assert learning_.calls == 1
+    assert s3.exists(memory_book_key(student, command.book_id))
+    assert events[0].data["status"] == "READY"
 
 
 @pytest.mark.parametrize(

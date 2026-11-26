@@ -17,7 +17,7 @@ import java.util.UUID
 /**
  * 추억 그림책 회차 조립 내부 API (docs/proposals/memory-book.md 7.2).
  * report-worker(SYSTEM 역할)만, `X-Student-Scope`에 경로 학생이 있어야 함. 그 밖 역할·범위 403, 미보유·진행 중인 주 404.
- * 원문 공개 확인(#206)은 core·report가 생성 전에 한다
+ * 연결·유료 확인은 core가 발급 때 한다. 원문은 보호자 필수 동의(GUARDIAN 1.2)로 제공된다(#1064)
  */
 @RestController
 class MemoryBookController(private val service: MemoryBookService) {

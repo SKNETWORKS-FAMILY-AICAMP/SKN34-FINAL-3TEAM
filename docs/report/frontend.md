@@ -1552,16 +1552,16 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 
 ## 60. 학생 원문 공개 설정 제거·첫 진입 고지·학부모 안내 문구 (#1062, 에픽 #1064, 2026-11-26)
 
-학생이 학부모 공개를 고르던 설정(#206, 기본 비공개)을 없애고, 자녀 등록 때 법정대리인 동의서(GUARDIAN 1.2)에 학부모가 동의하는 것으로 바꿨다. 학생에게는 설정 화면과 첫 둘러보기에서 알리기만 한다. 친구 공개(P20)는 그대로다. 이 절은 §11·§14·§57·§58의 "원문 비공개" 설명을 대신한다.
+학생이 학부모 공개를 고르던 설정(#206, 기본 비공개)을 없애고, 자녀 등록 때 법정대리인 동의서(GUARDIAN 1.2)에 학부모가 동의하는 것으로 바꿨다. 학생에게는 첫 둘러보기에서 알리기만 한다. 친구 공개(P20)는 그대로다. 이 절은 §11·§14·§57·§58의 "원문 비공개" 설명을 대신한다.
 
 #### 바꾼 것
 
-- 학생 설정 `StudentSharingPage.tsx`: 학부모 공개 라디오·상태 문구를 빼고 같은 칸에 안내 "내가 쓴 답은 학부모님이 보실 수 있어요."(`role="note"`, 이름 "학부모님께 보이는 답")를 둔다. 두 칸 배치(#648)와 친구 공개 `CommunitySharing`은 그대로
-- 학생 둘러보기 첫 대사(`tourSteps.ts`): "안녕! 나는 ○○야. 네가 쓴 답은 학부모님도 보실 수 있어. 지금부터 …". 캐릭터가 반말로 학생에게 말하므로 이슈의 "내가 쓴 답은 …보실 수 있어요"를 캐릭터 말투로 바꿨다. 친구 생각 대사는 학부모 열람과 헷갈리지 않게 "친구들에게 내 답을 보여 줄지는 네가 정해."로 고쳤다. 완료 기록은 기존 `/students/me/onboarding` 그대로라, 이미 끝낸 학생은 도움말 "화면 둘러보기 다시 하기"로만 다시 본다
+- 학생 설정 `StudentSharingPage.tsx`: 학부모 공개 묶음(라디오·상태 문구)을 지우고 친구 공개 `CommunitySharing`만 남겼다(user-flow 3.2 설정 = 커뮤니티 공개). 공개 설정 카드 안 두 칸 배치(`pages.css`)도 한 칸으로 되돌렸다
+- 학생 둘러보기 첫 대사(`tourSteps.ts`): "안녕! 나는 ○○야. 네가 쓴 답과 돌아보기는 보호자도 함께 볼 수 있어. 지금부터 …"(#1058에서 정한 문구, `docs/proposals/onboarding.md` 5.2 상태 메모). 6번 친구 생각 대사는 그대로. 완료 기록은 기존 `/students/me/onboarding` 그대로라, 이미 끝낸 학생은 도움말 "화면 둘러보기 다시 하기"로만 다시 본다
 - 삭제: `data/classroom/sharingApi.ts`, `useStudentSharing`(useClassroom), `useParentSharingNotice`(parent/queries), `presentation/parent/ParentSharingNotice.tsx`, `mocks/fixtures/sharing.ts`. `WeeklyReport.parentSharingEnabled` 필드도 뺐다(서버가 아직 보내도 무시)
 - 비공개 분기 제거: `ParentWorkspace`(공개 상태 조회·안내 칸·`canReadOriginals`), `ParentInsights`, `ParentConversation`("기록 분석 질문은 잠시 쉬어요" 화면), `ParentDashboard`·`ActivityExplorer`(날짜·원문 숨김, "비공개"/"확인 필요" 칸), `ChildParticipation`(나눈 생각 원문), `ParentReports`(다운로드 잠금·질문하기 숨김·"아이의 답변이 비공개입니다."·원문 근거 단추·일일 되묻기 답 가림), `ReportExplanations`(비공개 안내), `domain/reportHighlight.ts`(강조 조건), `domain/memoryBook.ts`(`STUDENT_RECORDS_PRIVATE` 문구 두 개 — 예전 실패 기록에 이 코드가 남아 있어도 "지난 발급 실패"로 보인다)
 - 문구: `UsageGuide.tsx` FAQ("아이의 답변 원문을 볼 수 있나요?"로 바꿈, 대화·그림책의 "원문 공개 조건" 삭제, 친구 공개 문항) 이용 안내 `dt`·체크 항목, `LandingPage.tsx` 학부모 소개 세 줄, `ReportTemplateEditor.tsx`의 "원문 공개 여부는 학생의 별도 설정을 따릅니다" 삭제
-- MSW: `sharing-preferences` 세 경로와 `requireShared`·`privateReport`를 `student.ts`·`parent.ts`·`memoryBook.ts`·`structuredReportDemo.ts`에서 뺐다. 목업 GUARDIAN 문서를 1.2(문서 ID는 목업 값 `…010640001`, core #1061 V60 전)로 올리고 본문에 "학부모(법정대리인)에게 자녀의 답변·생각 메모·돌아보기 원문을 제공" 문장을 넣었다. 확정 문구는 #1058
+- MSW: `sharing-preferences` 세 경로와 `requireShared`·`privateReport`를 `student.ts`·`parent.ts`·`memoryBook.ts`·`structuredReportDemo.ts`에서 뺐다. 목업 GUARDIAN 문서를 1.2(문서 ID는 목업 값 `…010640001`, core #1061 V60 전)로 올리고 본문에 #1058에서 정한 목적 구절("법정대리인(학부모)에게 자녀의 학습 답변·돌아보기 원문 제공(생각 메모 제외)")을 넣었다. 실제 문서 본문은 core #1061 migration이 넣는다
 - `requirements-audit.json` 대표 답변 설명 항목의 "원문 공개 자녀" 조건 삭제
 
 #### 확인한 것
@@ -1571,10 +1571,10 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 
 #### 정한 것
 
-- 학생 설정의 학부모 칸은 지우지 않고 안내로 바꿨다. 이슈는 "라디오·상태 문구 삭제"이고, 설정에서도 고지가 보이는 편이 학생 고지 취지(첫 진입 1회 한계)에 맞다
+- 처음에는 학생 설정의 학부모 칸을 안내 문구로 남겼으나, 먼저 병합된 #1058 설계(user-flow 3.2: 설정 = 커뮤니티 공개, 고지는 둘러보기 첫 대사)에 맞춰 지웠다
 - 서버 리포트 응답에 `parentSharingEnabled`가 남아 있어도 화면은 읽지 않는다. core #1061이 필드·API를 지우기 전에 병합해도 동작이 바뀌지 않는다(학부모 GET `sharing-preferences`를 더는 부르지 않음)
 
 #### 남은 것
 
 - 실서버 연동: core #1061(GUARDIAN 1.2 시드·비공개 차단 제거)이 병합되기 전 실서버는 학생 기본 비공개라 원문 요청이 403이다. 그래서 e2e `learning-journey`·`parent-reports`·`memory-book`은 임시로 `allowParentOriginals`(`tests/e2e/support/memoryBook.ts`)를 부른다. 컬럼이 있을 때만 `parent_sharing_enabled`를 켜고, #1061 병합 뒤에는 아무 일도 하지 않는다. #1061 병합 뒤 함수와 호출을 지운다. CI에 없는 `transfer-local/transfer-ui.spec.ts`는 #1061 병합 뒤에 돌려야 통과한다
-- `docs/design`의 나머지 정책 문구(functional-spec·api-spec·erd 등)는 #1058에서 바꾼다. 이 이슈는 `user-flow.md`의 학부모 원문 열람·그림책·학생 설정·둘러보기·사용성 기준 줄만 고쳤다
+- `docs/design` 정책 문구는 #1058(병합됨)이 바꿨다. 이 PR은 develop과 합치면서 `user-flow.md`를 #1058 판으로 두었다

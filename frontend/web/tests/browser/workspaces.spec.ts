@@ -29,8 +29,7 @@ test('학생 공개 설정 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
   await page.getByRole('button', { name: '설정', exact: true }).click()
   await expect(page.getByRole('heading', { name: '공개 설정', exact: true })).toBeVisible()
-  // #1064: 학부모 공개는 고르지 않고 안내만 한다. 고를 수 있는 것은 친구 공개뿐
-  await expect(page.getByRole('note', { name: '학부모님께 보이는 답' })).toContainText('내가 쓴 답은 학부모님이 보실 수 있어요.')
+  // #1064: 학부모 공개 선택지는 없고(고지는 첫 둘러보기) 친구 공개만 고른다
   await expect(page.getByRole('radio', { name: '비공개로 둘게요' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '학부모님께 공개할게요' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '나만 볼게요' })).toBeVisible()
