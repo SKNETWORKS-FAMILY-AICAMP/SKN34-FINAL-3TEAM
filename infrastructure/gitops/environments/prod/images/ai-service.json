@@ -1,6 +1,6 @@
 {
   "image": {
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service",
-    "digest": "sha256:ca3e4ee95a2c37621205f88b375b8c09f1630d6f587a31c14a11458c233fb759"
+    "digest": "sha256:03d41c58a720c635f9ece11c9472139259ad4a71445d3c321300e6ec8a68ac5d"
   }
 }
