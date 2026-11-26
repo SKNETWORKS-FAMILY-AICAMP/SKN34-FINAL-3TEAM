@@ -127,7 +127,6 @@ export const memoryBookPolling = (rounds: MemoryBookRoundItem[] | undefined) => 
 export function memoryBookFailedReason(failureCode: string | null): string {
   switch (failureCode) {
     case 'ASSET_UNAVAILABLE': return '그림을 불러오지 못해 만들지 못했습니다. 다시 발급해 주세요.'
-    case 'STUDENT_RECORDS_PRIVATE': return '아이가 답 보여 주기를 꺼서 만들지 못했습니다.'
     default: return '지난 발급 실패'
   }
 }
@@ -137,7 +136,6 @@ export function memoryBookFailure(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null
   switch (error.problem.code) {
     case 'PREMIUM_REQUIRED': return '추억 그림책은 프리미엄 이용권에서 발급할 수 있습니다.'
-    case 'STUDENT_RECORDS_PRIVATE': return '아이가 답 보여 주기를 켜야 그림책을 발급하고 볼 수 있습니다.'
     case 'USAGE_LIMIT_REACHED': return '오늘은 그림책을 더 발급할 수 없습니다. 내일 다시 시도해 주세요.'
     case 'THEME_FRAME_NOT_FOUND': return '아이가 아직 받지 않은 액자입니다.'
     case 'MEMORY_BOOK_NOT_READY': return '그림책을 만들고 있습니다. 잠시만 기다려 주세요.'

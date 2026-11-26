@@ -20,11 +20,10 @@ import { Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 
 export function ParentReports({
-  child, canReadOriginals,
+  child,
   onAskReport, highlight, revealToken = 0, onReportChange,
 }: {
   child: Child
-  canReadOriginals: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   onReportChange?: () => void
@@ -64,7 +63,6 @@ export function ParentReports({
         <ReportDetail
           key={active.reportId}
           child={child}
-          canReadOriginals={canReadOriginals}
           id={active.reportId}
           revision={activeRevision}
           highlight={selected?.reportId === active.reportId ? selected : undefined}
@@ -153,13 +151,12 @@ function ReportPeriodPicker({ items, selected, onSelect }: {
 }
 
 function ReportDetail({
-  child, canReadOriginals,
+  child,
   id,
   revision,
   onAskReport, highlight, revealToken = 0, periodPicker,
 }: {
   child: Child
-  canReadOriginals: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   id: string
@@ -168,7 +165,7 @@ function ReportDetail({
   onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
-      ['report', child.id, id, revision ?? 'latest', canReadOriginals],
+      ['report', child.id, id, revision ?? 'latest'],
       (signal) => parentApi.report(id, child.id, revision, signal),
       true,
       true,
@@ -179,8 +176,7 @@ function ReportDetail({
     download = useParentMutation(() => parentApi.download(id, 'pdf')),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
-  const awaitingPrivateReport = !canReadOriginals && q.data?.status === 'COMPLETED' && q.data.parentSharingEnabled !== false
-  const r = q.error || awaitingPrivateReport ? undefined : q.data,
+  const r = q.error ? undefined : q.data,
     ready = r?.status === 'COMPLETED',
     daily = !!r && reportPeriodType(r) === 'DAILY'
   const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
@@ -215,12 +211,11 @@ function ReportDetail({
   }
   return (
     <section className="ws-card report-detail" ref={panel}>
-      {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
       <header className="report-toolbar">
         {periodPicker}
         <div className="report-toolbar-actions">
           <ReportProblem targetType="REPORT" targetId={id} />
-          {r && ready && r.parentSharingEnabled !== false && (
+          {r && ready && (
             <button className="cj-secondary" disabled={conversationOff}
               title={conversationOff ? 'AI 질문은 프리미엄 기능입니다.' : undefined}
               onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>
@@ -228,7 +223,7 @@ function ReportDetail({
             </button>
           )}
           {r && ready && (
-            <button className="cj-primary" disabled={download.isPending || r.parentSharingEnabled !== true}
+            <button className="cj-primary" disabled={download.isPending}
               onClick={() => void downloadReport()}>
               {download.isPending ? '다운로드 준비 중' : '리포트 다운로드'}
             </button>
@@ -256,21 +251,20 @@ function ReportDetail({
                     </div>
                     <details className="report-source"><summary>요약 출처</summary><p>{r.narrative.source}</p></details>
                   </section>
-                ) : entitlement?.narrativeEnabled === false && r.parentSharingEnabled !== false ? (
+                ) : entitlement?.narrativeEnabled === false ? (
                   <PremiumPreview childId={child.id} />
                 ) : (
-                  <p>{r.parentSharingEnabled === false ? '아이의 답변이 비공개입니다.' : '이 리포트는 학습 수치를 제공합니다.'}</p>
+                  <p>이 리포트는 학습 수치를 제공합니다.</p>
                 ))}
                 <section className="report-data-group report-stat-panel" aria-label="학습 수치">
                   <h3>학습 수치</h3>
-                  <ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics}
-                    canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} />
+                  <ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} onProof={setProof} />
                   <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
                 </section>
               </div>
               {daily && (
                 <DailyProblems completedDate={r.period.from} highlighted={targets.problems} problems={r.problems ?? []}
-                  canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
+                  onProof={setProof} />
               )}
               {!daily && r.themeSummary && (
                 <details className="report-theme-disclosure">
@@ -278,7 +272,7 @@ function ReportDetail({
                   <ThemeSummaryView summary={r.themeSummary} />
                 </details>
               )}
-              {!daily && (entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false ? (
+              {!daily && (entitlement?.narrativeEnabled !== false ? (
                 <>
                   <WeeklyActivityRecords report={r} studentName={child.nickname} targets={targets} onProof={setProof} narrativeEnabled={entitlement?.narrativeEnabled} />
                   {r.eveningQuestion && (
@@ -293,9 +287,8 @@ function ReportDetail({
           )}
         </>
       )}
-      {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
       {notice && <p role="status">{notice}</p>}
-      {proof && r && canReadOriginals && r.parentSharingEnabled !== false && (
+      {proof && r && (
         <Modal title="리포트 항목 내용" scrollIndicator onClose={() => setProof(null)}>
           <EvidenceQuery
             queryKey={['report-evidence', child.id, id, proof]}
@@ -309,7 +302,7 @@ function ReportDetail({
 
 /**
  * 무료 주간 리포트의 프리미엄 칸 미리보기(P13, #998). 제목과 한 줄 설명만 보이고 내용은 요청하지 않는다.
- * 누르면 이용권·결제 화면의 비교표(`#plan-compare`)로 간다. 원문 비공개 자녀는 기존 비공개 문구를 쓴다.
+ * 누르면 이용권·결제 화면의 비교표(`#plan-compare`)로 간다.
  */
 function PremiumPreview({ childId }: { childId: string }) {
   const to = `/parent/billing?${new URLSearchParams({ childId })}#plan-compare`
@@ -338,7 +331,7 @@ const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
 }
 
 /** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[] }) {
+function DailyProblems({ completedDate, problems, onProof, highlighted }: { completedDate: string; problems: DailyProblem[]; onProof: (itemId: string) => void; highlighted: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
@@ -353,7 +346,7 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
             {p.context ? `${contextLabels[p.context]} · ` : ''}
             {p.judgment ? `판정 ${judgmentLabels[p.judgment]}` : '판정 없음'}
           </p>
-          {/* P28: 생각·작성 시간은 원문이 아니라 원문 비공개여도 보인다. 시간 없는 답은 줄을 생략 */}
+          {/* P28: 생각·작성 시간. 시간 없는 답은 줄을 생략 */}
           {(p.answerTimes ?? []).map((t) => (
             <p key={t.version}>{answerTimeLine(t)}</p>
           ))}
@@ -361,11 +354,11 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
             <div className="report-followup" key={j}>
               <div className="report-followup-question"><span className="report-step-label">되묻기 {j + 1}</span><p>{f.question}</p></div>
               <div className="report-student-response"><span className="report-response-label">아이의 답변</span>
-                <blockquote data-empty={!canReadOriginals || !f.answer || undefined}>{canReadOriginals ? f.answer ?? '보완 답변 없음' : '아이가 답변 원문을 비공개로 두었어요.'}</blockquote>
+                <blockquote data-empty={!f.answer || undefined}>{f.answer ?? '보완 답변 없음'}</blockquote>
               </div>
             </div>
           ))}
-          {canReadOriginals && p.finalAnswer && (
+          {p.finalAnswer && (
             <section className="report-final-answer">
               <h4>마지막 답</h4>
               <blockquote>{p.finalAnswer}</blockquote>
@@ -381,8 +374,8 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
             {p.reflection?.written && p.reflection.difficulty && <span className="report-difficulty">{difficultyText(p.reflection.difficulty)}</span>}
             <p>{p.reflection?.written ? p.reflection.text || '작성함' : '쓰지 않음'}</p>
           </section>
-          {!p.itemId && canReadOriginals && <p>이 문제에는 연결된 원문 근거가 없습니다.</p>}
-          {p.itemId && canReadOriginals && (
+          {!p.itemId && <p>이 문제에는 연결된 원문 근거가 없습니다.</p>}
+          {p.itemId && (
             <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>
               내용
             </button>
@@ -421,10 +414,9 @@ function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
   )
 }
 
-function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }: {
+function ReportMetricCounts({ metrics, highlighted, onProof }: {
   metrics: (Metric & { itemId?: string })[]
   highlighted: number[]
-  canReadOriginals: boolean
   onProof: (id: string) => void
 }) {
   const [page, setPage] = useState({ index: 0, highlight: '' })
@@ -443,8 +435,8 @@ function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }:
           <span>전체 {metric.denominator.toLocaleString()}건 중</span>{' '}
           <strong>{metric.numerator.toLocaleString()}건</strong>
           {metric.state === 'NO_RECORD' && <small>기록 없음</small>}
-          {canReadOriginals && <button type="button" className="report-metric-proof" aria-label={`${label} 내용 보기`}
-            onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용</button>}
+          <button type="button" className="report-metric-proof" aria-label={`${label} 내용 보기`}
+            onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용</button>
         </dd>
       </div>
     })}</dl>

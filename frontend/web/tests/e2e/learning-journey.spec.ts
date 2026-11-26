@@ -3,7 +3,7 @@ import { expect, test, type BrowserContext } from '@playwright/test'
 import { newParent, useGoogleIdentity, type GoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { queueWeeklyReport } from './support/db.ts'
-import { expectJournalDone, loginStudent, solveNarrative, startExtraMission, studentMenu } from './support/student.ts'
+import { expectJournalDone, loginStudent, solveNarrative, startExtraMission } from './support/student.ts'
 
 const mission = '쉬는 시간을 늘린다면?' // backend/learning-service/db/seed/demo_missions.sql 2번 (초3·NARRATIVE)
 
@@ -29,14 +29,10 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await solveNarrative(page, '저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
     // #648: 완료 기록은 내 공책 한 줄의 '마무리' 상태로 확인한다(옛 기록 카드 "국어 · 제목 … 완료" 대신)
     await expectJournalDone(page, mission)
-
-    // 답변 원문은 기본 비공개라 학부모 공책에 보이도록 학생이 공개로 바꾼다.
-    await studentMenu(page, '설정')
-    await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-    await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
+    // 답변 원문은 자녀 등록 때 법정대리인 동의(GUARDIAN 1.2)로 학부모에게 보인다(#1064). 학생 설정은 바꾸지 않는다.
   })
 
-  // 학생 기기와 별개인 새 보호자 컨텍스트에서 로그인해 공개한 기록을 확인한다.
+  // 학생 기기와 별개인 새 보호자 컨텍스트에서 로그인해 기록을 확인한다.
   test('학부모 대시보드 → 주간 리포트', async ({ context, page }) => {
     await useGoogleIdentity(context, parent)
     await page.goto('/login')
@@ -52,7 +48,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
     await page.waitForURL('**/parent/report**')
     await openCompletedReport(page, '주간', `${from} ~ ${to}`)
-    // 무료·원문 공개 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이용권·결제 비교표로 간다(누르지 않음)
+    // 무료 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이용권·결제 비교표로 간다(누르지 않음)
     const preview = page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요', exact: true })
     await expect(preview).toBeVisible()
     await expect(preview.getByText('한 주의 기록', { exact: true })).toBeVisible()

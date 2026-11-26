@@ -36,7 +36,7 @@ function OriginalAnswer({ report, item }: { report: WeeklyReport; item: ReportEx
 
 export function reportExplanationItems(report: WeeklyReport): ReportExplanation[] {
   if (reportPeriodType(report) === 'DAILY' || report.status !== 'COMPLETED' ||
-      report.parentSharingEnabled !== true || report.explanations?.state !== 'INCLUDED') return []
+      report.explanations?.state !== 'INCLUDED') return []
   const items = report.explanations.items
   if (!Array.isArray(items) || !items.length) return []
   return items.filter(item => item && item.attemptId && item.answerId &&
@@ -57,8 +57,7 @@ export function ReportExplanations({ report, attemptId, narrativeEnabled, studen
   const items = reportExplanationItems(report)
   const matching = items.filter(item => item.attemptId === attemptId)
   let notice = ''
-  if (report.parentSharingEnabled !== true) notice = '답변 원문이 비공개이거나 공개 여부를 확인하지 못해 대표 답변 설명을 표시하지 않습니다.'
-  else if (narrativeEnabled === false) notice = '대표 답변 설명은 프리미엄 이용권에서 제공합니다.'
+  if (narrativeEnabled === false) notice = '대표 답변 설명은 프리미엄 이용권에서 제공합니다.'
   else if (!report.explanations) notice = '이 리포트에는 대표 답변 설명 정보가 제공되지 않았습니다.'
   else if (report.explanations.state === 'NOT_INCLUDED') notice = '이 리포트에 대표 답변 설명이 포함되지 않았습니다.'
   else if (report.explanations.state === 'NO_TARGET') notice = '대표 답변 설명에 해당하는 답변 기록이 없습니다.'

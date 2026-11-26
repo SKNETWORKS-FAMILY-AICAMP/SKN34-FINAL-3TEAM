@@ -42,7 +42,10 @@ export function setWorkspaceScenario(value: string) {
 
 
 // Development fixture state only; never imported by the production API path.
-/** 현재 동의 문서. 문서 ID·버전은 core V39(TERMS 1.1)·V54(PRIVACY 1.2·GUARDIAN 1.1)와 같고 제목·본문은 시연 문구 */
+/**
+ * 현재 동의 문서. 문서 ID·버전은 core V39(TERMS 1.1)·V54(PRIVACY 1.2)와 같고 제목·본문은 시연 문구.
+ * GUARDIAN 1.2는 학부모에게 자녀 답변 원문 제공을 필수 목적으로 더한 판(#1064, core #1061 V60 예정)이라 ID는 목업 값이다.
+ */
 export const consentDocuments: ConsentDocument[] = [
   {
     documentId: '00000000-0000-4000-8000-000004150001',
@@ -61,12 +64,12 @@ export const consentDocuments: ConsentDocument[] = [
     required: true,
   },
   {
-    documentId: '00000000-0000-4000-8000-000007320002',
+    documentId: '00000000-0000-4000-8000-000010640001',
     kind: 'GUARDIAN',
-    version: '1.1',
+    version: '1.2',
     title: '법정대리인 동의',
     content:
-      '만 14세 미만 자녀의 법정대리인임을 확인하고 자녀 정보 처리에 동의합니다. 개발 시연 문구입니다.',
+      '만 14세 미만 자녀의 법정대리인임을 확인하고 자녀 정보 처리에 동의합니다. 학부모(법정대리인)에게 자녀의 답변·생각 메모·돌아보기 원문을 제공하는 것이 필수 목적에 포함됩니다. 개발 시연 문구입니다.',
     required: true,
   },
 ]

@@ -3,6 +3,7 @@
  * 강조할 곳은 각 화면의 `data-tour` 표시로 찾는다(CSS 클래스에 기대지 않음). 한 대사에 여러 경우(variants)를 두고,
  * 앞쪽 표시가 있으면 그것을, 없으면 뒤쪽(상태별 대체 대사)을 쓴다. ring이 false면 강조 없이 화면 전체만 어둡게 한다.
  * 화면 데이터: 홈 StudentHome, 내 공책 StudentJournal, 생각 활동 ThinkingActivities, 친구 생각 StudentCommunity, 내 방 StudentRoom
+ * 첫 대사는 학부모가 답을 볼 수 있다는 고지를 겸한다(#1064, 완료 기록은 /students/me/onboarding 그대로).
  * 아이 화면이라 결제·이용권 문구는 넣지 않고, 시작 영상·오늘 장면·문제 화면 안으로는 들어가지 않는다(시도 기록이 생기지 않게)
  */
 export type TourPage = 'home' | 'journal' | 'activities' | 'community' | 'room'
@@ -17,10 +18,10 @@ export const josa = (word: string, withFinal: string, withoutFinal: string) => {
 
 const TODAY = "여기 '오늘 문제 풀기'를 누르면 그날 문제가 열려."
 const DAYS = '월요일부터 금요일까지 하루에 하나씩 열려. 못 푼 날은 토요일까지 풀 수 있어.'
-const COMMUNITY = "'친구 생각'에서는 친구들이 쓴 생각을 볼 수 있어. 내 답을 보여 줄지는 네가 정해."
+const COMMUNITY = "'친구 생각'에서는 친구들이 쓴 생각을 볼 수 있어. 친구들에게 내 답을 보여 줄지는 네가 정해."
 
 export const TOUR_STEPS: TourStep[] = [
-  { page: 'home', variants: [], fallback: (n) => `안녕! 나는 ${n}${josa(n, '이야', '야')}. 지금부터 화면을 하나씩 같이 둘러보자!` },
+  { page: 'home', variants: [], fallback: (n) => `안녕! 나는 ${n}${josa(n, '이야', '야')}. 네가 쓴 답은 학부모님도 보실 수 있어. 지금부터 화면을 하나씩 같이 둘러보자!` },
   {
     page: 'home',
     variants: [
@@ -62,7 +63,7 @@ export const TOUR_STEPS: TourStep[] = [
       // 공개 미동의: 내 답이 친구들에게 안 보이는 상태
       { target: 'community-private', ring: false, line: () => "'친구 생각'에서는 친구들이 쓴 생각을 볼 수 있어. 지금은 내 답이 친구들에게 안 보여. 설정에서 바꿀 수 있어." },
       // 마무리한 미션이 없거나 친구 생각이 아직 없음
-      { target: 'community-empty', ring: false, line: () => "'친구 생각'에서는 미션을 끝까지 한 뒤에 친구들이 쓴 생각을 볼 수 있어. 내 답을 보여 줄지는 네가 정해." },
+      { target: 'community-empty', ring: false, line: () => "'친구 생각'에서는 미션을 끝까지 한 뒤에 친구들이 쓴 생각을 볼 수 있어. 친구들에게 내 답을 보여 줄지는 네가 정해." },
     ],
     fallback: () => COMMUNITY,
   },

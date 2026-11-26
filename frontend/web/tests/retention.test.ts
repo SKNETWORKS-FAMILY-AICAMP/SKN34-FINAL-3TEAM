@@ -38,7 +38,6 @@ import { canBuyMore, createIdempotencyKeys, keepIdempotencyKey, unlockMessage } 
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
 import { readThemeMotion } from '../src/domain/themeMotion.ts'
 import { answerTimeLine, durationLabel, isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
-import { privateReport } from '../src/mocks/fixtures/sharing.ts'
 import { retentionApi } from '../src/data/retention/api.ts'
 import { studentLookApi } from '../src/data/studentLook/api.ts'
 import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
@@ -613,14 +612,9 @@ test('#709 친구 방 응답 모양이 틀리면 계약 오류(화면은 공통 
   ]) assert.throws(() => readFriendRoom(bad), /친구 방 정보를 확인하지 못했어요/)
 })
 
-test('#803 일일 리포트 생각·작성 시간 문구는 report 파일과 같고 원문 비공개에도 남는다', () => {
+test('#803 일일 리포트 생각·작성 시간 문구는 report 파일과 같다', () => {
   assert.deepEqual([0, 59, 60, 119, 600].map(durationLabel), ['1분 미만', '1분 미만', '1분', '1분', '10분'])
   assert.equal(answerTimeLine({ version: 1, thinkingSeconds: 45, writingSeconds: 130 }), '처음 답: 생각 1분 미만 · 작성 2분')
   assert.equal(answerTimeLine({ version: 2, thinkingSeconds: 600, writingSeconds: 59 }), '되묻기 뒤 답: 생각 10분 · 작성 1분 미만')
   assert.equal(answerTimeLine({ version: 3, thinkingSeconds: 60, writingSeconds: 60 }), '두 번째 되묻기 뒤 답: 생각 1분 · 작성 1분')
-  const times = [{ version: 1, thinkingSeconds: 45, writingSeconds: 130 }]
-  const hidden = privateReport({ problems: [{ finalAnswer: '합성 답', followups: [], quotes: [], reflection: null, answerTimes: times }] })
-  const problem = hidden.problems![0] as unknown as { finalAnswer: unknown; answerTimes: unknown }
-  assert.equal(problem.finalAnswer, null, '원문은 숨김')
-  assert.deepEqual(problem.answerTimes, times, '시간은 수치라 그대로(P28)')
 })

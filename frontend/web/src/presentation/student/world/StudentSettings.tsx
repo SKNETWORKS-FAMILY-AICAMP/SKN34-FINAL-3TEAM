@@ -5,7 +5,7 @@ import { StudentSharingPage } from '../StudentSharingPage.tsx'
 import './room.css'
 
 /**
- * 학생 설정(/student/settings, #583). 공개 설정·내 포인트·로그아웃을 한 곳에 모은다.
+ * 학생 설정(/student/settings, #583). 공개 설정(학부모 안내·친구 공개)·내 포인트·로그아웃을 한 곳에 모은다.
  * #648 시안 Settings: PC 한 화면에 카드 3개(포인트 카드는 노랑). 포인트 내역·꾸미기 해금은 "내 포인트 보기"(/student/points)에서.
  * 학생 화면에는 '학부모 로그인' 문구를 두지 않는다: 로그아웃하면 로그인 화면으로 가고,
  * 학부모 복귀는 그 화면의 "학부모 화면으로 돌아가기"(보호자 비밀번호, FN-ACC-05)가 맡는다.

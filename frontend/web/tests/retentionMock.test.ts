@@ -12,7 +12,6 @@ import { balanceOf, MOCK_STORY, MOCK_WEEKDAY_KEY, resetRetention, retentionState
 import type { Mission } from '../src/domain/classroom.ts'
 import { THEME_DAYS } from '../src/domain/retention.ts'
 import { THINKING_ORDER } from '../src/domain/studentLook.ts'
-import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 import { setMockChildPlan } from '../src/mocks/fixtures/childPlan.ts'
 import { mockPremium } from '../src/mocks/fixtures/payments.ts'
 import { fixtureStore } from '../src/mocks/fixtures/student.ts'
@@ -370,10 +369,8 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
   assert.ok(detail.problems.every((p: { answerTimes?: unknown }) => Array.isArray(p.answerTimes)), '#803 문제별 answerTimes(없으면 [])')
   assert.equal(detail.narrative, null, '일일 리포트는 서술 없음')
   assert.ok(!detail.eveningQuestion, '저녁 질문은 주간에만')
-  if (detail.parentSharingEnabled === false)
-    assert.ok(detail.problems.every((p: { finalAnswer: unknown; quotes: unknown[] }) => p.finalAnswer === null && !p.quotes.length), '원문 비공개면 문제별 원문도 숨김')
+  assert.equal('parentSharingEnabled' in detail, false, '#1064 원문 공개 필드 없음')
 
-  saveSharing(childId, true) // 대화는 학생이 원문을 공개했을 때만
   const badWeekly = await call('/conversations', { childId, reportId: weekly[0].reportId })
   assert.ok([422, 429].includes(badWeekly.status), '주간 리포트 ID는 고정 대화 불가(무료면 먼저 429)')
   if (badWeekly.status === 422) {
@@ -386,10 +383,9 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
   assert.ok(Array.isArray((await call(`/children/${childId}/community-posts`)).data.items))
 })
 
-test('#481 목업: 저장된 주간 리포트도 설명 미포함·무료 전환·비공개를 현재 조건으로 적용한다', async () => {
+test('#481 목업: 저장된 주간 리포트도 설명 미포함·무료 전환을 현재 조건으로 적용한다', async () => {
   const childId = await parent()
   assert.equal(setMockChildPlan({ childId, plan: 'PREMIUM' }), true)
-  saveSharing(childId, true)
   const id = (await call(`/children/${childId}/reports?periodType=WEEKLY`)).data.items[0].reportId
   setWorkspaceScenario('explanation-missing')
   assert.deepEqual((await call(`/reports/${id}`)).data.explanations, { state: 'NOT_INCLUDED', items: [] })
@@ -398,8 +394,6 @@ test('#481 목업: 저장된 주간 리포트도 설명 미포함·무료 전환
   assert.equal(setMockChildPlan({ childId, plan: 'FREE' }), true)
   assert.equal((await call(`/reports/${id}`)).data.explanations, null)
   assert.equal(setMockChildPlan({ childId, plan: 'PREMIUM' }), true)
-  saveSharing(childId, false)
-  assert.deepEqual((await call(`/reports/${id}`)).data.explanations, { state: 'NO_TARGET', items: [] })
 })
 
 test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이템은 삭제 없이 판매 중단', async () => {

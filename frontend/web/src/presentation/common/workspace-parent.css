@@ -64,10 +64,6 @@
 #class-journal .ws-parent .parent-settings-panel { display: grid; gap: 24px; }
 #class-journal .ws-parent .parent-settings-panel .ws-grid { margin: 0; align-items: start; }
 #class-journal .ws-parent .parent-settings-panel .ws-grid form { margin-top: 24px; }
-#class-journal .ws-parent .parent-private-records { border: 1px solid var(--pd-line); border-radius: 8px; padding: 20px; background: #f7f8f9; }
-#class-journal .ws-parent .parent-private-records p { color: var(--pd-muted); }
-#class-journal .ws-parent .parent-sharing-notice { padding: 14px 18px; margin-bottom: 0; background: #f1f4f2; border: 0; font-size: 14px; }
-#class-journal .ws-parent .parent-sharing-notice p { margin: 0; }
 #class-journal .ws-parent .pc-layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 28px; }
 #class-journal .ws-parent .pc-layout > aside { display: grid; gap: 12px; }
 #class-journal .ws-parent .pc-layout > aside button { width: 100%; }
@@ -423,8 +419,6 @@
 /* 모바일에서는 자녀 선택과 학습 시작을 남기고 보조 작업은 메뉴에서 연다. */
 #class-journal .ws-parent .parent-scope > summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-size: 14px; color: var(--pd-muted); }
 #class-journal .ws-parent .parent-scope[open] .ws-toolbar { padding: 12px 0; }
-#class-journal .ws-parent .parent-sharing-notice summary { cursor: pointer; min-height: 24px; }
-#class-journal .ws-parent .parent-sharing-notice details[open] p { padding-top: 10px; }
 #class-journal .ws-parent-menu .ws-menu-actions { display: grid; gap: 12px; margin: 20px 0; }
 #class-journal .ws-parent-menu .ws-menu-actions label { display: grid; gap: 8px; }
 @media (max-width: 640px) {
@@ -811,9 +805,7 @@
  #class-journal .ws-parent .ws-main { width: 100%; margin: 0; padding: 16px 12px 24px; border-radius: 0; background: transparent; }
  #class-journal .ws-parent .ws-footer { color: #46594d; padding: 0 12px 24px; }
  #class-journal .ws-parent :is(.ws-card,.pd-card,.payment-panel) { padding: 16px; border-radius: 12px; }
- #class-journal .ws-parent .parent-private-records { padding: 14px; }
  #class-journal .ws-parent .parent-scope { margin-bottom: 8px; }
- #class-journal .ws-parent .parent-sharing-notice { padding: 10px 14px; }
  #class-journal .ws-parent h1, #class-journal .ws-parent .pd-head h1 { font-size: 22px; }
  #class-journal .ws-parent .pd-card h2 { font-size: 16px; }
  #class-journal .ws-parent .pd-type { flex-basis: auto; }

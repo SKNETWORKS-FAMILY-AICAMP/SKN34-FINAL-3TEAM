@@ -134,7 +134,7 @@ export interface DailyProblem {
   elements: { label: string; satisfied: boolean }[]
   reflection: { difficulty: string | null; text: string | null; written: boolean } | null
   quotes: { answerId: string; text: string; verified: boolean }[]
-  /** 답변별 생각·작성 시간(P28, #803). 시간 있는 답만 버전 순, 이전 응답에는 없을 수 있다. 원문 비공개여도 온다 */
+  /** 답변별 생각·작성 시간(P28, #803). 시간 있는 답만 버전 순, 이전 응답에는 없을 수 있다 */
   answerTimes?: AnswerTime[]
 }
 export interface AnswerTime { version: number; thinkingSeconds: number; writingSeconds: number }
@@ -173,7 +173,6 @@ export interface ReportItem {
 export interface WeeklyReport extends ReportItem {
   /** api-spec 3.4, #473·#481. 이전 API 응답의 필드 생략도 허용한다. */
   explanations?: { state: 'INCLUDED' | 'NOT_INCLUDED' | 'NO_TARGET'; items: ReportExplanation[] } | null
-  parentSharingEnabled?: boolean
   correctionNotice?: boolean
   /** 일일 리포트만(DAILY) */
   problems?: DailyProblem[]

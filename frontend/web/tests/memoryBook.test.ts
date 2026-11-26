@@ -8,7 +8,6 @@ import { parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
 import { resetRetention } from '../src/mocks/fixtures/retention.ts'
-import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 import { setMockSubscription } from '../src/mocks/fixtures/payments.ts'
 import { ApiError } from '../src/data/apiClient.ts'
 import { memoryBookLabel } from '../src/domain/payment.ts'
@@ -65,7 +64,8 @@ test('받기 주소는 http(s)이고 만료 전일 때만 쓴다', () => {
 test('오류 문구는 학부모 말로', () => {
   const err = (code: string) => new ApiError({ status: 403, code, title: 'x' })
   assert.match(memoryBookFailure(err('PREMIUM_REQUIRED'))!, /프리미엄/)
-  assert.match(memoryBookFailure(err('STUDENT_RECORDS_PRIVATE'))!, /아이가 답 보여 주기를 켜야/)
+  // 원문 공개 차단은 없어졌다(#1064). 예전 코드가 와도 일반 오류 안내로 둔다
+  assert.equal(memoryBookFailure(err('STUDENT_RECORDS_PRIVATE')), null)
   assert.equal(memoryBookFailure(err('MEMORY_BOOK_NOT_FOUND')), '그림책을 찾을 수 없습니다. 목록을 다시 불러와 주세요.')
   assert.equal(memoryBookFailure(err('SOMETHING_ELSE')), null)
   assert.equal(memoryBookFailure(new Error('x')), null)
@@ -140,7 +140,6 @@ test.beforeEach(async () => {
   await asParent()
   childId = (await call('/children')).data.items[0].childId as string
   setMockSubscription(childId, 'PREMIUM')
-  saveSharing(childId, true)
 })
 
 test('목업: 학부모가 회차 목록에서 202로 발급, 같은 회차는 200으로 같은 그림책, 목록에 붙는다', async () => {
@@ -160,13 +159,9 @@ test('목업: 학부모가 회차 목록에서 202로 발급, 같은 회차는 2
   assert.equal(readMemoryBookPage((await call(`/children/${childId}/memory-books`)).data).items[0].bookId, first.data.bookId)
 })
 
-test('목업: 무료 403, 비공개 403, 미보유 404, 회차 검사 400, 학생 경로 없음', async () => {
+test('목업: 무료 403, 미보유 404, 회차 검사 400, 학생 경로 없음', async () => {
   const target = (({ themeId, weekStart }) => ({ themeId, weekStart }))(
     readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).items[0])
-  saveSharing(childId, false)
-  assert.equal((await call(`/children/${childId}/memory-books`, { rounds: [target] })).data.code, 'STUDENT_RECORDS_PRIVATE')
-  assert.equal((await call(`/children/${childId}/memory-books/rounds`)).data.code, 'STUDENT_RECORDS_PRIVATE')
-  saveSharing(childId, true)
   setMockSubscription(childId, 'FREE')
   assert.equal((await call(`/children/${childId}/memory-books`, { rounds: [target] })).data.code, 'PREMIUM_REQUIRED')
   setMockSubscription(childId, 'PREMIUM')
@@ -208,7 +203,7 @@ test('목업 책장(#999 계약): 유료는 전체·lockedCount 0·canCreate tru
   assert.equal(readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).lockedCount, 0)
 })
 
-test('목업 같이 읽었어요(core #1025와 같게): 만드는 중 409, 처음 시각 유지, 회차 목록에 반영, 다른 자녀 책·없는 책 404, 비공개 403', async (t) => {
+test('목업 같이 읽었어요(core #1025와 같게): 만드는 중 409, 처음 시각 유지, 회차 목록에 반영, 다른 자녀 책·없는 책 404', async (t) => {
   const readTogether = (child: string, bookId: string) => call(`/children/${child}/memory-books/${bookId}/read-together`, undefined, 'PUT')
   const target = (({ themeId, weekStart }) => ({ themeId, weekStart }))(
     readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).items[0])
@@ -232,13 +227,9 @@ test('목업 같이 읽었어요(core #1025와 같게): 만드는 중 409, 처�
   assert.equal(shelf.items.find((r) => r.themeId === target.themeId && r.weekStart === target.weekStart)?.book?.readTogetherAt, marked.readTogetherAt)
 
   const other = ((await call('/children')).data.items as { childId: string }[]).find((c) => c.childId !== childId)!.childId
-  saveSharing(other, true)
   assert.equal((await readTogether(other, bookId)).status, 404)
   assert.equal((await readTogether(other, bookId)).data.code, 'MEMORY_BOOK_NOT_FOUND')
   assert.equal((await readTogether(childId, 'no-such-book')).data.code, 'MEMORY_BOOK_NOT_FOUND')
-  saveSharing(childId, false)
-  const hidden = await readTogether(childId, bookId)
-  assert.deepEqual([hidden.status, hidden.data.code], [403, 'STUDENT_RECORDS_PRIVATE'])
 })
 
 test('목업 같이 읽었어요: 만들지 못한 책은 409 MEMORY_BOOK_FAILED', async (t) => {

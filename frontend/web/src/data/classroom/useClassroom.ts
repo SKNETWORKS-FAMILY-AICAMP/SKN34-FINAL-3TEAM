@@ -15,7 +15,6 @@ import type {
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
 import { askWord, getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
-import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -305,19 +304,6 @@ export function useSaveSelfAssessment(attemptId: string, onSaved: (rows: Awaited
     mutationFn: (checks: { elementId: string; checked: boolean }[]) => saveSelfAssessment(attemptId, checks),
     onSuccess: onSaved,
   })
-}
-/** 학생 본인의 답 공개 설정 조회·저장. 바꾸면 공유 브라우저에 남은 학부모 원문 캐시를 지운다. */
-export function useStudentSharing(childId: string) {
-  const cache = useQueryClient()
-  const key = ['sharing-preferences', 'STUDENT', childId]
-  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => sharingApi.get(childId, 'STUDENT', signal), retry: false })
-  const save = useMutation({ mutationFn: (enabled: boolean) => sharingApi.save(childId, enabled),
-    onSuccess: value => {
-      cache.setQueryData(key, value)
-      // Shared-browser caches must not retain parent originals after a change.
-      cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
-    } })
-  return { query, save }
 }
 /** 낱말 물어보기 (#599). 답은 저장·캐시하지 않고 화면 대화에만 둔다. */
 export function useAskWord(attemptId: string) {

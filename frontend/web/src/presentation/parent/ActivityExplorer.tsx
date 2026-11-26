@@ -10,17 +10,12 @@ import { ThinkingIcon } from './ThinkingIcon.tsx'
 
 const kstDay = (iso: string) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 
-export function ActivityExplorer({ scope, initialType, canReadOriginals, sharingKnown, onOpen }: { scope: Scope; initialType: string; sharingKnown: boolean; canReadOriginals: boolean; onOpen: (id: string, scope: Scope) => void }) {
+export function ActivityExplorer({ scope, initialType, onOpen }: { scope: Scope; initialType: string; onOpen: (id: string, scope: Scope) => void }) {
   const [period, setPeriod] = useState(scope)
   const [type, setType] = useState(initialType), [search, setSearch] = useState(''), [page, setPage] = useState(0)
   const [popup, setPopup] = useState<'date' | 'type' | null>(null)
   const host = useRef<HTMLDivElement>(null)
-  const query = useParentQuery(['explorer', period, canReadOriginals], async signal => {
-    if (!canReadOriginals) {
-      const result = await parentApi.thinking(period, signal)
-      if (['FAILED', 'PROCESSING'].includes(result.state)) throw new Error('활동 기록을 불러오지 못했습니다.')
-      return result.items.flatMap(t => t.missions.map(m => ({ id: m.attemptId, title: m.title, type: t.type, date: '' })))
-    }
+  const query = useParentQuery(['explorer', period], async signal => {
     const first = await parentApi.records(period, signal)
     if (['FAILED', 'PROCESSING'].includes(first.state)) throw new Error('활동 기록을 불러오지 못했습니다.')
     const records = [...first.items]
@@ -66,7 +61,6 @@ export function ActivityExplorer({ scope, initialType, canReadOriginals, sharing
     </header>
     <div className="pd-filter-summary"><span>{period.from} — {period.to}</span><span>{type ? thinkingLabels[type as keyof typeof thinkingLabels] : '전체 유형'}</span><span aria-live="polite">{query.isPending ? '불러오는 중' : `${rows.length}개 활동`}</span>{(search || type) && <button type="button" className="pd-reset-filter" onClick={() => { setSearch(''); setType(''); setPage(0) }}>검색·유형 초기화</button>}</div>
     <QueryFeedback query={query} />
-    {!canReadOriginals && <p className="pd-explorer-count">{sharingKnown ? '원문 비공개 상태에서는 날짜와 답변을 표시하지 않습니다.' : '공개 여부를 확인할 때까지 날짜와 답변을 가립니다.'}</p>}
     <div className="pd-table-scroll" role="region" aria-label="생각 활동 목록" tabIndex={0}><table className="pd-explorer-table pd-activity-table"><thead><tr><th>번호</th><th>활동</th>
       <th><div className="pd-column-filter">유형 <button type="button" data-filter="type" aria-label="유형 필터" aria-expanded={popup === 'type'} onClick={() => setPopup(popup === 'type' ? null : 'type')}>▾</button>
         {popup === 'type' && <div popover="manual" className="pd-column-popover pd-type-options" role="group" aria-label="유형 선택">{[['', '전체'], ...Object.entries(thinkingLabels)].map(([value, label]) => <button key={value} type="button" aria-pressed={type === value} onClick={() => { setType(value); setPage(0); setPopup(null) }}>{label}</button>)}</div>}
@@ -74,7 +68,7 @@ export function ActivityExplorer({ scope, initialType, canReadOriginals, sharing
       <th><div className="pd-column-filter">날짜 <button type="button" data-filter="date" aria-label="날짜 필터" aria-expanded={popup === 'date'} onClick={() => setPopup(popup === 'date' ? null : 'date')}>▾</button>
         {popup === 'date' && <DateFilter initial={period} onCancel={() => setPopup(null)} onApply={range => { setPeriod({ ...scope, ...range }); setPage(0); setPopup(null) }} />}
       </div></th><th>원문</th></tr></thead><tbody>
-      {!query.error && rows.slice(currentPage * 10, currentPage * 10 + 10).map((r, i) => <tr key={r.id}><td>{String(currentPage * 10 + i + 1).padStart(2, '0')}</td><td>{r.title}</td><td><span className="pd-explorer-type" data-thinking={r.type}><ThinkingIcon type={r.type} />{thinkingLabels[r.type]}</span></td><td className="pd-date-cell" title="최초 답변 제출일 · 한국 시간">{r.date ? r.date.slice(2) : '—'}</td><td>{canReadOriginals ? <button type="button" onClick={() => onOpen(r.id, period)}>원문 보기 ↗</button> : sharingKnown ? '비공개' : '확인 필요'}</td></tr>)}
+      {!query.error && rows.slice(currentPage * 10, currentPage * 10 + 10).map((r, i) => <tr key={r.id}><td>{String(currentPage * 10 + i + 1).padStart(2, '0')}</td><td>{r.title}</td><td><span className="pd-explorer-type" data-thinking={r.type}><ThinkingIcon type={r.type} />{thinkingLabels[r.type]}</span></td><td className="pd-date-cell" title="최초 답변 제출일 · 한국 시간">{r.date ? r.date.slice(2) : '—'}</td><td><button type="button" onClick={() => onOpen(r.id, period)}>원문 보기 ↗</button></td></tr>)}
     </tbody></table></div>
     {!query.isPending && !query.error && !rows.length && <p>조건에 맞는 활동이 없습니다.</p>}
     <nav className="pd-explorer-pagination" aria-label="생각 활동 페이지"><span>{rows.length ? currentPage * 10 + 1 : 0}–{Math.min(rows.length, (currentPage + 1) * 10)} / {rows.length}</span><button type="button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>이전</button><span>{currentPage + 1}</span><button type="button" disabled={(currentPage + 1) * 10 >= rows.length} onClick={() => setPage(currentPage + 1)}>다음</button></nav>

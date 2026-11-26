@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { loginStudent, studentMenu } from './support/student.ts'
-import { bookStatus, pastRound, premiumShared, readTogetherOf, setSharing, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
+import { bookStatus, pastRound, premium, readTogetherOf, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
 
 /** 오늘 KST 날짜: 화면 표시(MM/DD)와 DB(YYYY-MM-DD) */
 const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
@@ -12,14 +12,14 @@ const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0
 // 학부모만 발급(2026-11-23 결정): 리포트 화면 회차 목록 → core 생성 명령 → report-worker가 learning 회차 조립·MinIO 테마 그림으로
 // PDF 저장 → 완료 이벤트 → 학부모 받기. 학생 회차 화면에는 그림책 칸이 없다.
 // 공용 E2E 스택(compose.e2e.yaml)에 learning 그림 버킷·report-worker 그림 받기 주소가 있어 원격 CI에서도 돈다.
-test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 실제 PDF 받기 → 같이 읽었어요, 학생 화면에는 칸 없음, 비공개로 바꾸면 막힘',
+test('학부모: 유료 자녀의 회차로 그림책 발급 → 실제 PDF 받기 → 같이 읽었어요, 학생 화면에는 칸 없음, 비공개 안내 없음',
   async ({ browser, context, page: parentPage }, testInfo) => {
     const nickname = `책${Date.now().toString(36)}`
     const title = 'E2E 사라진 등대 불빛'
     await useGoogleIdentity(context, newParent('book'))
     await onboardParent(parentPage, nickname)
     const studentId = studentIdOf(nickname)
-    premiumShared(studentId)
+    premium(studentId)
     const prefix = `memorybook-e2e-${Date.now().toString(36)}`
     uploadSceneImages(prefix)
     pastRound(studentId, prefix, title)
@@ -62,21 +62,19 @@ test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 
     await expect(row.getByRole('button', { name: '같이 읽었어요' })).toHaveCount(0)
     expect(readTogetherOf(studentId)).toBe(today)
 
-    // 원문 비공개로 바꾸면 발급·받기 모두 막힌다(D2)
-    setSharing(studentId, false)
+    // 원문 공개 설정·차단은 없어졌다(#1064): 다시 열어도 비공개 안내 없이 책장이 그대로다
     await parentPage.reload()
-    await expect(parentPage.getByRole('region', { name: '추억 그림책' }).getByRole('alert')).toContainText('답 보여 주기를 켜야')
+    await expect(parentPage.getByRole('region', { name: '추억 그림책' }).getByText(/답 보여 주기/)).toHaveCount(0)
   })
 
 // 책장(#1000, core #999): 무료 자녀는 서버가 끝난 최근 4주 회차만 보내고 오래된 회차는 숫자(lockedCount)로만 알린다.
 // 4주 경계(−21일·−28일)와 다른 시험이 채운 주에 흔들리지 않게, 확실히 오래된(8주 이상 전) 회차 하나만 만들어 잠금만 본다.
-test('학부모: 무료·원문 공개 자녀는 오래된 회차가 잠긴 수로만 보이고 발급 단추 없이 비교표로 이어진다', async ({ context, page }) => {
+test('학부모: 무료 자녀는 오래된 회차가 잠긴 수로만 보이고 발급 단추 없이 비교표로 이어진다', async ({ context, page }) => {
   const nickname = `잠${Date.now().toString(36)}`
   const title = 'E2E 오래된 등대'
   await useGoogleIdentity(context, newParent('shelf'))
   await onboardParent(page, nickname)
   const studentId = studentIdOf(nickname)
-  setSharing(studentId, true)
   const prefix = `memorybook-shelf-${Date.now().toString(36)}`
   uploadSceneImages(prefix)
   pastRound(studentId, prefix, title, 8)

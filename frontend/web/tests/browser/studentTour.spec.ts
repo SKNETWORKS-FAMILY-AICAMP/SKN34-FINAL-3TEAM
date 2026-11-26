@@ -38,7 +38,7 @@ test('첫 로그인: 자동 시작 → 8개 대사를 화면을 옮기며 끝까
   await login(page)
   await expect(tour(page)).toBeVisible()
   await expect(page.locator('[data-tour-home]')).toHaveAttribute('data-tour-home', 'none')
-  await expect(said(page)).toHaveText('1/8. 안녕! 나는 솜뭉치야. 지금부터 화면을 하나씩 같이 둘러보자!')
+  await expect(said(page)).toHaveText('1/8. 안녕! 나는 솜뭉치야. 네가 쓴 답은 학부모님도 보실 수 있어. 지금부터 화면을 하나씩 같이 둘러보자!')
   await expect(tour(page).locator('.st-tour-name')).toHaveText('솜뭉치')
   // 초점은 대화창 안, 뒤 화면은 막힘
   await expect(page.locator('.st-tour-box')).toBeFocused()
@@ -93,7 +93,7 @@ test('넘기기: 글자가 다 나오기 전에 누르면 한 번에 다 나오�
   await login(page)
   await expect(tour(page)).toBeVisible()
   await page.locator('.st-tour-box').click()
-  await expect(typed(page)).toHaveText('안녕! 나는 솜뭉치야. 지금부터 화면을 하나씩 같이 둘러보자!')
+  await expect(typed(page)).toHaveText('안녕! 나는 솜뭉치야. 네가 쓴 답은 학부모님도 보실 수 있어. 지금부터 화면을 하나씩 같이 둘러보자!')
   await expect(page).toHaveURL(/tour=1$/)
   await page.locator('.st-tour-box').click()
   await expect(page).toHaveURL(/tour=2$/)
@@ -164,7 +164,7 @@ test('움직임 줄이기: 글자 효과 없이 대사가 한 번에 나온다',
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await login(page)
   await expect(tour(page)).toBeVisible()
-  await expect(typed(page)).toHaveText('안녕! 나는 솜뭉치야. 지금부터 화면을 하나씩 같이 둘러보자!', { timeout: 300 })
+  await expect(typed(page)).toHaveText('안녕! 나는 솜뭉치야. 네가 쓴 답은 학부모님도 보실 수 있어. 지금부터 화면을 하나씩 같이 둘러보자!', { timeout: 300 })
   await expect(tour(page).locator('.st-tour-next')).toBeVisible()
 })
 

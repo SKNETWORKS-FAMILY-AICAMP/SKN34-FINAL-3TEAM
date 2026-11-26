@@ -46,9 +46,6 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   // 미션 완료 화면(#807)에서 내 공책으로
   await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await expect(page.locator('article', { hasText: `국어 · ${mission}` })).toBeVisible()
-  await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true }).click()
-  await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-  await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
   const [start, end] = queueWeeklyReport(nickname).split(' ')
   await page.goto('/login')
   await page.getByLabel('보호자 비밀번호', { exact: true }).fill('2580')
@@ -91,7 +88,7 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
     await receiverPage.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
     await receiverPage.goto('/parent/report')
     await openCompletedReport(receiverPage, '주간', `${start} ~ ${end}`)
-    // 무료·원문 공개 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이관받은 자녀의 비교표로 간다(누르지 않음)
+    // 무료 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이관받은 자녀의 비교표로 간다(누르지 않음)
     const preview = receiverPage.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요', exact: true })
     await expect(preview).toBeVisible()
     await expect(preview.getByText('한 주의 기록', { exact: true })).toBeVisible()

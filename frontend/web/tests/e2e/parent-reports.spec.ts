@@ -3,7 +3,7 @@ import { openCompletedReport } from './support/reports.ts'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { subscribePremium } from './support/payment.ts'
-import { loginStudent, solveNarrative, startExtraMission, studentMenu } from './support/student.ts'
+import { loginStudent, solveNarrative, startExtraMission } from './support/student.ts'
 import { queueReport } from './support/db.ts'
 import { ensureExplanationModel } from './support/admin.ts'
 
@@ -22,10 +22,6 @@ test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기�
 
   const student = await loginStudent(browser, page, nickname, '리포트 E2E')
   try {
-    // 설명·원문은 학생이 학부모 공개를 켠 답변만(P13)
-    await studentMenu(student.page, '설정')
-    await student.page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-    await expect(student.page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
     await startExtraMission(student.page, mission)
     await solveNarrative(student.page, '따뜻한 물을 부으면 열이 컵으로 옮겨 가서 컵도 따뜻해져요. 손으로 만지면 온도가 올라간 것을 느낄 수 있어요.', {
       followup: '뜨거운 물의 열이 컵 벽을 지나 바깥까지 전해지기 때문이에요.',
