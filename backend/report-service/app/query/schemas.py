@@ -134,8 +134,8 @@ class DailyProblem(ItemResponse):
     quotes: list[DailyQuote]
     answer_times: list[DailyAnswerTime] = Field(
         default_factory=list,
-        description="답변별 생각·작성 시간(P28). 시간이 있는 답만 버전 순, 원문 비공개(#206)여도 "
-        "넣음. #803 이전 저장본은 []로 읽음.",
+        description="답변별 생각·작성 시간(P28). 시간이 있는 답만 버전 순. "
+        "#803 이전 저장본은 []로 읽음.",
     )
 
 

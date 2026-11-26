@@ -158,12 +158,13 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         assertEquals(true, paid["canCreate"].asBoolean())
     }
 
-    @Test fun `원문 비공개 자녀는 회차 목록·발급·목록 모두 403 STUDENT_RECORDS_PRIVATE이고 learning을 부르지 않는다`() {
+    @Test fun `법정대리인 동의가 없는 자녀는 회차 목록·발급·목록 모두 403 CHILD_NOT_LINKED이고 learning을 부르지 않는다`() {
+        // #1064: 원문 제공은 연결 + 현재 법정대리인 동의(GUARDIAN 1.2)로만 정해진다. 학생 공개 설정은 없다
         subscribe()
-        jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
-        assertEquals("STUDENT_RECORDS_PRIVATE", create(expected = 403)["code"].asText())
-        assertEquals("STUDENT_RECORDS_PRIVATE", read("/api/v1/children/$student/memory-books/rounds", parentToken, 403)["code"].asText())
-        assertEquals("STUDENT_RECORDS_PRIVATE", read("/api/v1/children/$student/memory-books", parentToken, 403)["code"].asText())
+        jdbc.update("DELETE FROM consent WHERE student_id=?", student)
+        assertEquals("CHILD_NOT_LINKED", create(expected = 403)["code"].asText())
+        assertEquals("CHILD_NOT_LINKED", read("/api/v1/children/$student/memory-books/rounds", parentToken, 403)["code"].asText())
+        assertEquals("CHILD_NOT_LINKED", read("/api/v1/children/$student/memory-books", parentToken, 403)["code"].asText())
         assertTrue(stub.requests.isEmpty())
     }
 
@@ -301,12 +302,12 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         val failed = book(status = "FAILED")
         assertEquals("MEMORY_BOOK_FAILED", json.readTree(mark(failed, expected = 409).response.contentAsString)["code"].asText())
 
-        jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
-        assertEquals("STUDENT_RECORDS_PRIVATE", json.readTree(mark(book, expected = 403).response.contentAsString)["code"].asText())
+        jdbc.update("DELETE FROM consent WHERE student_id=?", student)
+        assertEquals("CHILD_NOT_LINKED", json.readTree(mark(book, expected = 403).response.contentAsString)["code"].asText())
         listOf(book, siblingBook, queued, failed).forEach { assertEquals(null, readAt(it)) }
     }
 
-    @Test fun `토요일 알림은 자녀·주마다 1건이고 같이 읽은 책·7일 지난 책·만료된 책·비공개 자녀는 알리지 않는다`() {
+    @Test fun `토요일 알림은 자녀·주마다 1건이고 같이 읽은 책·7일 지난 책·만료된 책·법정대리인 동의 없는 자녀는 알리지 않는다`() {
         // 자녀 하나에 연결된 학부모는 한 명뿐이다(V26 uq_guardianship_one_current_parent). 한 학부모의 두 자녀는 자녀마다 1건
         val sibling = child(jdbc, owner)
         jdbc.update("UPDATE student SET nickname='동생' WHERE id=?", sibling)
@@ -319,7 +320,7 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         val gone = parent(jdbc); child(jdbc, gone).also { book(student = it, completedAt = SATURDAY.minusDays(1), expiresAt = SATURDAY.minusMinutes(1)) }
         val hidden = parent(jdbc); child(jdbc, hidden).also {
             book(student = it, completedAt = SATURDAY.minusDays(1))
-            jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", it)
+            jdbc.update("DELETE FROM consent WHERE student_id=?", it)
         }
 
         // 같은 토요일에 다시 돌아도(재시작·잠금 만료) 자녀마다 1건

@@ -28,7 +28,6 @@ class ConversationService(private val repository: ConversationRepository, privat
     private val children: ChildAuthorizationService, private val usage: AnalysisUsageService,
     private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
     private val events: org.springframework.context.ApplicationEventPublisher,
-    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
     private val reports: com.sagomungchi.core.report.service.ReportQueryService,
     private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
 
@@ -41,7 +40,6 @@ class ConversationService(private val repository: ConversationRepository, privat
         accounts.lockParent(parent)
         if (repository.lockStudent(child) == null) forbidden()
         children.requireCurrent(parent, child)
-        learningContext.requireShared(child)
     }
     fun create(child: UUID, from: java.time.LocalDate?, to: java.time.LocalDate?): Map<String, Any?> {
         val parent = parent(); val scope = AnalysisScope.of(child, from, to)
@@ -299,7 +297,6 @@ class ConversationService(private val repository: ConversationRepository, privat
             input.options.forEach {
                 val parent = parent()
                 children.requireCurrent(parent, it.childId)
-                learningContext.requireShared(it.childId)
             }
             input.body
         }

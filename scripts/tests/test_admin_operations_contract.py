@@ -135,17 +135,14 @@ class AdminOperationsContracts(unittest.TestCase):
                         '부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. '
                         '재사용은 해당 세션을 폐기한다. 학생 세션은 refresh를 발급하지 않으며 이 경로를 사용할 수 없다.'
                     )
-                # #317 documents STUDENT_RECORDS_PRIVATE on the parent record/conversation/report evidence 403s.
-                # Remove only that approved suffix or the added 403 entry before default.
+                # #317 added a 403 entry before default on the parent record/conversation/report evidence paths
+                # (its STUDENT_RECORDS_PRIVATE half was removed by #1061). Remove only that added entry.
                 if section=='paths':
                     for operation in reviewed.values():
                         responses=operation.get('responses') if isinstance(operation,dict) else None
                         forbidden=(responses or {}).get('403')
-                        if not isinstance(forbidden,dict) or 'description' not in forbidden: continue
-                        if forbidden['description'].startswith('권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE'):
+                        if isinstance(forbidden,dict) and forbidden.get('description')=='권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등)':
                             responses.pop('403')
-                        else:
-                            forbidden['description']=forbidden['description'].replace(' · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)','')
                 # #262 adds only rubric element code·goodThought: core relays learning records unchanged to the dashboard.
                 if section=='schemas' and name=='DashboardElement':
                     for field in ('code','goodThought'):
@@ -254,7 +251,7 @@ class AdminOperationsContracts(unittest.TestCase):
                     # #614 documents the judgmentId core already forwards from learning Judgment.
                     self.assertEqual(reviewed['properties'].pop('judgmentId')['format'],'uuid')
                     reviewed['required'].remove('judgmentId')
-                # #614 documents the parentSharingEnabled flag core already adds to the report detail.
+                # #614 documents the parentSharingEnabled flag core adds to the report detail (always true since #1064).
                 if section=='schemas' and name=='ReportDetail':
                     detail=reviewed['allOf'][1]
                     self.assertEqual(detail['properties'].pop('parentSharingEnabled')['type'],'boolean')
