@@ -1,13 +1,13 @@
 {
   "image": {
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service",
-    "digest": "sha256:55e86181b1e7af2924e110ec30ba57c3682f752dcdfdf9dfd837e2cc1a319d33"
+    "digest": "sha256:47ae5b223edec8c580348d899890327b8563ac86498338fe1f39f9e64a41b3fd"
   },
   "migration": {
     "image": {
       "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate",
-      "digest": "sha256:359698d103bd1dc444b803f854980c97e1cd7b2f13a7585003f92ddc9573daab"
+      "digest": "sha256:97b160d99681459487905e6b5fecf44d89fbdf99872c0d4eca3970346942eecd"
     },
-    "revision": "main-e98da448793a"
+    "revision": "main-44887ccdc754"
   }
 }

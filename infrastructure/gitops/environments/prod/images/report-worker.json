@@ -1,6 +1,6 @@
 {
   "image": {
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service",
-    "digest": "sha256:bedf0cc312395e2e4d57963465339e43651e24668d9ceb8c29992166aa777f39"
+    "digest": "sha256:4f5254965ec3b7bb1eb3ce62f0c9b8db752932873e7be284d85991787534dd8c"
   }
 }
