@@ -2544,7 +2544,7 @@ prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는
 - 확인: 확인 PR #1081(`.github/CODEOWNERS` 주석 한 줄, 병합하지 않음)에서 `reviewDecision=REVIEW_REQUIRED`·`mergeStateStatus=BLOCKED`, code owner `20220348-kim`에게 리뷰 요청. 관리자 계정의 `gh pr merge`도 "the base branch policy prohibits the merge"로 거부
 - 영향: develop → main 릴리스 PR도 작성자가 아닌 1명의 승인이 있어야 병합된다(B2)
 - #991 커밋 메시지(`c283a2b8`)의 깨진 사유·호환성 근거 원문은 이력 재작성 없이 [#1004 댓글](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/1004#issuecomment-7184212482)에 남겼다. #991 본문 손 수정 때 빠진 호환성 근거 5행(data·api·events·ongoingLearning·payments)도 커밋 메시지에서 복원해 같이 적었다
-- 남은 것: 다른 code owner 승인 1명 뒤 병합 가능해지는지, 다음 cd-release digest PR 본문 한국어가 정상인지(#1004)
+- 남은 것: 다른 code owner 승인 1명 뒤 병합 가능해지는지, 다음 cd-release digest PR 본문 한국어가 정상인지(#1004) → 9.36에서 확인(#1084, digest PR #1090)
 
 ## 9.35 운영(A) 표현 분류 재학습 CronJob (#730, 2026-11-26)
 
@@ -2631,6 +2631,33 @@ kubectl -n app get job $job
 - `ListBucket`은 접두사 조건 없이 models 버킷 전체 목록을 볼 수 있다(처음 실행의 `NoSuchKey` 판정 때문, AWS README #730 절)
 - 실제 학습 시간·최고 메모리는 운영 모델로 재지 않았다. Job 기한 40분·상한 3Gi는 9.25 값 그대로다
 - B 전환(#809): 역할·Pod Identity·`INTERNAL_TOKEN_OPS`는 런북 1·3·6단계에 들어 있다. API 송신 대역은 "B 자원을 만든 뒤 바꿀 값"에 더했다. B에서 예약을 켤지는 B 야간 정지 계획에 맞춰 따로 정한다
+
+## 9.36 2차 릴리스 A 배포와 보호 규칙 첫 digest PR (#1084, 2026-11-26~27)
+
+1차 릴리스(#1072, digest PR #1077, `main-e98da448793a`) 다음 릴리스다. 에픽 #1064(학생 원문 공개 → 법정대리인 동의서 1.2 필수 동의)와 #730·#1088을 A에 올렸고, 9.34 보호 규칙이 걸린 뒤 처음 만든 digest PR로 #1004에서 넘어온 확인(#1084)을 마쳤다. API 경로 추가·삭제 없음(core 학생·학부모 `sharing-preferences` 3개는 `deprecated`, [core-gateway 38절](core-gateway.md#38-학생-원문-공개-비공개-차단-제거와-법정대리인-동의서-12-1061-2026-11-26)).
+
+| 단계 (KST) | 결과 |
+|---|---|
+| 릴리스 PR #1089 | `release/second-1126`(develop `08999f8a`과 같은 커밋) → main. 11/26 23:06 kty2001 승인 뒤 merge commit `44887ccd` |
+| RDS 수동 스냅샷 | `sagomungchi-before-main-44887ccdc754` available |
+| cd-release | [run 45836780423](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/45836780423) 23:13 시작, validate·publish·digest-pr 성공. 계획 JSON은 Git Bash·Python으로 만들어 ASCII `\uXXXX`로 넘김(CD README "digest PR 배포") |
+| digest PR #1090 | `main-44887ccdc754`(core·learning·ai·report-api·report-worker·tox-retrain). 본문 "revert 판단 자료"에 core `V60` 추가·API 계약 변경(경로 변화 없음)·fix-forward 안내가 자동으로 표시됨 |
+| 승인·병합 | `reviewDecision=APPROVED`(kty2001, PR 작성자가 아닌 code owner) 뒤 23:54 병합 |
+| Argo CD | 앱 전체 Synced/Healthy. migration Job `main-44887ccdc754` 3개 Complete, core Flyway v59 → v60. 실행 중 Pod digest가 `environments/prod/images`와 같음 |
+| 웹 | main `44887ccd` 빌드 → S3·CloudFront `/*` 무효화, 서빙 `index-DKoIi59i.js`가 빌드와 같음 |
+| 경로 확인 | 11/27 00:03 student-login 403(GUARDIAN 1.2 시행, fixture 학부모 재동의 전 의도된 차단) → 학부모 1.2 재동의 뒤 00:09 `ok=true` 6단계 통과 |
+| 야간 정지 복귀 | 01:00 정지(노드 0·RDS stopped) → 07:00·07:15 복귀, 08:53 앱 전체 Healthy·경로 확인 `ok=true` |
+
+#1084 확인 결과:
+
+- 한국어: #1090 본문의 사유와 호환성 근거 6행(schema·data·api·events·ongoingLearning·payments), digest 커밋 메시지 제목·본문 모두 깨지지 않았다. 손으로 고치지 않았다. #991(9.26.1)의 CP949 깨짐은 PR #1021의 UTF-8 예시·validate 거부 규칙 뒤로 다시 나오지 않았다
+- 승인 기록: 9.34 규칙으로 #1090에 작성자가 아닌 code owner 승인 1건이 남았다. #886 OPS-02(digest PR 승인·수행자·시점 기록)도 이 PR로 채웠다
+
+같은 배포에서 확인한 것:
+
+- #1088: Grafana 규칙 `llm-budget-80`·`llm-unpriced-calls`의 `noDataState`가 `OK`로 반영(LLM 경보 6개 모두 OK)
+- #730: 9.35.5 절차로 `tox-retrain-manual-1127` 실행, `last_read` → `label_count` → `skip reason=not_enough_labels count=0`, exit 0·Job Complete(65초). 9.35.6 한계(공개 데이터 묶음 없음, 라벨 200건 미만)는 그대로
+- 시연 계정: GUARDIAN 1.2 시행으로 기존 학부모는 자녀별 재동의 전까지 학생 로그인 403·학부모 화면 경고가 난다. 시연 학부모 1명(자녀 1명)을 웹 공개·동의 화면에서 재동의했다(#897)
 
 ## 10. 근거 링크
 
