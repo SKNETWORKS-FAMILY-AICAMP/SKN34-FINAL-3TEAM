@@ -12,7 +12,7 @@ import type { AlbumItem, DecorSurface, FrameSlot, FurnitureSlot, LookItem } from
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import { SpeechBubble } from './SpeechBubble.tsx'
-import { boardTagTransform, WORLD_TOP, DESK_X, DESK_Z, DOOR, faceStyle, MAT_RADIUS, MATS, ROOM, roomFaces, SHELF, slotTransform, WARDROBE, WINDOW_Z } from './roomArt.ts'
+import { boardTagTransform, WORLD_TOP, DESK_Z, faceStyle, MAT_RADIUS, MATS, ROOM, roomFaces, SHELF, slotTransform, WARDROBE } from './roomArt.ts'
 import { CAN_ROTATE, CAN_WALK, clamp, useRoomWalk } from './useRoomWalk.ts'
 import type { MatId } from './roomArt.ts'
 import { decorPlaceText, floorName, furnitureSkinName, ROOM_SET_PARTS, skinOf, wallpaperOf } from './roomAssets.ts'
@@ -251,19 +251,20 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
 
   /**
    * 갈 곳 6개(사용자 결정 2026-11-16 ① 가구 = 메뉴): 이름표(누르면 바로)와 발판 말풍선(뭉치가 서면 단추 하나).
-   * 추억의 벽 이름표는 게시판 위 이름표가 맡는다.
+   * 이름표는 모두 화면 쪽을 보는 같은 모양(추억의 벽도, #1093 — 예전 게시판 면 이름표는 벽 따라 기울어 보였다).
    */
   // 이름표는 화면 쪽으로 돌아가 있어 오른쪽 위 모서리가 뒤로 들어간다(기본 시점 약 73px, 돌리기를 켜면 끝 시점 ry -50·rx -40에서 약 106px) → 뒷벽에서 110px 넘게 띄움
-  // (옷장 이름표가 뒷벽에서 66px라 오른쪽이 벽에 잘리던 것, 사용자 의견 2026-11-16 "이것도 잘린다").
-  // 창문 이름표는 -420이면 책장 이름표 왼쪽 위를 가려서(1440에서 30×8px 겹침) -446으로 올림
-  const SPOTS: { id: MatId; label: string; tag: { x: number; y: number; z: number }; say: string; button: string; go?: () => void; more?: { label: string; go: () => void }; ownTag?: boolean }[] = [
-    { id: 'desk', label: '책상 · 오늘 문제', tag: { x: DESK_X + 40, y: -175, z: DESK_Z + 20 }, say: '오늘 문제 풀래?', button: '오늘 문제 풀기', go: onTheme },
-    { id: 'window', label: '창문 · 이번 주 이야기', tag: { x: -ROOM.W / 2 + 120, y: -446, z: WINDOW_Z - 20 }, say: '이번 주 이야기 다시 볼까?', button: '이야기 보기', go: onStory ?? onTheme },
-    { id: 'board', label: '추억의 벽 · 액자', tag: { x: 0, y: 0, z: 0 }, say: '액자 볼까?', button: '추억 앨범 열기', go: onAlbum, ownTag: true },
-    { id: 'wardrobe', label: '옷장 · 옷 갈아입기', tag: { x: WARDROBE.x, y: -405, z: WARDROBE.z + 60 }, say: '옷 갈아입을까?', button: '옷 갈아입기', go: () => onCustomize('wear'),
+  // (옷장 이름표가 뒷벽에서 66px라 오른쪽이 벽에 잘리던 것, 사용자 의견 2026-11-16 "이것도 잘린다"). 창문은 왼쪽 벽에서 120px.
+  // 그 깊이(z, 창문은 x)를 두고, 기본 시점(ROOM_VIEW)에서 이름표 아래 가운데가 물건 윗면 가운데 10px 위에 오도록 x·y(창문은 z·y)를 맞췄다(#1093, 1280×800 실측 오차 0.5px 안).
+  // s: 깊이가 달라 원근으로 커 보이고 작아 보이는 차이를 맞춘 배율(기본 시점 화면 폭이 같게) — 모든 이름표가 같은 글자 크기로 보인다
+  const SPOTS: { id: MatId; label: string; tag: { x: number; y: number; z: number; s: number }; say: string; button: string; go?: () => void; more?: { label: string; go: () => void } }[] = [
+    { id: 'desk', label: '책상 · 오늘 문제', tag: { x: -451, y: -155, z: DESK_Z + 20, s: 1.079 }, say: '오늘 문제 풀래?', button: '오늘 문제 풀기', go: onTheme },
+    { id: 'window', label: '창문 · 이번 주 이야기', tag: { x: -ROOM.W / 2 + 120, y: -482, z: 265, s: 0.988 }, say: '이번 주 이야기 다시 볼까?', button: '이야기 보기', go: onStory ?? onTheme },
+    { id: 'board', label: '추억의 벽 · 액자', tag: { x: -7, y: -426, z: -ROOM.D / 2 + 120, s: 1.061 }, say: '액자 볼까?', button: '추억 앨범 열기', go: onAlbum },
+    { id: 'wardrobe', label: '옷장 · 옷 갈아입기', tag: { x: 322, y: -411, z: WARDROBE.z + 60, s: 1 }, say: '옷 갈아입을까?', button: '옷 갈아입기', go: () => onCustomize('wear'),
       more: { label: '뭉치 친구 바꾸기', go: onFriends } },
-    { id: 'door', label: '문 · 친구 생각', tag: { x: DOOR.x - 20, y: -330, z: -ROOM.D / 2 + 120 }, say: '친구들 생각 보러 갈까?', button: '친구 생각 보기', go: onCommunity },
-    { id: 'shelf', label: '책장 · 내 공책', tag: { x: SHELF.x, y: -285, z: SHELF.z + 60 }, say: '내 공책 볼까?', button: '내 공책 열기', go: onJournal },
+    { id: 'door', label: '문 · 친구 생각', tag: { x: 588, y: -371, z: -ROOM.D / 2 + 120, s: 0.958 }, say: '친구들 생각 보러 갈까?', button: '친구 생각 보기', go: onCommunity },
+    { id: 'shelf', label: '책장 · 내 공책', tag: { x: -396, y: -297, z: SHELF.z + 60, s: 1.157 }, say: '내 공책 볼까?', button: '내 공책 열기', go: onJournal },
   ]
   const bubble = onMat ? SPOTS.find((s) => s.id === onMat) : undefined
   const bubbleAt = toHolder(pos.x, -150, pos.z)
@@ -452,11 +453,8 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
                   style={{ width: pl.w, height: pl.h, marginLeft: -pl.w / 2, marginTop: -pl.h / 2, transform: pl.tf }}
                   onClick={() => moveTo(c.surface, c.col, c.row)} />
               })}
-              {editing ? (
-                <div className="st-f st-room-boardtag" style={{ transform: boardTagTransform }} aria-hidden="true">추억의 벽</div>
-              ) : (
-                <button type="button" className="st-f st-room-boardtag" style={{ transform: boardTagTransform }} onClick={onAlbum}>추억의 벽 · 액자</button>
-              )}
+              {/* 꾸미는 중에는 가구 이름표를 숨기고 게시판 면에 붙은 글자만(누르지 않음). 평소 추억의 벽 이름표는 아래 가구 이름표와 같다(#1093) */}
+              {editing && <div className="st-f st-room-boardtag" style={{ transform: boardTagTransform }} aria-hidden="true">추억의 벽</div>}
               {Array.from({ length: FRAME_SLOT_COUNT }, (_, i) => {
                 const slotNo = i + 1
                 const frame = frames.find((d) => d.slotNo === slotNo)
@@ -477,8 +475,8 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
                 )
               })}
               {/* 가구 이름표: 걷지 않아도 누르면 바로 간다(늘 화면 쪽을 봄) */}
-              {!editing && SPOTS.filter((s) => s.go && !s.ownTag).map((s) => (
-                <button key={s.id} type="button" className={`st-f st-room-tag st-tag-${s.id}`} style={{ transform: faceCamera(s.tag.x, s.tag.y, s.tag.z) }} onClick={s.go}>
+              {!editing && SPOTS.filter((s) => s.go).map((s) => (
+                <button key={s.id} type="button" className={`st-f st-room-tag st-tag-${s.id}`} style={{ transform: `${faceCamera(s.tag.x, s.tag.y, s.tag.z)} scale(${s.tag.s})` }} onClick={s.go}>
                   {s.label}
                 </button>
               ))}

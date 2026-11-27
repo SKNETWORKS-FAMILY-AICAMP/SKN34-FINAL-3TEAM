@@ -293,7 +293,26 @@
 }
 #class-journal .cj-app-student .st-help-notice a,
 #class-journal .cj-app-student .st-help-link { color: var(--sk-ink); font-weight: 700; }
-#class-journal .cj-app-student .st-help-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 16px; }
+#class-journal .cj-app-student .st-help-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 16px; text-decoration: underline; text-underline-offset: 4px; }
+/* 도움말 끝 "문의하기"·"내 접수 내역 보기": 붙어 보이지 않게 띄우고 누를 수 있는 단추 모양으로(#1093). 학부모 도움말 꼬리는 parent-management.css 그대로 */
+#class-journal .cj-app-student .st-help .service-help-footer { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+#class-journal .cj-app-student .st-help .service-help-footer h2 { margin: 0; font-size: 20px; }
+#class-journal .cj-app-student .st-help .service-help-footer p { margin: 0; font-size: 16px; }
+#class-journal .cj-app-student .st-help .service-help-footer > div:last-child { display: flex; flex-wrap: wrap; gap: 10px; }
+#class-journal .cj-app-student .st-help .service-help-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: 16px;
+  text-decoration: none;
+}
+#class-journal .cj-app-student .st-help .service-help-footer a:hover { background: var(--sk-soft); }
 #class-journal .cj-app-student .st-help-support {
   display: flex;
   flex-direction: column;

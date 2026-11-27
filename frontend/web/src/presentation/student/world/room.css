@@ -339,10 +339,7 @@
   font-family: var(--st-display);
   font-size: 20px;
 }
-/* 추억의 벽 이름표도 누르면 앨범(2026-11-16 갈 곳 메뉴) */
-#class-journal .cj-app-student .st-world button.st-room-boardtag { pointer-events: auto; cursor: pointer; }
-#class-journal .cj-app-student .st-world button.st-room-boardtag:hover { background: var(--sk-yellow); }
-#class-journal .cj-app-student .st-world button.st-room-boardtag:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+/* 평소 추억의 벽 이름표(누르면 앨범)는 다른 가구 이름표(.st-room-tag.st-tag-board)와 같다(#1093). 위 모양은 꾸미는 중 게시판 글자만 */
 /* 액자 6칸: 걸린 액자는 갈색 나무 틀, 빈 자리는 점선(꾸미는 중에는 진한 점선 + "+ 걸기") */
 #class-journal .cj-app-student .st-world .st-room-slot {
   display: flex;
@@ -399,6 +396,7 @@
 #class-journal .cj-app-student .st-world .st-tag-window { background: #cfe6fa; }
 #class-journal .cj-app-student .st-world .st-tag-door { background: #ddf6d2; }
 #class-journal .cj-app-student .st-world .st-tag-shelf { background: #e8e0ff; }
+#class-journal .cj-app-student .st-world .st-tag-board { background: #fff1d6; }
 #class-journal .cj-app-student .st-world .st-room-tag:hover { background: var(--sk-yellow); }
 #class-journal .cj-app-student .st-world .st-room-tag:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
 /* 캐릭터와 그림자: 바닥을 누르면 걸어가고, 점프하면 그림자가 작고 옅어진다 */
