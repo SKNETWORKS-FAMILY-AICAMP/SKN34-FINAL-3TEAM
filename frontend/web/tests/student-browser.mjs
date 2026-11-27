@@ -231,7 +231,9 @@ try {
       await open(p, title)
       await p.getByLabel('상태 시연').selectOption('partial')
       await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
-      await p.getByText('ANSWER_INCOMPLETE', { exact: true }).waitFor()
+      // #1093 학생 화면 오류 상자에는 코드를 보이지 않는다: 빈 칸 안내만 보이고 ANSWER_INCOMPLETE 글자는 없어야 한다
+      await p.locator('.ux-error[role="alert"]').first().waitFor()
+      assert.equal(await p.getByText('ANSWER_INCOMPLETE').count(), 0)
       if (type === 'NARRATIVE')
         await p.getByLabel('내 생각과 이유').fill('그림과 글이 함께 있으면 이해하기 쉬워요.')
       if (type === 'SOLUTION_STEPS') {

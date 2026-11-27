@@ -11,6 +11,8 @@ import { journalTab } from '../../../domain/retention.ts'
 import type { JournalTab, ThemeDay } from '../../../domain/retention.ts'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
+import { StartError } from '../startBlock.tsx'
+import { startBlockedMessage } from '../../../domain/studentStart.ts'
 import { difficultyLabel, feedbackHeadline, followupLabel } from './missionSteps.ts'
 import { useRetryPlan } from './useRetryPlan.ts'
 
@@ -288,13 +290,13 @@ export function StudentJournalEntry({ record, child, onBack, onWork, onScene }: 
             ) : (
               <>
                 <p>다시 풀고 마무리하면 이번 답이 '저번엔'으로 함께 보여요. 이번 답은 공책에 그대로 남아요.</p>
-                <button type="button" className="st-pill-link" disabled={learning.start.isPending}
+                <button type="button" className="st-pill-link" disabled={learning.start.isPending || !!startBlockedMessage(learning.start.error)}
                   onClick={() => (retry.kind === 'SCENE' ? onScene(retry.day) : void restart())}>
                   다시 풀기
                 </button>
               </>
             )}
-            <ErrorNotice error={learning.start.error} />
+            <StartError error={learning.start.error} />
           </div>
         )}
       </section>

@@ -20,6 +20,8 @@ import {
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
 import { ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
+import { StartError } from './startBlock.tsx'
+import { startBlockedMessage } from '../../domain/studentStart.ts'
 import { Companion } from './world/Companion.tsx'
 import { MissionDone } from './world/MissionDone.tsx'
 import { useRetryPlan } from './world/useRetryPlan.ts'
@@ -864,7 +866,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 {a.reflection?.text && <span>{a.reflection.text}</span>}
               </p>
               {retry.kind === 'EXTRA' && (
-                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
+                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child || !!startBlockedMessage(actions.start.error)}
                   onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
                     .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
                   이 미션 다시 풀기
@@ -876,7 +878,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 </button>
               )}
               {retry.kind === 'SATURDAY' && <p className="sw-retry-note">토요일에 다시 풀 수 있어요.</p>}
-              <ErrorNotice error={actions.start.error} />
+              <StartError error={actions.start.error} />
             </section>
           )}
           {a.status !== 'COMPLETED' && (

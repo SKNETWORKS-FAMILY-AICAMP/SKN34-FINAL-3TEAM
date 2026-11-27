@@ -1,14 +1,20 @@
-import { useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
-import { useSession } from '../auth/sessionContext.ts'
+import { AuthContext, useSession } from '../auth/sessionContext.ts'
 import { roleStart } from '../../domain/navigation.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import type { Mission } from '../../domain/classroom.ts'
 
-export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
+/**
+ * technical: 오류 코드·확인 번호(개발·문의용)를 "문제 자세히 보기"로 접어 보일지(#1093). 기본은 로그인 역할이 학생이 아니면 보임.
+ * 학생 화면(학생 로그인, 또는 로그인 전 /student 화면)에서는 코드·확인 번호를 숨기고 설명(detail)만 접지 않고 바로 보여 준다.
+ */
+export function ErrorNotice({ error, retry, technical }: { error: unknown; retry?: () => void; technical?: boolean }) {
+  const auth = useContext(AuthContext)
+  const showTechnical = technical ?? !(auth?.session?.role === 'STUDENT' || window.location.pathname.startsWith('/student'))
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     // 관리자 화면(#917): 처리 중에도 초점은 단추에 남으므로, 새 오류 글이 보이는 영역 밖이면 보이게 스크롤한다(이미 보이면 움직이지 않음). 초점은 옮기지 않는다.
@@ -29,10 +35,12 @@ export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => vo
       {error instanceof TypeError && (
         <p>연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.</p>
       )}
-      {(problem?.code || problem?.detail || error instanceof Error) && <details className="error-details"><summary>문제 자세히 보기</summary>
-        {problem?.detail && <p>{problem.detail}</p>}
-        <small>{problem?.code ?? (error instanceof Error ? error.message : '')}{problem?.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}</small>
-      </details>}
+      {showTechnical
+        ? (problem?.code || problem?.detail || error instanceof Error) && <details className="error-details"><summary>문제 자세히 보기</summary>
+          {problem?.detail && <p>{problem.detail}</p>}
+          <small>{problem?.code ?? (error instanceof Error ? error.message : '')}{problem?.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}</small>
+        </details>
+        : problem?.detail && /[가-힣]/.test(problem.detail) && <p>{problem.detail}</p>}
       {problem?.missingFields?.length ? (
         <ul aria-label="게시 누락 항목">
           {problem.missingFields.map((field) => (
