@@ -17,7 +17,7 @@ import './mission-guide.css'
 const PARTS: Record<InputType, { label: string; optional?: boolean }[]> = {
   NARRATIVE: [{ label: '내 생각' }, { label: '이유' }],
   SOLUTION_STEPS: [{ label: '풀이 과정' }, { label: '최종 답' }],
-  ESSAY: [{ label: '내 주장' }, { label: '이유 두 가지' }, { label: '다른 의견에 답하기' }],
+  ESSAY: [{ label: '내 주장' }, { label: '이유 두 가지' }, { label: '반대 의견에 답하기' }],
   CHOICE: [{ label: '알맞은 것 고르기' }],
   ORDERING: [{ label: '순서대로 놓기' }],
   CLASSIFICATION: [{ label: '무리 지어 나누기' }],

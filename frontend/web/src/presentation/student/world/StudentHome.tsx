@@ -167,7 +167,8 @@ export function StudentHome({
     <main className="sh-home" data-tour-home={tourAuto}>
       {(homeQuery.isPending || themeQuery.isPending) && <QueryStateNotice state="PROCESSING" />}
       <ErrorNotice error={homeQuery.error} retry={() => void homeQuery.refetch()} />
-      {home && home.state !== 'OK' && <QueryStateNotice state={home.state} />}
+      {/* 표본이 적다는 안내(INSUFFICIENT_SAMPLE "비율 대신 개수")는 학부모 리포트용이라 아이 홈에는 보이지 않는다(#1093) */}
+      {home && home.state !== 'OK' && home.state !== 'INSUFFICIENT_SAMPLE' && <QueryStateNotice state={home.state} />}
       <div className="sh-hero">
         {/* 둘러보기 표시: 오늘 문제 큰 버튼이 없으면(다 풀었음·주말·정답 고르기 등) 또는 테마가 없으면 대체 대사 */}
         <div className="sh-left" data-tour={theme ? (!homeQuery.isPending && !(ready && today && today.attemptStatus !== 'COMPLETED') ? 'home-no-today' : undefined)

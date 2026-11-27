@@ -14,14 +14,15 @@ import {
   canAddAnswer,
   canFinish,
   latestFeedback,
+  revealText,
   validateAnswer,
   studentThinkingLabels,
 } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
 import { ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
-import { MissionScene } from './MissionScene.tsx'
 import { StartError } from './startBlock.tsx'
 import { startBlockedMessage } from '../../domain/studentStart.ts'
+import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { MissionDone } from './world/MissionDone.tsx'
 import { useRetryPlan } from './world/useRetryPlan.ts'
@@ -629,7 +630,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 </div>
               </div>
             )}
-            <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} guide />
+            <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} guide
+              showEmpty={error instanceof ApiError && error.problem?.code === 'ANSWER_INCOMPLETE'} />
             <div className="sw-submit-row">
               <button
                 type="button"
@@ -852,7 +854,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               after={thoughtful && !fitWide && <ThoughtStickers attempt={a} lit={lit} onLit={onLit} />}
               foot={a.reveal && <button type="button" className="sw-read sw-read-reveal" onClick={() => read(a.reveal)}>읽어 주기</button>}>
               {/* 정답형(고르기·순서·분류·풀이)은 게시 때 예시 답이 필수가 아니라 비어 있을 수 있다(learning Mission 게시 검사) */}
-              {a.reveal ? <p className="cj-quote">{a.reveal}</p>
+              {a.reveal ? <p className="cj-quote">{revealText(a.reveal)}</p>
                 : <p className="sw-reveal-none">{a.revealKind === 'ANSWER' ? '이 문제는 정답 글이 따로 없어요.' : '이 문제는 예시 답이 따로 없어요.'}</p>}
             </ClampCard>
           </div>
@@ -1056,18 +1058,21 @@ export function AnswerFields({
   mission,
   onChange,
   guide = false,
+  showEmpty = false,
 }: {
   answer: AnswerContent
   mission: LearningMission
   onChange: (a: AnswerContent) => void
   /** 학생 답 쓰기: 빈 칸 안내와 글자 수(시안 MissionWrite "한두 문장이면 충분해요"), 붙여넣기 막기(P28). 관리자 미리보기는 그대로 */
   guide?: boolean
+  /** 빈 칸으로 제출했을 때(ANSWER_INCOMPLETE, #1093): 꼭 채울 칸 중 빈 칸 바로 아래에도 안내 */
+  showEmpty?: boolean
 }) {
   // 학생 답변 칸만 붙여넣기·끌어다 놓기 막기(P28, 안내 문구 없음·입력 내용 유지). 관리자 미리보기(guide 없음)와 메모·돌아보기는 그대로
   const noPaste = guide
     ? { onPaste: (e: { preventDefault: () => void }) => e.preventDefault(), onDrop: (e: { preventDefault: () => void }) => e.preventDefault() }
     : {}
-  const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string) => (
+  const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string, required = false) => (
     <label className="cj-field">
       {label}
       <textarea
@@ -1078,12 +1083,13 @@ export function AnswerFields({
         maxLength={2400}
         {...noPaste}
       />
+      {required && showEmpty && guide && !value.trim() && <small className="sw-field-empty">‘{label}’ 칸을 채워 주세요.</small>}
     </label>
   )
   return (
     <div className="ux-answer-fields">
       {v.inputType === 'NARRATIVE' &&
-        field('내 생각과 이유', v.text, (text) => onChange({ ...v, text }), '뭉치가 알려 준 문장으로 시작하거나 자유롭게 써 봐요')}
+        field('내 생각과 이유', v.text, (text) => onChange({ ...v, text }), '뭉치가 알려 준 문장으로 시작하거나 자유롭게 써 봐요', true)}
       {v.inputType === 'NARRATIVE' && guide && (
         <small className="sw-count" aria-live="polite">{v.text.replace(/\s/g, '').length ? `공백 빼고 ${v.text.replace(/\s/g, '').length}자` : '한두 문장이면 충분해요'}</small>
       )}
@@ -1113,7 +1119,7 @@ export function AnswerFields({
       {v.inputType === 'ESSAY' && (
         <>
           {field(mission.inputTemplate?.[0] || '내 주장', v.essay.claim, (claim) =>
-            onChange({ ...v, essay: { ...v.essay, claim } }),
+            onChange({ ...v, essay: { ...v.essay, claim } }), undefined, true,
           )}
           {v.essay.reasons.map((reason, i) => (
             <div key={i}>
@@ -1127,12 +1133,12 @@ export function AnswerFields({
                       string,
                     ],
                   },
-                }),
+                }), undefined, true,
               )}
             </div>
           ))}
-          {field(mission.inputTemplate?.[3] || '다른 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
-            onChange({ ...v, essay: { ...v.essay, rebuttal } }),
+          {field(mission.inputTemplate?.[3] || '반대 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
+            onChange({ ...v, essay: { ...v.essay, rebuttal } }), undefined, true,
           )}
         </>
       )}

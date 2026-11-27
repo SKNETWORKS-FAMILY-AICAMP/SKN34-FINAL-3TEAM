@@ -199,6 +199,8 @@
   font-weight: 700;
   font-size: var(--st-fs-md, 20px);
   line-height: 1.55;
+  /* 문제 글 안 줄바꿈("- 까닭 1:" 같은 줄)을 그대로 보인다(#1093) */
+  white-space: pre-line;
 }
 #class-journal .st-world .sw-hint {
   border: 2px solid var(--sk-line);
@@ -343,6 +345,8 @@
 #class-journal .st-world .sw-work .cj-field input,
 #class-journal .st-world .sw-work .cj-field textarea { padding: 10px 14px; }
 #class-journal .st-world .sw-work .cj-field input { min-height: 48px; }
+/* 빈 칸으로 냈을 때 그 칸 바로 아래 안내(#1093) */
+#class-journal .st-world .sw-work .cj-field .sw-field-empty { color: #a1361c; font-size: 15px; font-weight: 700; }
 #class-journal .st-world .sw-work .cj-field textarea { min-height: 72px; resize: vertical; }
 #class-journal .st-world .sw-work .cj-field select { min-height: 44px; padding: 0 12px; }
 /* 글쓰기 한 칸은 시안 MissionWrite처럼 6줄 남짓만(칸이 너무 크면 초등학생이 무엇을 얼마나 쓸지 모름, 사용자 의견 2026-11-15).
@@ -1292,7 +1296,7 @@
 /* ── 마무리 D안(#807, 사용자 결정 2026-11-23): 오늘의 문제 → 내 답 | 예시 답·생각 스티커 → 어땠나요 → '미션 완료하기' ──
  * 배치 세 가지(StudentWorkPage useFitHeight): 아래 줄(한 화면 맞춤 [data-fit]), 세 칸([data-fit][data-wide], 낮고 넓은 화면),
  * 이어 붙임(속성 없음, 휴대폰·아주 낮은 화면 — 칸을 자르지 않음). '더 보기'로 펼친 동안은 [data-fit]만 빠진다 */
-#class-journal .st-world .sw-qline { display: flex; gap: 10px; align-items: baseline; margin: 0; padding: 10px 16px; border: 2px solid var(--sk-line); border-radius: 16px; background: #fff7dc; font-weight: 700; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.45; flex: none; }
+#class-journal .st-world .sw-qline { display: flex; gap: 10px; align-items: baseline; margin: 0; padding: 10px 16px; border: 2px solid var(--sk-line); border-radius: 16px; background: #fff7dc; font-weight: 700; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.45; flex: none; white-space: pre-line; }
 #class-journal .st-world .sw-qline b { flex: none; padding: 1px 10px; border: 2px solid var(--sk-line); border-radius: 999px; background: #ffd84d; font-size: 14px; }
 /* 마무리 화면은 제목 줄을 한 줄로(유형·교과 줄 숨김) */
 #class-journal .st-world .sw-work:has(.sw-finish) .sw-title > span { display: none; }

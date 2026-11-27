@@ -171,7 +171,7 @@ function AnswerBody({ answer, mission }: { answer: Answer; mission: LearningMiss
       [mission.inputTemplate?.[0] || '내 주장', str(essay.claim)],
       [mission.inputTemplate?.[1] || '이유 1', str(reasons[0])],
       [mission.inputTemplate?.[2] || '이유 2', str(reasons[1])],
-      [mission.inputTemplate?.[3] || '다른 의견에 답하기', str(essay.rebuttal)],
+      [mission.inputTemplate?.[3] || '반대 의견에 답하기', str(essay.rebuttal)],
     ]
     return (
       <dl className="st-jd-essay">

@@ -850,7 +850,7 @@
 #class-journal .cj-app-student .st-jd-page .st-title-mix span { font-size: 0.84em; }
 #class-journal .cj-app-student .st-jd-page .st-title-mix:focus { outline: none; }
 #class-journal .cj-app-student .st-jd-page .st-title-mix:focus-visible { outline: 3px solid var(--sk-accent); outline-offset: 4px; }
-#class-journal .cj-app-student .st-jd-question { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 19px; line-height: 1.6; }
+#class-journal .cj-app-student .st-jd-question { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 19px; line-height: 1.6; white-space: pre-line; }
 #class-journal .cj-app-student .st-jd-answers,
 #class-journal .cj-app-student .st-jd-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
 #class-journal .cj-app-student .st-jd-answers > :only-child,

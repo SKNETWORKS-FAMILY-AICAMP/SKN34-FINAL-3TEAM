@@ -105,6 +105,8 @@
   font-family: 'Gowun Batang', serif;
   font-weight: 700;
   font-size: 20px;
+  /* 문제 글 안 줄바꿈("- 까닭 1:" 같은 줄)을 그대로 보인다(#1093) */
+  white-space: pre-line;
   line-height: 1.6;
 }
 #class-journal .st-world .mg-parts { display: flex; flex-direction: column; gap: 8px; }

@@ -6,8 +6,9 @@ import { POINT_EVENT_LABELS, POINT_RULES } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import './retention.css'
 
+// 연도는 네 자리(예: 2026. 11. 26. 오후 3:05, #1093). dateStyle 'short'는 연도를 두 자리(26.)로 줄인다
 const when = (iso: string) =>
-  new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' })
+  new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 /**
  * 내 포인트 (/student/points, P21, API 명세 2.10, #648 시안 Points). 잔액은 나와 학부모님만 보고, 순위·소멸은 없다.

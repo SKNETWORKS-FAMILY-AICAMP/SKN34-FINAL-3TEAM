@@ -53,8 +53,8 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     page: 'activities',
-    variants: [{ target: 'activities-list', line: () => "'생각 활동'에서는 다섯 가지 생각 놀이를 더 해 볼 수 있어." }],
-    fallback: () => "'생각 활동'에서는 다섯 가지 생각 놀이를 더 해 볼 수 있어.",
+    variants: [{ target: 'activities-list', line: () => "'생각 활동'에서는 다섯 가지 생각 활동을 얼마나 해 봤는지 모아 볼 수 있어." }],
+    fallback: () => "'생각 활동'에서는 다섯 가지 생각 활동을 얼마나 해 봤는지 모아 볼 수 있어.",
   },
   {
     page: 'community',

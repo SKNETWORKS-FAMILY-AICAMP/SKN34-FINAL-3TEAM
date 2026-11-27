@@ -20,7 +20,7 @@ export function memoTargets(answer: AnswerContent): MemoTarget[] {
         { id: 'claim', label: '내 주장', limit: 2400 },
         { id: 'reason:0', label: '첫 번째 이유', limit: 2400 },
         { id: 'reason:1', label: '두 번째 이유', limit: 2400 },
-        { id: 'rebuttal', label: '다른 의견에 답하기', limit: 2400 },
+        { id: 'rebuttal', label: '반대 의견에 답하기', limit: 2400 },
       ]
     default:
       return []
