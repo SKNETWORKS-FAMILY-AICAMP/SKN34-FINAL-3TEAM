@@ -14,11 +14,14 @@ import {
   canAddAnswer,
   canFinish,
   latestFeedback,
+  revealText,
   validateAnswer,
   studentThinkingLabels,
 } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
 import { ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
+import { StartError } from './startBlock.tsx'
+import { startBlockedMessage } from '../../domain/studentStart.ts'
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { MissionDone } from './world/MissionDone.tsx'
@@ -551,10 +554,15 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   )
   // 고르기·순서·분류는 정답 키로 전부 맞음/전부 아님이라 스티커·형광펜이 뜻이 없음(FeedbackFacade.withAnswerKey)
   const thoughtful = !CLOSED_TYPES.includes(a.mission.inputType)
-  // 스티커를 누른 요소만 그 근거 구절에 형광펜(평소엔 칠 없음, 사용자 결정 2026-11-20)
-  const [lit, setLit] = useState<string | null>(null)
-  const onLit = (id: string) => setLit((cur) => (cur === id ? null : id))
+  // 스티커를 누른 요소만 그 근거 구절에 형광펜(사용자 결정 2026-11-20). 처음에는 첫째로 찾은 스티커를 눌린 채로 보여 줘
+  // 스티커와 형광펜이 짝이라는 걸 안내 글 없이 알게 한다(#1093 E2 D안: 회색 "눌러 봐"가 꺼진 단추처럼 보였다). 다시 누르면 꺼짐
   const marks = thoughtful ? foundMarks(a.checklist ?? [], a.answers.map((v) => v.text)) : []
+  const firstFound = marks[0]?.id
+    ?? (thoughtful && lastAnswer ? foundMarks(lastAnswer.feedback?.judgment?.elements ?? [], [lastAnswer.text])[0]?.id : undefined)
+    ?? null
+  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  const lit = picked === undefined ? firstFound : picked
+  const onLit = (id: string) => setPicked(lit === id ? null : id)
   const answerVersions = (compact = false) => a.answers.map((v, i) => (
     <section className="ux-answer-version sw-version" key={v.answerId} aria-label={v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}>
       {!(compact && a.answers.length === 1) && <small>{v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}</small>}
@@ -627,7 +635,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 </div>
               </div>
             )}
-            <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} guide />
+            <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} guide
+              showEmpty={error instanceof ApiError && error.problem?.code === 'ANSWER_INCOMPLETE'} />
             <div className="sw-submit-row">
               <button
                 type="button"
@@ -850,7 +859,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               after={thoughtful && !fitWide && <ThoughtStickers attempt={a} lit={lit} onLit={onLit} />}
               foot={a.reveal && <button type="button" className="sw-read sw-read-reveal" onClick={() => read(a.reveal)}>읽어 주기</button>}>
               {/* 정답형(고르기·순서·분류·풀이)은 게시 때 예시 답이 필수가 아니라 비어 있을 수 있다(learning Mission 게시 검사) */}
-              {a.reveal ? <p className="cj-quote">{a.reveal}</p>
+              {a.reveal ? <p className="cj-quote">{revealText(a.reveal)}</p>
                 : <p className="sw-reveal-none">{a.revealKind === 'ANSWER' ? '이 문제는 정답 글이 따로 없어요.' : '이 문제는 예시 답이 따로 없어요.'}</p>}
             </ClampCard>
           </div>
@@ -864,7 +873,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 {a.reflection?.text && <span>{a.reflection.text}</span>}
               </p>
               {retry.kind === 'EXTRA' && (
-                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
+                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child || !!startBlockedMessage(actions.start.error)}
                   onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
                     .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
                   이 미션 다시 풀기
@@ -876,7 +885,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 </button>
               )}
               {retry.kind === 'SATURDAY' && <p className="sw-retry-note">토요일에 다시 풀 수 있어요.</p>}
-              <ErrorNotice error={actions.start.error} />
+              <StartError error={actions.start.error} />
             </section>
           )}
           {a.status !== 'COMPLETED' && (
@@ -1054,18 +1063,21 @@ export function AnswerFields({
   mission,
   onChange,
   guide = false,
+  showEmpty = false,
 }: {
   answer: AnswerContent
   mission: LearningMission
   onChange: (a: AnswerContent) => void
   /** 학생 답 쓰기: 빈 칸 안내와 글자 수(시안 MissionWrite "한두 문장이면 충분해요"), 붙여넣기 막기(P28). 관리자 미리보기는 그대로 */
   guide?: boolean
+  /** 빈 칸으로 제출했을 때(ANSWER_INCOMPLETE, #1093): 꼭 채울 칸 중 빈 칸 바로 아래에도 안내 */
+  showEmpty?: boolean
 }) {
   // 학생 답변 칸만 붙여넣기·끌어다 놓기 막기(P28, 안내 문구 없음·입력 내용 유지). 관리자 미리보기(guide 없음)와 메모·돌아보기는 그대로
   const noPaste = guide
     ? { onPaste: (e: { preventDefault: () => void }) => e.preventDefault(), onDrop: (e: { preventDefault: () => void }) => e.preventDefault() }
     : {}
-  const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string) => (
+  const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string, required = false) => (
     <label className="cj-field">
       {label}
       <textarea
@@ -1076,12 +1088,13 @@ export function AnswerFields({
         maxLength={2400}
         {...noPaste}
       />
+      {required && showEmpty && guide && !value.trim() && <small className="sw-field-empty">‘{label}’ 칸을 채워 주세요.</small>}
     </label>
   )
   return (
     <div className="ux-answer-fields">
       {v.inputType === 'NARRATIVE' &&
-        field('내 생각과 이유', v.text, (text) => onChange({ ...v, text }), '뭉치가 알려 준 문장으로 시작하거나 자유롭게 써 봐요')}
+        field('내 생각과 이유', v.text, (text) => onChange({ ...v, text }), '뭉치가 알려 준 문장으로 시작하거나 자유롭게 써 봐요', true)}
       {v.inputType === 'NARRATIVE' && guide && (
         <small className="sw-count" aria-live="polite">{v.text.replace(/\s/g, '').length ? `공백 빼고 ${v.text.replace(/\s/g, '').length}자` : '한두 문장이면 충분해요'}</small>
       )}
@@ -1111,7 +1124,7 @@ export function AnswerFields({
       {v.inputType === 'ESSAY' && (
         <>
           {field(mission.inputTemplate?.[0] || '내 주장', v.essay.claim, (claim) =>
-            onChange({ ...v, essay: { ...v.essay, claim } }),
+            onChange({ ...v, essay: { ...v.essay, claim } }), undefined, true,
           )}
           {v.essay.reasons.map((reason, i) => (
             <div key={i}>
@@ -1125,12 +1138,12 @@ export function AnswerFields({
                       string,
                     ],
                   },
-                }),
+                }), undefined, true,
               )}
             </div>
           ))}
-          {field(mission.inputTemplate?.[3] || '다른 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
-            onChange({ ...v, essay: { ...v.essay, rebuttal } }),
+          {field(mission.inputTemplate?.[3] || '반대 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
+            onChange({ ...v, essay: { ...v.essay, rebuttal } }), undefined, true,
           )}
         </>
       )}
@@ -1378,7 +1391,8 @@ function Stickers({ items, texts, label, title, lit, onLit, fresh }: { items: im
       {title && <h3 className="sw-stick-title">{title}</h3>}
       {yes.length > 0 && (
         <div className="sw-stick-row">
-          <b>뭉치가 찾았어 <small className="sw-stick-tip">눌러 봐</small></b>
+          {/* 안내 글 없이 첫 스티커를 눌린 채로 보여 준다(위 lit, #1093) */}
+          <b>뭉치가 찾았어</b>
           <ul className="sw-stickers">
             {yes.map((e, k) => (
               <li key={e.elementId} data-checked data-n={k + 1} data-lit={lit === e.elementId || undefined} data-evidence-verified="true">
@@ -1394,8 +1408,9 @@ function Stickers({ items, texts, label, title, lit, onLit, fresh }: { items: im
       )}
       {no.length > 0 && (
         <div className="sw-stick-row sw-stick-row-no">
+          {/* 보여 주기만 하는 목록(누르는 것 아님): 알약 모양 없이 흐린 글자(#1093) */}
           <b>아직 못 찾았어</b>
-          <ul className="sw-stickers">
+          <ul className="sw-stick-plain">
             {no.map((e) => <li key={e.elementId} data-evidence-verified="false">{e.label}</li>)}
           </ul>
         </div>
