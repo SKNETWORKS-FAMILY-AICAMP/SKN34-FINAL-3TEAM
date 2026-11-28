@@ -40,6 +40,8 @@ test('withdrawal cancellation sends nothing; failure stays open and one retry sa
   await expect(page.getByRole('heading', { name: '서윤 법정대리인 재동의' })).toBeVisible()
   await page.evaluate(() => dispatchEvent(new Event('audit-withdrawal')))
   await expect(page.locator('html')).toHaveAttribute('data-withdrawal-calls', '2')
+  const menu = page.getByRole('button', { name: '학부모 메뉴 열기', exact: true })
+  if (await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '학습 현황', exact: true }).click()
   await expect(page.getByRole('region', { name: '법정대리인 재동의 안내' })).toBeVisible()
   await expect(page.getByRole('region', { name: '학습 요약' })).toHaveCount(0)
