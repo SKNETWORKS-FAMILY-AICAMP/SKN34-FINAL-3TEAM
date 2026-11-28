@@ -23,7 +23,18 @@ spec:
             app.kubernetes.io/name: tox-retrain
         spec:
           automountServiceAccountToken: false
+          {{- if .Values.serviceAccount.create }}
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          {{- end }}
           restartPolicy: Never
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -32,8 +43,12 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           containers:
             - name: retrain
+              {{- if kindIs "map" .Values.image }}
+              image: {{ printf "%s@%s" (required "set image.repository" .Values.image.repository) (required "set image.digest" .Values.image.digest) | quote }}
+              {{- else }}
               image: {{ required "set the retraining image" .Values.image | quote }}
-              imagePullPolicy: Never
+              {{- end }}
+              imagePullPolicy: {{ .Values.imagePullPolicy }}
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
               securityContext:
@@ -45,16 +60,25 @@ spec:
                 - {name: CORE_URL, value: "http://core-service:8080"}
                 - name: INTERNAL_TOKEN
                   valueFrom:
-                    secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: INTERNAL_TOKEN_OPS}
+                    secretKeyRef: {name: {{ required "set tokenSecret or credentialsSecret" (.Values.tokenSecret | default .Values.credentialsSecret) }}, key: INTERNAL_TOKEN_OPS}
+                {{- if eq .Values.storage "minio" }}
                 - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+                {{- end }}
                 - {name: S3_BUCKET, value: {{ required "set the model bucket" .Values.bucket | quote }}}
                 - {name: S3_REGION, value: {{ required "set the model region" .Values.region | quote }}}
+                {{- if eq .Values.storage "minio" }}
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
-                    secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: MINIO_ROOT_USER}
+                    secretKeyRef: {name: {{ required "set credentialsSecret" .Values.credentialsSecret }}, key: MINIO_ROOT_USER}
                 - name: AWS_SECRET_ACCESS_KEY
                   valueFrom:
                     secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: MINIO_ROOT_PASSWORD}
+                {{- else if eq .Values.storage "aws" }}
+                - {name: S3_BUCKET_OWNER, value: {{ required "set bucketOwner for storage aws" .Values.bucketOwner | quote }}}
+                - {name: AWS_REGION, value: {{ .Values.region | quote }}}
+                {{- else }}
+                {{- fail "storage must be minio or aws" }}
+                {{- end }}
               volumeMounts:
                 - {name: work, mountPath: /tmp}
           volumes:

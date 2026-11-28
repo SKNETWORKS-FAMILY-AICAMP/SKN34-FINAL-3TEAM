@@ -16,12 +16,24 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: learning-service}
       ports: [{protocol: TCP, port: 8081}]
+    {{- if eq .Values.storage "minio" }}
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: platform}
           podSelector:
             matchLabels: {app.kubernetes.io/name: minio, app.kubernetes.io/instance: platform-data}
       ports: [{protocol: TCP, port: 9000}]
+    {{- else }}
+    # S3(Gateway endpoint로 가는 공인 대역)만 443, 자격 증명은 Pod Identity agent 80
+    - to:
+        {{- range required "set networkPolicy.s3Egress for storage aws" .Values.networkPolicy.s3Egress }}
+        - ipBlock: {cidr: {{ . }}}
+        {{- end }}
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+        - ipBlock: {cidr: {{ .Values.networkPolicy.podIdentityAgent }}}
+      ports: [{protocol: TCP, port: 80}]
+    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: kube-system}

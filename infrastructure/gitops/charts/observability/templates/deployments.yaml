@@ -116,7 +116,7 @@ spec:
       containers:
         {{- if .Values.prometheus.retrainJobMetrics.enabled }}
         - name: kube-state-metrics
-          image: {{ required "local retrainJobMetrics.image is required" .Values.prometheus.retrainJobMetrics.image | quote }}
+          image: {{ required "retrainJobMetrics.image is required" .Values.prometheus.retrainJobMetrics.image | quote }}
           args:
             - --resources=jobs,cronjobs
             - --namespaces=app

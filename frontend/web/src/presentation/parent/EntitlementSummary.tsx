@@ -8,7 +8,7 @@ export function EntitlementSummary({ childId, report = false }: { childId: strin
   return <>
     <QueryFeedback query={query} />
     {entitlement && (report ? <p>{entitlement.narrativeEnabled
-      ? '이용권에 리포트 요약·근거 인용이 포함됩니다. 아이의 답과 돌아보기는 법정대리인 동의에 따라 보호자에게 제공됩니다.'
+      ? '이용권에 리포트 요약·근거 인용이 포함됩니다.'
       : '현재 이용권에서는 리포트 수치를 제공합니다. 요약·근거 인용은 제공하지 않습니다.'}</p>
       : <>
         <strong>{entitlement.product.name}</strong>

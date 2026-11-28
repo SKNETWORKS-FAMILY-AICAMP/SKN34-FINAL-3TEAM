@@ -105,6 +105,15 @@
       }
     },
     {
+      "name": "INTERNAL_TOKEN_OPS",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_OPS",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
       "name": "JAVA_TOOL_OPTIONS",
       "value": "-XX:MaxRAMPercentage=60.0"
     },
@@ -497,7 +506,8 @@
       "learning-service",
       "ai-service",
       "report-worker",
-      "scoring-service"
+      "scoring-service",
+      "tox-retrain"
     ],
     "namespaceDefaultDeny": true,
     "egressToCollector": true,
