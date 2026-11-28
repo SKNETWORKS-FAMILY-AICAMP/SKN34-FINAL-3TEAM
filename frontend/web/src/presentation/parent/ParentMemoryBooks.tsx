@@ -144,7 +144,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
       </nav>}
       {shelf && locked && (
         <p className="memory-shelf-notice" role="note">
-          {memoryBookLockedNotice(lockedCount)} <Link className="cj-secondary premium-compare-link" to={comparePath(child.id)}>무료와 프리미엄 비교 보기 <ArrowRight size={16} aria-hidden="true" /></Link>
+          <span>{memoryBookLockedNotice(lockedCount)}</span><Link className="cj-secondary premium-compare-link" to={comparePath(child.id)}>프리미엄 혜택보기 <ArrowRight size={16} aria-hidden="true" /></Link>
         </p>
       )}
       {notice && <p role="alert">{notice}</p>}

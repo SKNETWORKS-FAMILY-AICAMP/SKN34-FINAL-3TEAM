@@ -115,7 +115,7 @@ for (const lockedCount of [0, 2]) test(`empty report and memory shelf distinguis
   }
   await shelf.scrollIntoViewIfNeeded()
   await page.screenshot({ path: info.outputPath(`26-10-empty-${lockedCount}.png`) })
-  await shelf.getByRole('link', { name: '무료와 프리미엄 비교 보기', exact: true }).click()
+  await shelf.getByRole('link', { name: '프리미엄 혜택보기', exact: true }).click()
   await expect(page).toHaveURL(/childId=demo-doyun#plan-compare$/)
   await expect(page.locator('.premium-comparison')).toHaveAttribute('open', '')
 })

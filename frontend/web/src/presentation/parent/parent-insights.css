@@ -169,8 +169,9 @@
 .parent-memory-books .memory-shelf-action { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 44px; }
 .parent-memory-books .memory-shelf-action button { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; }
 .parent-memory-books .memory-shelf-lock { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #4a5a50; }
-.parent-memory-books .memory-shelf-notice { padding: 10px 12px; border-radius: 8px; background: #f3f7f4; }
+.parent-memory-books .memory-shelf-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 10px 12px; border-radius: 8px; background: #f3f7f4; }
 .parent-memory-books .memory-shelf-notice a { display: inline-flex; align-items: center; min-height: 44px; }
+#class-journal .parent-memory-books .memory-shelf-notice .premium-compare-link { flex: 0 0 auto; width: auto; padding-inline: 12px; gap: 6px; }
 .parent-memory-books .memory-shelf-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .parent-memory-books .memory-shelf-retry button { display: inline-flex; align-items: center; min-height: 44px; }
 /* 테마 일러스트와 아래쪽 제목(어두운 그러데이션 위 흰 글자, 두 줄까지) */

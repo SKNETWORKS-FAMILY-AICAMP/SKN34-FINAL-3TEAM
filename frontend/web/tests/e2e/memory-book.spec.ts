@@ -37,7 +37,7 @@ test('학부모: 유료 자녀의 회차로 그림책 발급 → 실제 PDF 받�
     }
 
     // 학부모: 리포트 화면의 회차 목록에서 발급 → 만드는 중 → 받기
-    await parentPage.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+    await parentPage.getByRole('link', { name: '리포트·기록에 물어보기', exact: true }).click()
     const books = parentPage.getByRole('region', { name: '추억 그림책' })
     const row = books.getByRole('list', { name: '그림책을 발급할 수 있는 회차' }).getByRole('listitem').filter({ hasText: title })
     await row.getByRole('button', { name: '그림책 발급' }).click()
@@ -80,11 +80,11 @@ test('학부모: 무료 자녀는 오래된 회차가 잠긴 수로만 보이고
   uploadSceneImages(prefix)
   pastRound(studentId, prefix, title, 8)
 
-  await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+  await page.getByRole('link', { name: '리포트·기록에 물어보기', exact: true }).click()
   const books = page.getByRole('region', { name: '추억 그림책' })
   await expect(books.getByRole('note')).toContainText(/지난 그림책 \d+권은 프리미엄에서 볼 수 있어요/)
   await expect(books.getByText(title)).toHaveCount(0)
   await expect(books.getByRole('button', { name: '그림책 발급' })).toHaveCount(0)
-  await books.getByRole('link', { name: '무료와 프리미엄 비교 보기' }).click()
+  await books.getByRole('link', { name: '프리미엄 혜택보기' }).click()
   await expect(page).toHaveURL(/\/parent\/billing\?childId=.+#plan-compare$/)
 })

@@ -153,6 +153,10 @@
   display: grid;
   gap: 7px;
 }
+#class-journal .parent-id-signup > label { width: 50%; }
+@media (max-width: 640px) {
+  #class-journal .parent-id-signup > label { width: 100%; }
+}
 #class-journal .ws-check {
   display: flex !important;
   align-items: start;

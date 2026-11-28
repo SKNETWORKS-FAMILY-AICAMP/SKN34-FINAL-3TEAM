@@ -42,7 +42,7 @@ export function ParentIdSignup() {
   const auth = useAuthentication(), enter = useEnter()
   const [loginId, setLoginId] = useState(''), [name, setName] = useState('')
   const [password, setPassword] = useState(''), [again, setAgain] = useState(''), [problem, setProblem] = useState<string | null>(null)
-  return <form className="ws-form" aria-label="아이디로 가입" onSubmit={(e) => {
+  return <form className="ws-form parent-id-signup" aria-label="아이디로 가입" onSubmit={(e) => {
     e.preventDefault()
     const p = signupProblem(loginId, password, again, name)
     setProblem(p)
