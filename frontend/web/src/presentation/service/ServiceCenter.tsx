@@ -73,6 +73,7 @@ function SupportTabs({ level: Title }: { level: 'h1' | 'h2' }) {
   </section>
 }
 function SupportForm({ kind, active, Sub }: { kind: SupportKind; active: boolean; Sub: 'h2' | 'h3' }) {
+  const { session } = useSession()
   const [params] = useSearchParams()
   const [targetType, setTargetType] = useState<SupportTarget>((['FOLLOWUP','JUDGMENT','ANALYSIS','REPORT'].includes(params.get('targetType') ?? '') ? params.get('targetType') : 'JUDGMENT') as SupportTarget)
   const [targetId, setTargetId] = useState(params.get('targetId') ?? '')
@@ -93,11 +94,11 @@ function SupportForm({ kind, active, Sub }: { kind: SupportKind; active: boolean
   return <>
     <form className="ws-form ws-card support-compose" onSubmit={e => { e.preventDefault(); if (kind === 'error-reports' && !targetId.trim()) return; void submit.mutateAsync(undefined).then(() => { keys.current.clear(); setNotice('접수했습니다. 아래 목록에서 처리 상태를 확인하실 수 있습니다.'); setTitle(''); setComment('') }).catch(() => {}) }}>
       <fieldset className="ws-form" disabled={submit.isPending}>
-      {kind === 'error-reports' && <><p role="note">{targetId ? `${supportTargetLabel(targetType)} 기록이 신고 대상으로 연결되어 있습니다.` : '신고할 결과 화면에서 오류 신고를 누르면 대상 기록이 자동으로 연결됩니다. 기록을 찾기 어려우면 일반 문의로 접수해 주세요.'}</p><details><summary>신고 대상 확인·직접 입력</summary><div className="ws-form"><label>신고 대상<select value={targetType} onChange={e => { setTargetType(e.target.value as SupportTarget); setTargetId('') }}>{[['JUDGMENT','판정'],['FOLLOWUP','되묻기'],['ANALYSIS','분석 대화'],['REPORT','리포트']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label>대상 기록 번호<input value={targetId} onChange={e => setTargetId(e.target.value)} maxLength={200}/></label></div></details></>}
+      {kind === 'error-reports' && <><p role="note">{targetId ? `${supportTargetLabel(targetType)} 기록이 신고 대상으로 연결되어 있습니다.` : '신고할 결과 화면에서 오류 신고를 누르면 대상 기록이 자동으로 연결됩니다. 기록을 찾기 어려우면 일반 문의로 접수해 주세요.'}</p><details><summary>신고 대상 확인·직접 입력</summary><div className="ws-form"><label>신고 대상<select value={targetType} onChange={e => { setTargetType(e.target.value as SupportTarget); setTargetId('') }}>{[['JUDGMENT','판정'],['FOLLOWUP','되묻기'],['ANALYSIS','기록에 물어보기'],['REPORT','리포트']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label>대상 기록 번호<input value={targetId} onChange={e => setTargetId(e.target.value)} maxLength={200}/></label></div></details></>}
       <label>유형<select value={category} onChange={e => setCategory(e.target.value)}>{(kind === 'error-reports' ? [['WRONG_JUDGMENT','판정이 틀려요'],['ODD_QUESTION','질문이 이상해요'],['MISMATCH','숫자·인용이 달라요'],['INAPPROPRIATE','부적절한 표현'],['OTHER','기타']] : [['ACCOUNT','계정'],['USAGE','이용 방법'],['PAYMENT','결제']]).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
       {kind === 'inquiries' && <label>제목<input required value={title} onChange={e => setTitle(e.target.value)} maxLength={200}/></label>}
       <label>내용<textarea required minLength={2} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} /></label><small>비밀번호·카드 정보·실제 아동 개인정보는 적지 마세요.</small>
-      <button className="cj-primary" disabled={submit.isPending || !comment.trim() || (kind === 'error-reports' ? !targetId.trim() : !title.trim())}>접수하기</button><ErrorNotice error={submit.error} /><p role="status">{notice}</p>
+      <button className="cj-primary" disabled={submit.isPending || !comment.trim() || (kind === 'error-reports' ? !targetId.trim() : !title.trim())}>접수하기</button><ErrorNotice error={submit.error} technical={session?.role === 'PARENT' ? false : undefined} /><p role="status">{notice}</p>
       </fieldset>
     </form><Sub>내 접수 내역</Sub><QueryFeedback query={q} />{q.data && !q.data.items.length && <p>접수한 내역이 없습니다.</p>}
     <div className="service-reading-list support-history">{kind === 'error-reports'

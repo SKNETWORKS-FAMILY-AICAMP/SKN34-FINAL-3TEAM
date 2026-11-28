@@ -30,7 +30,7 @@ test('local report examples stay separate from the selected report and use the s
   page.on('request', watch)
   await trigger.click()
   const dialog = page.getByRole('dialog', { name: '주간 리포트 예시', exact: true })
-  await expect(dialog.getByRole('note')).toContainText('해당 답변으로 생성한 Gemma 결과')
+  await expect(dialog.getByRole('note')).toContainText('실제 자녀 기록이나 AI 분석 결과가 아닙니다.')
   await expect(dialog.getByRole('heading', { name: '한 주의 기록', exact: true })).toBeVisible()
   const activities = dialog.getByRole('navigation', { name: '예시 활동 선택', exact: true })
   const library = activities.getByRole('button', { name: /우리 동네에 필요한 시설/ })
@@ -81,18 +81,18 @@ test('local report examples stay separate from the selected report and use the s
   expect(errors).toEqual([])
 })
 
-test('preview never substitutes a manual explanation for missing or stale output', async ({ page, context }) => {
+test('illustrative preview works without local model files and never changes real report output', async ({ page, context }) => {
   await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ json: {
     ...cache, items: cache.items.map(item => ({ ...item, sourceText: '다른 답변' })),
   } }))
   await page.goto('/parent/report?reportDemo=structured&childId=demo-report-grade5')
   await page.getByRole('button', { name: '주간 리포트 예시 보기' }).click()
   const dialog = page.getByRole('dialog', { name: '주간 리포트 예시', exact: true })
-  await expect(dialog.getByRole('status')).toHaveText('이 답변으로 생성된 설명을 불러오지 못했어요.')
-  await expect(dialog.getByRole('heading', { name: '상세 분석', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('note')).toContainText('가상 답변과 설명 예시')
+  await expect(dialog.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
   await expect(dialog.locator('.report-reader-document')).toContainText(demoData.samples[0].texts.at(-1)!)
   await page.keyboard.press('Escape')
   await context.route('**/.taste-skill/structured-report-demo/gemma-explanations.json', route => route.fulfill({ status: 404 }))
   await page.getByRole('button', { name: '주간 리포트 예시 보기' }).click()
-  await expect(dialog.getByRole('status')).toHaveText('이 답변으로 생성된 설명을 불러오지 못했어요.')
+  await expect(dialog.getByRole('note')).toContainText('가상 답변과 설명 예시')
 })

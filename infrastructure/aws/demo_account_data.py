@@ -206,7 +206,9 @@ def cmd_children(api, args):
             print(f"{nickname}: 이미 있음(grade {have[nickname]['grade']})")
             continue
         s, p, _ = api.call("POST", "/children", {"nickname": nickname, "grade": int(grade),
-                                                 "birthYear": year - 7 - int(grade), "consents": consents}, ptok)
+                                                 # 통상 입학 학년 기준 합성 프로필: 2026년 초5는 2015년생.
+                                                 # 실제/기존 자녀의 출생연도를 학년으로 추정해 덮어쓰지 않는다.
+                                                 "birthYear": year - 6 - int(grade), "consents": consents}, ptok)
         api.ok(f"{nickname} 등록", s, p, (200, 201))
         print(f"{nickname}: 등록(grade {grade})")
 

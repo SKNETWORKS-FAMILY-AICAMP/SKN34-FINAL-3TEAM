@@ -365,6 +365,11 @@
  #class-journal .ws-parent .ws-header>.ws-logout{display:none}
 }
 
+.guardian-consent-form { scroll-margin-top: calc(var(--parent-topbar-height, 100px) + 24px); }
+#class-journal .guardian-consent-notice { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+#class-journal .guardian-consent-notice p { flex:1 1 300px; margin:0; }
+#class-journal .guardian-consent-notice .cj-primary { flex:none; text-decoration:none; }
+
 /* Report selectors share the existing activity calendar and reading surface. */
 #class-journal .ws-parent .report-inline-calendar { position: relative; inset: auto; display: block; margin: 12px 0 20px; width: min(340px, 100%); max-width: 100%; box-sizing: border-box; }
 #class-journal .ws-parent .report-date-controls { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:12px 0 20px; }
@@ -384,3 +389,9 @@
 #class-journal .ws-parent .report-inline-calendar .pd-date-inputs input { min-width:0; width:100%; padding:8px 4px; }
 #class-journal .ws-parent .report-inline-calendar .pd-calendar-grid button[aria-pressed="true"] { background:#e3efe6; color:#205e3d; }
 #class-journal .ws-parent .report-inline-calendar .pd-calendar-grid button[data-edge="true"], #class-journal .ws-parent .report-inline-calendar .pd-date-confirm { background:#24633f; color:white; }
+
+#class-journal .premium-feature-preview { padding:20px; margin:16px 0; border:1px solid #c9ddce; border-radius:16px; background:#f5f9f3; color:#294c3a; }
+#class-journal .premium-feature-preview h3 { display:flex; align-items:center; gap:10px; margin:0 0 12px; font-size:18px; }
+#class-journal .premium-feature-preview p { margin:8px 0; line-height:1.7; }
+#class-journal .premium-feature-preview li { margin:8px 0; }
+#class-journal .premium-compare-link { display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:normal; text-decoration:none; }

@@ -109,7 +109,7 @@ async function conversationGuard(request: Request, id: string) {
   if (conversationOwners.has(id) && conversationOwners.get(id) !== mockIdentity.email) fail('NOT_FOUND', '본인의 대화를 찾을 수 없습니다.', 404)
   const child = await parentChild(request, c.childId)
   if (request.method === 'POST' && !mockPremium(child.id))
-    fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
+    fail('USAGE_LIMIT_REACHED', '무료 플랜은 기록에 물어보기를 제공하지 않습니다.', 429)
   return c
 }
 async function reportGuard(request: Request, id: string) {
@@ -536,7 +536,7 @@ export const parentHandlers = [
       const body = (await request.json()) as Scope & { reportId?: string },
         c = await parentChild(request, body.childId)
       if (!mockPremium(c.id))
-        fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
+        fail('USAGE_LIMIT_REACHED', '무료 플랜은 기록에 물어보기를 제공하지 않습니다.', 429)
       // 일일 리포트 고정 대화(FN-RPT-16, P25): 그 리포트의 자녀·대상일·최신 판으로 고정
       const fixed = body.reportId ? reports.get(body.reportId)?.at(-1) : undefined
       if (body.reportId && (!fixed || fixed.periodType !== 'DAILY' || fixed.childId !== c.id))
@@ -548,7 +548,7 @@ export const parentHandlers = [
         childId: c.id,
         ...(fixed ? { reportId: fixed.reportId, reportRevision: fixed.revision } : {}),
         period: { from: scope.from, to: scope.to },
-        title: '새 분석 대화',
+        title: '새 기록에 물어보기',
         createdAt: new Date().toISOString(),
         messages: [],
       }

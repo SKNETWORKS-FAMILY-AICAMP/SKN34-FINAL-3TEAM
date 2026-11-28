@@ -342,3 +342,15 @@
  #class-journal .ws-parent .pd-overview .pd-report{padding:24px}
  #class-journal .ws-parent .pd-detail-launchers{gap:20px}
 }
+
+/* 11/26 follow-up: the latest report is the first content card after the period/title. */
+#class-journal .ws-parent .pd-overview .pd-split { grid-template-columns:minmax(0,1fr); }
+#class-journal .ws-parent .pd-overview .pd-report-featured { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,240px); align-items:center; gap:24px; margin:0 0 28px; }
+#class-journal .ws-parent .pd-report-featured .pd-report-copy { display:grid; gap:12px; min-width:0; }
+#class-journal .ws-parent .pd-overview .pd-report-featured .pd-actions { grid-column:auto; grid-row:auto; }
+#class-journal .ws-parent .pd-report-featured .report-plan-preview { display:grid; gap:12px; justify-items:start; }
+@media(max-width:640px) {
+ #class-journal .ws-parent .pd-overview .pd-report-featured { grid-template-columns:minmax(0,1fr); gap:18px; padding:20px; }
+}
+
+#class-journal .ws-parent .pd-overview .pd-report .ux-error .cj-secondary { color:#663d25; border-color:#b99a83; background:#fff; }

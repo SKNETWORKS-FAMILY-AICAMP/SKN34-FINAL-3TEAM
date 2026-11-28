@@ -223,7 +223,7 @@ test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @respon
   await page.screenshot({ path: testInfo.outputPath('student-island-activities.png'), fullPage: true })
 })
 
-test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
+test('학부모 기록에 물어보기 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
   await login(page)
   await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toHaveCount(1)
   await expect(page).toHaveURL(/childId=/)

@@ -18,7 +18,7 @@ export function PremiumOffer({ product, childName, subscribed, current, disabled
         <div className="premium-price"><strong>{product.price.toLocaleString('ko-KR')}<span>원</span></strong><span>/ 1개월</span></div>
       </div>
       {subscribed ? <a className="premium-checkout" href="#current-subscriptions">현재 구독 관리<ArrowUpRight size={19} aria-hidden="true" /></a>
-        : <button className="premium-checkout" disabled={disabled} onClick={onCheckout}>{busy ? '주문 준비 중…' : opening ? '새 탭에서 결제 진행 중' : '결제수단 선택'}<ArrowUpRight size={19} aria-hidden="true" /></button>}
+        : <button className="premium-checkout" disabled={disabled || !paymentAvailable} onClick={onCheckout}>{!paymentAvailable ? '결제 준비 중' : busy ? '주문 준비 중…' : opening ? '새 탭에서 결제 진행 중' : '결제수단 선택'}{paymentAvailable && <ArrowUpRight size={19} aria-hidden="true" />}</button>}
       <p className="premium-child">{childName ? `${childName}의 이용권` : '화면 위에서 이용할 자녀를 선택해 주세요.'}{current && <span>이용 중</span>}</p>
       {subscribed && !current && <p className="premium-payment-note">이용 중인 구독이 끝난 뒤 구매할 수 있어요.</p>}
       <p className="premium-payment-note">1개월 단건 구매이며,<br />자동 갱신은 별도 동의 후 설정해요.</p>

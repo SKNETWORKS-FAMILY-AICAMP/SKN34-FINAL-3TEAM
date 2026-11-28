@@ -19,7 +19,7 @@ test('premium stays visible and change previews never create purchases @responsi
   await expect(offer.locator('.premium-price strong')).toHaveText('14,900원')
   await expect(offer.getByRole('button', { name: '결제수단 선택', exact: true })).toBeEnabled()
   await expect(page.locator('.parent-free-plan')).toHaveCount(0)
-  await expect(page.locator('#plan-compare')).toHaveCount(0)
+  await expect(page.locator('#plan-compare')).toBeVisible()
   await page.screenshot({ path: info.outputPath('premium-offer.png') })
   await offer.locator('.premium-benefits').scrollIntoViewIfNeeded()
   await page.screenshot({ path: info.outputPath('premium-benefits.png') })

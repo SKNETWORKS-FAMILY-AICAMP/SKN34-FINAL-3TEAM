@@ -193,7 +193,7 @@ export function ClassroomApp() {
       : [
           { page: 'journal', label: '아이의 공책', icon: NotebookPen },
           { page: 'report', label: '주간 리포트', icon: BookOpen },
-          { page: 'analysis', label: 'AI 챗봇', icon: MessagesSquare },
+          { page: 'analysis', label: '기록에 물어보기', icon: MessagesSquare },
         ]
   const switchChild = (id: string) => {
     setSelected(id)
@@ -886,7 +886,7 @@ export function ClassroomApp() {
         {showPlan && (
           <Modal title="이용권 안내 · 테스트 범위" onClose={() => setShowPlan(false)}>
             <p>무료: 자녀별 하루 미션 3개, 리포트 수치 제공.</p>
-            <p>프리미엄: 자녀별 월 14,900원, 하루 피드백 50회·분석 대화 30회, 전체 리포트.</p>
+            <p>프리미엄: 자녀별 월 14,900원, 하루 피드백 50회·기록에 물어보기 30회, 전체 리포트.</p>
             <p className="ux-help">
               현재 develop에는 상품·결제 공개 Controller가 아직 없습니다. 이 화면은 정책 안내이며
               결제를 요청하거나 카드 정보를 받지 않습니다. 결제 구현은 토스 테스트 환경만

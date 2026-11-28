@@ -21,12 +21,12 @@ export const parentGuideSteps: ParentGuideStep[] = [
   },
   {
     title: '학습 현황과 리포트',
-    body: '아이가 푼 문제와 답은 학습 현황에서, 일일·주간 리포트와 AI 챗봇 질문은 리포트에서 봅니다.',
+    body: '아이가 푼 문제와 답은 학습 현황에서, 일일·주간 리포트와 기록에 물어보기 질문은 리포트에서 봅니다.',
     targets: ['/parent/journal', '/parent/report'],
   },
   {
-    title: '공개 동의는 계정·자녀 설정에서',
-    body: '친구들과 답을 나누려면 여기서 공개에 동의해 주세요. 공개는 아이가 직접 켭니다.',
+    title: '친구 공개 동의는 계정·자녀 설정에서',
+    body: '아이의 답을 친구들과 나누는 선택 동의입니다. 동의한 뒤에도 공개는 아이가 직접 켭니다. 보호자가 자녀의 학습 기록을 보는 동의와는 별개예요.',
     targets: ['/parent/settings'],
   },
 ]
@@ -34,7 +34,7 @@ export const parentGuideSteps: ParentGuideStep[] = [
 // parentNavigation.tsx의 label·short와 같아야 한다(아이콘 JSX가 있어 Node 단위 시험에서 직접 못 읽는다).
 const menuNames: Record<string, [label: string, short: string]> = {
   '/parent/journal': ['학습 현황', '학습'],
-  '/parent/report': ['리포트·AI 챗봇', '리포트'],
+  '/parent/report': ['리포트·기록에 물어보기', '리포트'],
   '/parent/settings': ['계정·자녀 설정', '설정'],
   '/parent/devices': ['기기·PIN', '기기'],
 }

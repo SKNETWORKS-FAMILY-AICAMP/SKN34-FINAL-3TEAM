@@ -46,6 +46,7 @@ export function StudentDevices({ items }: { items: Child[]; selectedChildId?: st
   const guardian = useGuardianPassword()
   const byPassword = useSession().session?.authMethod === 'PASSWORD'
   const [pinChildId, setPinChildId] = useState<string | null>(null)
+  const [pinNotice, setPinNotice] = useState('')
   const [guardianOpen, setGuardianOpen] = useState(false)
   const [pairingOpen, setPairingOpen] = useState(false)
   const pinChild = items.find(child => child.id === pinChildId)
@@ -53,6 +54,7 @@ export function StudentDevices({ items }: { items: Child[]; selectedChildId?: st
   return (
     <section className="parent-devices device-settings-sheet">
       <header className="parent-page-head"><div><h1>기기 및 PIN</h1><p>안전한 학습 환경을 위한 접근 권한 관리</p></div><span className="device-header-art" aria-hidden="true"><Monitor size={70} strokeWidth={1.3} /><LockKeyhole size={38} /></span></header>
+      {pinNotice && <p className="device-save-success" role="status"><CheckCircle2 size={20} aria-hidden="true" />{pinNotice}</p>}
       <section className="device-settings-section" aria-labelledby="pin-h">
         <div className="device-section-intro"><KeyRound size={22} aria-hidden="true" /><h2 id="pin-h">자녀 PIN</h2><p>등록된 학습 기기에서 로그인할 때 사용하는 번호입니다.</p></div>
         <div className="device-section-content"><ul className="device-child-list">{items.map(child => <li key={child.id}>
@@ -73,7 +75,7 @@ export function StudentDevices({ items }: { items: Child[]; selectedChildId?: st
         <div className="device-section-content"><div className="device-section-heading"><h3>연결된 기기</h3><button className="device-text-action" disabled={!items.length} onClick={() => setPairingOpen(true)}><Plus size={17} aria-hidden="true" />기기 연결</button></div><DeviceList /></div>
       </section>
       <p className="device-security-note"><LockKeyhole size={15} aria-hidden="true" />PIN과 비밀번호는 안전한 학습 환경을 위해 사용됩니다.</p>
-      {pinChild && <Modal scrollIndicator title={`${pinChild.nickname} PIN 관리`} onClose={() => setPinChildId(null)}><div className="device-settings-dialog"><p>숫자 4~6자리로 정해 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p><ChildPin child={pinChild} /></div></Modal>}
+      {pinChild && <Modal scrollIndicator title={`${pinChild.nickname} PIN 관리`} onClose={() => setPinChildId(null)}><div className="device-settings-dialog"><p>숫자 4~6자리로 정해 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p><ChildPin child={pinChild} onSaved={message => { setPinChildId(null); setPinNotice(message) }} /></div></Modal>}
       {guardianOpen && <Modal scrollIndicator title="보호자 비밀번호 설정" onClose={() => setGuardianOpen(false)}><div className="device-settings-dialog"><GuardianPasswordSettings /></div></Modal>}
       {pairingOpen && <Modal scrollIndicator title="새 학습 기기 연결" onClose={() => setPairingOpen(false)}><div className="device-settings-dialog"><PairingIssue items={items} /></div></Modal>}
     </section>
@@ -148,7 +150,7 @@ function GuardianPasswordSettings() {
         {!byPassword && challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
           보호자 비밀번호 완료 확인
         </button>}
-        <ErrorNotice error={start.error ?? finish.error} />
+        <ErrorNotice technical={false} error={start.error ?? finish.error} />
         {notice && <p role="status">{notice}</p>}
         <label>
           새 보호자 비밀번호
@@ -165,24 +167,24 @@ function GuardianPasswordSettings() {
           {current?.set ? '보호자 비밀번호 바꾸기' : '보호자 비밀번호 정하기'}
         </button>
         {!token && <small>본인 재확인 후 저장할 수 있습니다.</small>}
-        <ErrorNotice error={save.error} />
+        <ErrorNotice technical={false} error={save.error} />
       </form>
     </section>
   )
 }
 
-function ChildPin({ child }: { child: Child }) {
-  const [pin, setPin] = useState(''), [again, setAgain] = useState(''), [notice, setNotice] = useState(''), [problem, setProblem] = useState<string | null>(null)
+function ChildPin({ child, onSaved }: { child: Child; onSaved: (message: string) => void }) {
+  const [pin, setPin] = useState(''), [again, setAgain] = useState(''), [problem, setProblem] = useState<string | null>(null)
   const { setPin: save } = useDeviceAdmin()
   const state = child.pinLocked === true ? 'locked' : child.pinSet === true ? 'set' : child.pinSet === false ? 'none' : 'unknown'
   const status = state === 'locked' ? '잠김 · 다시 정해야 풀려요' : state === 'set' ? '설정됨' : state === 'none' ? '아직 없음' : '확인 필요'
   return <form className="ws-form" aria-label={`${child.nickname} PIN`} onSubmit={event => {
-    event.preventDefault(); setNotice('')
+    event.preventDefault()
     const error = pinProblem(pin) ?? (pin !== again ? '두 번 입력한 PIN이 다릅니다.' : null)
     setProblem(error)
     if (error) return
     save.mutate({ childId: child.id, pin }, { onSuccess: () => {
-      setPin(''); setAgain(''); setNotice(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
+      setPin(''); setAgain(''); onSaved(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
     } })
   }}>
     <h3>{child.nickname} <small>· {gradeLabel(child.grade)}</small></h3>
@@ -193,7 +195,7 @@ function ChildPin({ child }: { child: Child }) {
       value={again} onChange={event => setAgain(event.target.value.replace(/\D/g, ''))} /></label>
     {problem && <p role="alert">{problem}</p>}
     <button className="cj-primary" disabled={save.isPending}>{save.isPending ? 'PIN 저장 중…' : child.pinSet ? 'PIN 바꾸기' : 'PIN 정하기'}</button>
-    <ErrorNotice error={save.error} />{notice && <p role="status">{notice}</p>}
+    <ErrorNotice technical={false} error={save.error} />
   </form>
 }
 
@@ -242,7 +244,7 @@ function PairingIssue({ items }: { items: Child[] }) {
             </select>
           </label>
           {local && origin === window.location.origin && <p role="status">다른 기기에서 찍으려면 Wi-Fi 주소를 골라 주세요.</p>}
-          <ErrorNotice error={addresses.error} retry={() => void addresses.refetch()} />
+          <ErrorNotice technical={false} error={addresses.error} retry={() => void addresses.refetch()} />
         </div>
       )}
       <form
@@ -271,7 +273,7 @@ function PairingIssue({ items }: { items: Child[] }) {
         <button className="cj-primary" disabled={!picked.length || issue.isPending}>
           {selectionChanged ? '변경한 대상으로 새 코드 발급' : pairing ? '새 코드 만들기' : '등록 코드 만들기'}
         </button>
-        <ErrorNotice error={issue.error} />
+        <ErrorNotice technical={false} error={issue.error} />
       </form>
       {pairing && (
         <div className="pairing-code" aria-live="polite">
@@ -317,6 +319,6 @@ function DeviceList() {
         </div> : <button className="cj-secondary" aria-label={`${d.label} 등록 해제`} onClick={() => setConfirming(d.deviceId)}>등록 해제</button>}
       </div>}
     </li>)}</ul>}
-    <ErrorNotice error={revoke.error} />
+    <ErrorNotice technical={false} error={revoke.error} />
   </div>
 }

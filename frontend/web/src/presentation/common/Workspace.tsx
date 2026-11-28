@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useContext, useLayoutEffect, useRef, useState } from 'react'
 // 메뉴 이동 때는 자녀·기간 같은 쿼리만 이어가고, 화면 안에서 연 리포트(reportId)는 버린다.
 // 남기면 메뉴를 눌러도 같은 리포트 상세가 다시 열려 목록으로 못 돌아간다.
 function menuSearch(search: string, parent = false) {
@@ -13,6 +13,7 @@ function ServiceLinks({ role, onNavigate }: { role?: string; onNavigate?: () => 
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
+    {role === 'PARENT' && <Link to="/" onClick={onNavigate}>서비스 소개</Link>}
     {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + menuSearch(location.search, role === 'PARENT')} onClick={onNavigate} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
     {isDemo && <Link to="/review" onClick={onNavigate}>개발 점검표</Link>}
   </nav>
@@ -21,7 +22,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthentication, isDemo } from '../../data/classroom/useClassroom.ts'
-import { useSession } from '../auth/sessionContext.ts'
+import { AuthContext, useSession } from '../auth/sessionContext.ts'
 import { NotificationBell } from './NotificationBell.tsx'
 import { Brand, ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryStateNotice } from './QueryStateNotice.tsx'
@@ -252,10 +253,12 @@ export function QueryFeedback({
 }: {
   query: { isPending: boolean; error: unknown; refetch: () => unknown }
 }) {
+  const auth = useContext(AuthContext)
   return (
     <>
       {query.isPending && <p role="status">불러오고 있습니다.</p>}
       <ErrorNotice
+        technical={auth?.session?.role === 'PARENT' ? false : undefined}
         error={query.error}
         retry={() => {
           void query.refetch()

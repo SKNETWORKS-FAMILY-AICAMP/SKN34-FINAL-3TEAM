@@ -12,6 +12,7 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import type { ReportContext } from './ParentInsights.tsx'
 import type { ReportAnswer } from '../../domain/reportHighlight.ts'
 import { ReportEvidenceItems } from './ReportEvidenceItems.tsx'
+import { PremiumFeaturePreview } from './PremiumFeaturePreview.tsx'
 export function ParentConversation({
   child,
   scope,
@@ -222,7 +223,7 @@ export function ParentConversation({
               ))}
             </section>
           )}
-          <ErrorNotice
+          <ErrorNotice technical={false}
             error={error}
             retry={
               error instanceof ApiError && state.messageId
@@ -233,13 +234,11 @@ export function ParentConversation({
                 : undefined
             }
           />
-          {conversationOff && (
-            <p className="ws-card">
-              {entitlement?.refundPending
-                ? '환불 검토 중에는 분석 대화를 이용할 수 없습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'
-                : '이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'}
-            </p>
-          )}
+          {conversationOff && (entitlement?.refundPending
+            ? <p className="ws-card">환불 검토 중에는 기록에 물어보기를 이용할 수 없습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.</p>
+            : entitlement?.status === 'FREE'
+              ? <PremiumFeaturePreview childId={child.id} feature="conversation" />
+              : <p className="ws-card">현재 이용권에서는 기록에 물어보기를 이용할 수 없습니다. 이용권·결제에서 이용 상태를 확인해 주세요.</p>)}
           </div>
           {!conversationOff && <>
             {!id && !pending && state.phase === 'IDLE' && <ExampleQuestions

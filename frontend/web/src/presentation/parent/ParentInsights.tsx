@@ -13,7 +13,7 @@ export type { ReportContext } from '../../domain/reportHighlight.ts'
 import { ParentReports } from './ParentReports.tsx'
 import { ParentConversation } from './ParentConversation.tsx'
 
-/** 화면 안 '리포트 | AI 챗봇' 전환은 주소(view=chat)로 하므로, 챗봇으로 넘길 때 연결한 리포트도 주소에 싣는다. */
+/** 화면 안 '리포트 | 기록에 물어보기' 전환은 주소(view=chat)로 하므로, 챗봇으로 넘길 때 연결한 리포트도 주소에 싣는다. */
 function reportFromParams(params: URLSearchParams): ReportContext | null {
   const reportId = params.get('askReportId'), revision = Number(params.get('askRevision'))
   const periodType = params.get('askType'), from = params.get('askFrom'), to = params.get('askTo')
@@ -89,7 +89,7 @@ export function ParentInsights({ child, scope, onScope, periodControl, mode = 'r
       <Link to={'/parent/journal?' + dashboardParams} aria-label="학부모 대시보드로 돌아가기">
         <ArrowLeft size={22} aria-hidden="true" />
       </Link>
-      <h1>AI 챗봇</h1>
+      <h1>기록에 물어보기</h1>
       {report ? <span className="chat-period-control">
         <CalendarDays size={17} aria-hidden="true" />
         <span>{chatScope.from} ~ {chatScope.to}</span>
@@ -98,7 +98,7 @@ export function ParentInsights({ child, scope, onScope, periodControl, mode = 'r
       <h1 className="parent-insights-switch">
         <button type="button" aria-pressed onClick={() => switchTo('report')}>리포트</button>
         <span aria-hidden="true">|</span>
-        <button type="button" aria-pressed={false} onClick={() => switchTo('chat')}>AI 챗봇</button>
+        <button type="button" aria-pressed={false} onClick={() => switchTo('chat')}>기록에 물어보기</button>
       </h1>
     </header>}
     <div className="parent-insights-content">
@@ -111,7 +111,7 @@ export function ParentInsights({ child, scope, onScope, periodControl, mode = 'r
     {mode === 'chat' && <div className="parent-insights-chat" id="parent-ai-conversation">
       {linking && <p role="status">답변의 근거 위치를 확인하고 있습니다.</p>}
       {linkNotice && <p role="status">{linkNotice}</p>}
-      <ErrorNotice error={linkError} retry={() => onAnswer(selection.current, true)} />
+      <ErrorNotice technical={false} error={linkError} retry={() => onAnswer(selection.current, true)} />
       <ParentConversation key={`${child.id}:${report ? report.reportId + ':' + report.revision : scope.from + ':' + scope.to}`}
         child={child} scope={chatScope} report={report ?? undefined}
         onAnswer={onAnswer}

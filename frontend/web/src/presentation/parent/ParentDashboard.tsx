@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { BookOpen, ArrowUpRight, ChevronDown, CheckCheck, Footprints, MessageSquarePlus } from 'lucide-react'
 import './parent-overview.css'
 import { ActivityExplorer } from './ActivityExplorer.tsx'
@@ -15,6 +15,7 @@ import { metricText, reportPeriodType } from '../../domain/parent.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { Modal } from '../shared/ClassroomParts.tsx'
 import { EntitlementSummary } from './EntitlementSummary.tsx'
+const ReportExamplePreview = lazy(() => import('./ReportExamplePreview.tsx'))
 
 const stateText = {
   OK: null,
@@ -63,7 +64,7 @@ export function ParentDashboard({ child, scope, onChangePeriod }: { child: Child
           {summary && ` · ${summary.period.from.replaceAll('-', '.')} — ${summary.period.to.replaceAll('-', '.')} (KST)`}
         </p>
       </header>
-
+      <ReportCard child={child} />
       <QueryFeedback query={q.summary} />
       {summary && summary.state !== 'OK' && (
         <div className="pd-status" role="status" data-query-state={summary.state}>
@@ -141,7 +142,6 @@ export function ParentDashboard({ child, scope, onChangePeriod }: { child: Child
           )}
           <p className="pd-observation-note">활동에 남은 기록이며, 사고력 수준을 진단하지 않습니다.</p>
         </section>
-        <ReportCard child={child} />
       </div>
 
       <nav className="pd-detail-launchers" aria-label="학습 상세 기록">
@@ -210,6 +210,7 @@ function Kpi({ m, index }: { m: Metric; index: number }) {
 
 function ReportCard({ child }: { child: Child }) {
   const navigate = useNavigate()
+  const [exampleOpen, setExampleOpen] = useState(false)
   const { search } = useLocation()
   const list = useParentQuery(['reports', child.id, 'COMPLETED', ''], (signal) => parentApi.reports(child.id, 'COMPLETED', signal))
   const latest = list.data && !list.error ? list.data.items.filter(report =>
@@ -219,21 +220,25 @@ function ReportCard({ child }: { child: Child }) {
   for (const key of ['reportId', 'revision', 'view']) reportParams.delete(key)
   if (latest) reportParams.set('reportId', latest.reportId)
   return (
-    <section aria-labelledby="report-h" className="pd-card pd-report">
+    <><section aria-labelledby="report-h" className="pd-card pd-report pd-report-featured">
+      <div className="pd-report-copy">
       <div className="pd-report-title"><BookOpen size={21} aria-hidden="true" /><h2 id="report-h">최근 주간 리포트</h2></div>
       <QueryFeedback query={list} />
-      {list.data && !list.error && !latest && <p>아직 볼 수 있는 주간 리포트가 없습니다.</p>}
+      {list.data && !list.error && !latest && <p>아직 볼 수 있는 주간 리포트가 없어요. 지난주 월요일~일요일의 학습 기록을 다음 월요일부터 주간 리포트로 준비해요. 먼저 예시를 살펴보세요.</p>}
       {latest && <p className="pd-report-meta pd-num">{latest.period.from} ~ {latest.period.to}</p>}
       <EntitlementSummary childId={child.id} report />
+      </div>
       <div className="pd-actions">
-        <button type="button" className="cj-primary" onClick={() => navigate('/parent/report?' + reportParams)}>
+        {latest && <button type="button" className="cj-primary" onClick={() => navigate('/parent/report?' + reportParams)}>
           리포트 보기
-        </button>
+        </button>}
+        <button type="button" className="cj-secondary" aria-haspopup="dialog" onClick={() => setExampleOpen(true)}>주간 리포트 예시 보기</button>
         <button type="button" className="cj-secondary" onClick={() => navigate('/parent/analysis' + search)}>
-          AI 챗봇으로 질문하기
+          기록에 물어보기
         </button>
       </div>
     </section>
+    {exampleOpen && <Modal title="주간 리포트 예시" onClose={() => setExampleOpen(false)} scrollIndicator><Suspense fallback={<p role="status">예시를 불러오고 있어요.</p>}><ReportExamplePreview /></Suspense></Modal>}</>
   )
 }
 

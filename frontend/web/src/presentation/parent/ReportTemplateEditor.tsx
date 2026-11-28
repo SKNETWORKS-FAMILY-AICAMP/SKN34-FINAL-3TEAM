@@ -60,7 +60,7 @@ export function ReportTemplateEditor({ conversationId }: { conversationId: strin
         disabled={busy} placeholder="돌아보기를 먼저 보여 주고, 간결하게 설명해 주세요."
         onChange={(e) => { setQuestion(e.target.value); setProposal(null); setSaved(false); setError(null) }} /></label>
       <button className="cj-secondary" disabled={busy || !question.trim() || !current.data || !!current.error}>변경안 확인하기</button>
-      <small>변경안을 요청하면 분석 대화 사용 한도에 포함됩니다. 확인·저장에는 추가 차감이 없습니다.</small>
+      <small>변경안을 요청하면 기록에 물어보기 사용 한도에 포함됩니다. 확인·저장에는 추가 차감이 없습니다.</small>
     </form>
     {busy && <p role="status">요청을 처리하고 있습니다.</p>}
     {proposal?.clarification && <p role="status">{proposal.clarification}</p>}
@@ -71,6 +71,6 @@ export function ReportTemplateEditor({ conversationId }: { conversationId: strin
       <button className="cj-secondary" disabled={busy} onClick={() => { setProposal(null); setError(null) }}>변경안 취소</button>
     </div>}
     {saved && <p role="status">저장했습니다. 다음 리포트 생성부터 적용됩니다.</p>}
-    <ErrorNotice error={error} />
+    <ErrorNotice technical={false} error={error} />
   </section>
 }

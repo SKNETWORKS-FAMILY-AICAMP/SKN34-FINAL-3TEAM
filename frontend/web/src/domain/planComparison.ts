@@ -67,7 +67,7 @@ export function planComparison(free: Product, premium: Product): { price: { free
         both('주간 학습 수치'),
         paidOnly('한 주의 기록·이번 주 저녁 질문'),
         paidOnly('대표 답변 설명'),
-        row('리포트에 물어보기', p => limited(p, 'dailyConversations', '회')),
+        row('기록에 물어보기', p => limited(p, 'dailyConversations', '회')),
         row('추억 그림책', memoryBookCell, '한 주를 엮은 그림책'),
       ] },
     ],

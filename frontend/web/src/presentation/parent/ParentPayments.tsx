@@ -91,16 +91,17 @@ export function ParentPayments({ child }: { child?: Child }) {
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
   return <section className={checkoutMode ? "payment-page" : "payment-page premium-billing"}>
-    <header><div><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></div>
+    <header><div><h1>{checkoutMode ? paymentAvailable ? '결제수단 선택' : '결제 준비 중' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></div>
       {!checkoutMode && <div className="premium-header-actions ws-actions">
         <Link to={{ search: params.toString(), hash: '#plan-compare' }}>무료·프리미엄 비교</Link>
         <button ref={changePlanButton} className="premium-change-plan" aria-controls="plan-change-preview" aria-expanded={catalogOpen} onClick={openCatalog}>이용권 변경</button>
       </div>}
     </header>
+    {!checkoutMode && <PremiumComparison key={hash} initiallyOpen />}
     {paymentTestMode && <p className="payment-test-note">결제 연동 테스트 · 실제 청구 없이 토스 인증과 승인을 확인합니다. 테스트 주문은 서버 메모리에만 보관되며 학습 이용권에는 적용되지 않습니다.</p>}
     {mockPaymentMode && <p className="payment-test-note">모의 결제 시연 · 외부 PG를 호출하지 않고 가상 승인·구독·환불을 확인합니다.</p>}
     {duplicate && <p role="status">이 자녀는 이미 이용 중인 구독이 있습니다. 현재 구독에서 결제수단과 자동 갱신을 관리할 수 있습니다.</p>}
-    <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
+    <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice technical={false} error={error} />
     {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
     {opening && !duplicate && <button disabled={busy} onClick={() => void prepare()}>결제 탭 다시 열기</button>}
     {!checkoutMode && availableProducts.length > 0 && <section id="available-plans" className="premium-catalog" aria-labelledby="available-plans-title" data-multiple={availableProducts.length > 1 || undefined}>
@@ -112,14 +113,13 @@ export function ParentPayments({ child }: { child?: Child }) {
     </section>}
     {!checkoutMode && catalogOpen && <PremiumPlanPreview headingRef={catalogHeading} onClose={() => { setCatalogOpen(false); changePlanButton.current?.focus() }} />}
     {!checkoutMode && <PaymentManagement key={`current-${child?.id ?? 'all'}`} child={child} section="subscriptions" />}
-    {!checkoutMode && <PremiumComparison key={hash} initiallyOpen={hash === '#plan-compare'} />}
 
     {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
     {checkoutMode && (!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
       <section className="payment-panel"><h2>{order ? '결제수단' : '이용권 선택'}</h2>
-        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); checkoutTab.current = null; setOpening(false); setTabNotice(''); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}{memoryBookLabel(p)}</small></span><strong>{won(p.price)}</strong></label>)}</div>
+        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); checkoutTab.current = null; setOpening(false); setTabNotice(''); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `기록에 물어보기 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}{memoryBookLabel(p)}</small></span><strong>{won(p.price)}</strong></label>)}</div>
           {products.data && !products.data.items.some(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') && <p>현재 구매 가능한 이용권이 없습니다.</p>}
-          <button className="payment-primary" disabled={!child || !product || duplicate || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable} onClick={() => void prepare()}>{busy ? '주문을 준비하고 있습니다…' : opening ? '새 탭에서 결제 진행 중' : checkoutMode ? '주문 다시 준비' : '결제수단 선택'}</button>
+          <button className="payment-primary" disabled={!child || !product || duplicate || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable} onClick={() => void prepare()}>{!paymentAvailable ? '결제 준비 중' : busy ? '주문을 준비하고 있습니다…' : opening ? '새 탭에서 결제 진행 중' : checkoutMode ? '주문 다시 준비' : '결제수단 선택'}</button>
           {!paymentAvailable && <p role="note">지금 결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}
           {!child && <p>결제할 자녀를 먼저 선택해 주세요.</p>}{!product && <p>구매할 이용권을 선택하면 결제를 진행할 수 있습니다.</p>}</>
           : <><QueryFeedback query={checkoutState} />
@@ -191,7 +191,7 @@ function CheckoutWidget({ order, paymentAvailable, checking }: { order: PendingC
   }
 
   return <>
-    <ErrorNotice error={error} />
+    <ErrorNotice technical={false} error={error} />
     <div id="toss-payment-methods" />
     <div id="toss-payment-agreement" />
     {!ready && !error && <p role="status">토스 결제수단을 불러오고 있습니다.</p>}
@@ -235,7 +235,7 @@ export function PaymentResult({ failed = false }: { failed?: boolean }) {
     {mockPaymentMode && <p className="payment-test-note">모의 승인 결과입니다. 실제 PG 승인·청구가 아닙니다.</p>}
     {authReady && session?.role !== 'PARENT' && <p>결제 정보를 확인하려면 학부모로 로그인해 주세요. <Link to="/login">로그인 화면</Link></p>}
     {failed ? <p>결제 인증이 취소되었거나 완료되지 않았습니다. 이 화면에서는 승인을 요청하지 않았습니다.</p> : busy && (!authReady || session?.role === 'PARENT') ? <p role="status">서버에서 결제 결과를 확인하고 있습니다…</p> : state && <p role="status">{paymentTestMode && state.status === 'APPROVED' ? '토스 테스트 승인이 완료되었습니다. 실제 청구와 학습 이용권 적용은 이루어지지 않습니다.' : paymentStateLabel(state)}</p>}
-    <ErrorNotice error={error} />{state && <dl><div><dt>결제 금액</dt><dd>{won(state.amount)}</dd></div></dl>}{state && <details><summary>거래 자세히 보기</summary><p className="payment-order-id">주문번호 {state.orderId}</p></details>}
+    <ErrorNotice technical={false} error={error} />{state && <dl><div><dt>결제 금액</dt><dd>{won(state.amount)}</dd></div></dl>}{state && <details><summary>거래 자세히 보기</summary><p className="payment-order-id">주문번호 {state.orderId}</p></details>}
     {!complete && id && <button className="payment-primary" disabled={busy} onClick={() => void refresh()}>결제 상태 다시 확인</button>}
     <p><Link to={'/parent/billing' + (pending ? '?childId=' + encodeURIComponent(pending.childId) : '')}>이용권 화면으로 돌아가기</Link></p>
   </main>

@@ -31,7 +31,7 @@ test('3단계를 넘기고 마지막에 기기 화면으로 가면 다시 뜨지
   await card.getByRole('button', { name: '다음', exact: true }).click()
   await expect(card.getByRole('heading', { name: '학습 현황과 리포트' })).toBeFocused()
   await expect(card).toContainText('2 / 3')
-  await expect(marked(page)).toHaveText(['학습 현황', '리포트·AI 챗봇'])
+  await expect(marked(page)).toHaveText(['학습 현황', '리포트·기록에 물어보기'])
 
   await card.getByRole('button', { name: '다음', exact: true }).click()
   await expect(card.getByRole('heading', { name: '공개 동의는 계정·자녀 설정에서' })).toBeFocused()

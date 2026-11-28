@@ -70,3 +70,5 @@
   #class-journal .ws-parent .device-record-details { margin-left:0; }
   #class-journal .ws-parent .device-settings-dialog .device-setup-steps { grid-template-columns:1fr; }
 }
+
+#class-journal .device-save-success { display:flex; align-items:center; gap:10px; padding:16px 20px; border:1px solid #b6d7be; border-radius:12px; background:#edf7ed; color:#20563c; }

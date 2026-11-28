@@ -140,7 +140,7 @@ test('무료 자녀: 최근 4주 회차가 없으면 표지 없이 잠긴 책 �
   await login(page)
   await page.goto('/parent/report?childId=demo-doyun')
   const books = page.getByRole('region', { name: '추억 그림책', exact: true })
-  await expect(books.getByText('아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 최근 4주에는 새로 받은 액자가 없어요.', { exact: true })).toBeVisible()
+  await expect(books.getByText('최근 4주에는 새로 받은 액자가 없어요. 이전 회차의 액자 3개는 아래 잠긴 책으로 표시됩니다.', { exact: true })).toBeVisible()
   const shelf = books.getByRole('list', { name: '최근 4주 그림책 표지' })
   await expect(shelf.locator('img.memory-shelf-cover')).toHaveCount(0)
   await expect(shelf.getByText('잠긴 책 3권', { exact: true })).toBeVisible()

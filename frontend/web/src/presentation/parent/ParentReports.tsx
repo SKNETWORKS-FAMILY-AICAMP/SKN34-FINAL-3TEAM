@@ -27,8 +27,8 @@ import { ReportProblem } from '../service/ReportProblem.tsx'
 import { weeklyActivities, weeklyCategories, type WeeklyReportView } from '../../domain/weeklyReportNavigation.ts'
 import './report-reader.css'
 
-// Preview is local-only. No example records or mock handlers enter the production bundle.
-const ReportExamplePreview = import.meta.env.DEV ? lazy(() => import('./ReportExamplePreview.tsx')) : null
+// Only clearly labelled illustrative content enters this lazy chunk; no mock API handlers.
+const ReportExamplePreview = lazy(() => import('./ReportExamplePreview.tsx'))
 
 export function ParentReports({
   child,
@@ -69,9 +69,9 @@ export function ParentReports({
 
   return <>
     <div className="parent-report-entry"><h2>{child.nickname}의 학습 리포트</h2>
-      {ReportExamplePreview && <button type="button" className="cj-secondary" aria-haspopup="dialog" onClick={() => setExampleOpen(true)}>주간 리포트 예시 보기</button>}
+      <button type="button" className="cj-secondary" aria-haspopup="dialog" onClick={() => setExampleOpen(true)}>주간 리포트 예시 보기</button>
     </div>
-    {exampleOpen && ReportExamplePreview && <Modal title="주간 리포트 예시" onClose={() => setExampleOpen(false)} scrollIndicator>
+    {exampleOpen && <Modal title="주간 리포트 예시" onClose={() => setExampleOpen(false)} scrollIndicator>
       <Suspense fallback={<p role="status">리포트 예시를 불러오고 있어요.</p>}><ReportExamplePreview /></Suspense>
     </Modal>}
     <QueryFeedback query={reports} />
@@ -310,7 +310,8 @@ function ReportDetail({
                     </div>
                     <button className="cj-secondary" onClick={() => setWeeklySelection({ category: 'narrative', attemptId: null })}>한 주의 기록 읽기</button>
                   </section>
-                ) : entitlement?.narrativeEnabled === false ? (
+                ) : entitlement?.refundPending ? <p role="note">환불 검토 중에는 수치 리포트를 볼 수 있어요. 요약·근거 설명은 이용이 제한됩니다.</p>
+                : entitlement?.narrativeEnabled === false && entitlement.status === 'FREE' ? (
                   <PremiumPreview childId={child.id} />
                 ) : (
                   null
@@ -361,6 +362,7 @@ function PremiumPreview({ childId }: { childId: string }) {
       <ul>
         <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>한 주의 기록</strong><span>한 주 동안의 활동을 글로 정리해 드려요.</span></span><em>프리미엄</em></Link></li>
         <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>이번 주 저녁 질문</strong><span>아이와 저녁에 함께 나눌 질문을 드려요.</span></span><em>프리미엄</em></Link></li>
+        <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>대표 답변 설명</strong><span>학생 글의 근거와 함께 생각을 보완할 지점을 살펴봐요.</span></span><em>프리미엄</em></Link></li>
       </ul>
       <Link className="cj-secondary" to={to}>무료와 프리미엄 비교 보기</Link>
     </section>

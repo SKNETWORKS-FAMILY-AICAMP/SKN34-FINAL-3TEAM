@@ -1,4 +1,4 @@
-import { BookOpen, Check, Download, Lock } from 'lucide-react'
+import { ArrowRight, BookOpen, Check, Download, Lock } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { openDownload } from '../../data/memoryBook/api.ts'
@@ -104,9 +104,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
       <h2 id="parent-memory-books-h"><BookOpen size={20} aria-hidden="true" /> 추억 그림책</h2>
       <p>{!locked
         ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자마다, 그 주의 그림과 아이의 답을 엮은 그림책(PDF)을 발급할 수 있습니다.'
-        : items.length === 0
-          ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 최근 4주에는 새로 받은 액자가 없어요.'
-          : '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 무료 이용권에서는 최근 4주 표지를 볼 수 있어요.'}</p>
+        : '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 무료 이용권에서는 최근 4주 표지를 볼 수 있어요.'}</p>
       {rounds.isPending && <p role="status">불러오는 중입니다.</p>}
       {blocked && <p role="alert">{blocked}</p>}
       {/* 실패는 안내와 재시도를 먼저(user-flow 8절) */}
@@ -116,6 +114,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
         </p>
       )}
       {shelf && items.length === 0 && lockedCount === 0 && <p className="muted">아직 받은 기념 액자가 없습니다. 한 주 테마 다섯 문제를 모두 마치면 생깁니다.</p>}
+      {shelf && items.length === 0 && lockedCount > 0 && <p className="muted">최근 4주에는 새로 받은 액자가 없어요. 이전 회차의 액자 {lockedCount}개는 아래 잠긴 책으로 표시됩니다.</p>}
       {shelf && (items.length > 0 || lockedCount > 0) && (
         <ul className="memory-shelf" aria-label={locked ? '최근 4주 그림책 표지' : '그림책을 발급할 수 있는 회차'}>
           {items.map((round) => (
@@ -145,7 +144,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
       </nav>}
       {shelf && locked && (
         <p className="memory-shelf-notice" role="note">
-          {memoryBookLockedNotice(lockedCount)} <Link to={comparePath(child.id)}>무료와 프리미엄 비교 보기</Link>
+          {memoryBookLockedNotice(lockedCount)} <Link className="cj-secondary premium-compare-link" to={comparePath(child.id)}>무료와 프리미엄 비교 보기 <ArrowRight size={16} aria-hidden="true" /></Link>
         </p>
       )}
       {notice && <p role="alert">{notice}</p>}

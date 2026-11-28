@@ -144,7 +144,7 @@ function DemoSignupPage() {
             >
               동의하고 등록하기
             </button>
-            <ErrorNotice
+            <ErrorNotice technical={false}
               error={signup.error}
               retry={() => {
                 void signup.mutateAsync({ email, password, name, consents }).catch(() => {})
@@ -247,7 +247,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
         >
           자녀 등록하기
         </button>
-        <ErrorNotice error={register.error} />
+        <ErrorNotice technical={false} error={register.error} />
       </form>
     </section>
   )
@@ -290,7 +290,7 @@ export function ProfileSettings({ child, section }: { child?: Child; section?: '
           <button className="cj-primary" disabled={updateMe.isPending}>
             이름 저장
           </button>
-          <ErrorNotice error={updateMe.error} />
+          <ErrorNotice technical={false} error={updateMe.error} />
         </form>
       </section>}
       {child && section !== 'parent' && <section className="ws-card">
@@ -339,7 +339,7 @@ export function ProfileSettings({ child, section }: { child?: Child; section?: '
           <button className="cj-primary" disabled={update.isPending}>
             자녀 정보 저장
           </button>
-          <ErrorNotice error={update.error} />
+          <ErrorNotice technical={false} error={update.error} />
         </form>
         <details className="parent-profile-guidance"><summary>학년 변경·자동 진급 안내</summary>
           <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
