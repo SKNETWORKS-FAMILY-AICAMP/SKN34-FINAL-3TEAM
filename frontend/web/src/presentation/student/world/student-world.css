@@ -376,6 +376,8 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* 문제 글 안 줄바꿈을 그대로(#1093) */
+  white-space: pre-line;
 }
 #class-journal .st-card-foot {
   margin-top: auto;

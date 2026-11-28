@@ -53,7 +53,7 @@ test('첫 로그인: 자동 시작 → 8개 대사를 화면을 옮기며 끝까
     [/\/student\/home\?tour=2$/, /(오늘 문제|이어서 풀기)/, 'any'],
     [/\/student\/home\?tour=3$/, /(월요일부터 금요일까지)/, 'home-days'],
     [/\/student\/journal\?tour=4$/, /아직 비어 있지만/, null],
-    [/\/student\/activities\?tour=5$/, /생각 놀이/, 'activities-list'],
+    [/\/student\/activities\?tour=5$/, /얼마나 해 봤는지 모아 볼 수 있어/, 'activities-list'],
     [/\/student\/community\?tour=6$/, /내 답이 친구들에게 안 보여/, null],
     [/\/student\/room\?tour=7$/, /방을 꾸밀 수 있어/, 'room-decor'],
     [/\/student\/home\?tour=8$/, /도움말에서 언제든/, null],

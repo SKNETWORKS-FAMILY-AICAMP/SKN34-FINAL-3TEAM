@@ -10,13 +10,14 @@ import { Companion } from './Companion.tsx'
 import { useLook } from './lookContext.ts'
 import { STEPS } from './missionSteps.ts'
 import { SpeechBubble } from './SpeechBubble.tsx'
+import { StartError } from '../startBlock.tsx'
 import './mission-guide.css'
 
 /** "이렇게 써요": 입력 방식마다 쓸 칸(답 칸 이름과 같은 뜻, 규칙 기반). 점선 칩은 꼭 쓰지 않아도 되는 칸 */
 const PARTS: Record<InputType, { label: string; optional?: boolean }[]> = {
   NARRATIVE: [{ label: '내 생각' }, { label: '이유' }],
   SOLUTION_STEPS: [{ label: '풀이 과정' }, { label: '최종 답' }],
-  ESSAY: [{ label: '내 주장' }, { label: '이유 두 가지' }, { label: '다른 의견에 답하기' }],
+  ESSAY: [{ label: '내 주장' }, { label: '이유 두 가지' }, { label: '반대 의견에 답하기' }],
   CHOICE: [{ label: '알맞은 것 고르기' }],
   ORDERING: [{ label: '순서대로 놓기' }],
   CLASSIFICATION: [{ label: '무리 지어 나누기' }],
@@ -48,7 +49,7 @@ function GuideArt({ mission }: { mission: Mission }) {
 
 /**
  * 미션 안내 화면(시안 MissionGuide, #589·#648). 학생 틀 안 전체 화면: 왼쪽 큰 그림, 오른쪽 질문·쓰는 법·도우미 말풍선·시작.
- * 무료 학생의 추가 문제(EXTRA)는 시작할 때 403 PREMIUM_REQUIRED가 와서 안내만 보여 준다(결제 유도 문구 없음, #487).
+ * 무료 학생의 추가 문제(EXTRA)는 시작할 때 403 PREMIUM_REQUIRED가 와서 안내만 보여 준다(결제·이용권·프리미엄 말 없이, #487·#1093).
  */
 export function MissionGuide({
   id,
@@ -74,6 +75,8 @@ export function MissionGuide({
   const query = useMission(id, child, context)
   const m = query.data
   const premiumOnly = error instanceof ApiError && error.problem?.code === 'PREMIUM_REQUIRED'
+  // 하루 추가 문제 한도(429, #1093): 아이 말로 안내하고 시작 단추를 끈다(같은 화면에서 다시 눌러도 같은 답)
+  const limitReached = error instanceof ApiError && error.problem?.code === 'USAGE_LIMIT_REACHED'
   const [speaking, setSpeaking] = useState(false)
   const title = useRef<HTMLHeadingElement>(null)
   useEffect(() => () => window.speechSynthesis?.cancel(), [])
@@ -142,14 +145,7 @@ export function MissionGuide({
               </span>
               <SpeechBubble tail="left" className="mg-bubble"><p>10분이면 충분해요. 막히면 ‘생각 열기’를 눌러 봐!</p></SpeechBubble>
             </div>
-            {premiumOnly ? (
-              <div className="st-premium-note" role="status">
-                <strong>생각 유형별 더 풀어 보기는 프리미엄에서 열려요.</strong>
-                <p>이번 주 테마 문제는 그대로 풀 수 있어요. 홈에서 오늘 문제를 풀어 볼까요?</p>
-              </div>
-            ) : (
-              <ErrorNotice error={error} />
-            )}
+            <StartError error={error} />
             <div className="mg-actions">
               <button type="button" className="mg-read" onClick={read} aria-pressed={speaking}>
                 {speaking ? '읽는 중…' : '질문 읽어 주기'}
@@ -159,7 +155,7 @@ export function MissionGuide({
                   닫기
                 </button>
               ) : (
-                <button type="button" className="mg-start" aria-label="미션 시작하기" disabled={pending} onClick={() => void onStart(m)}>
+                <button type="button" className="mg-start" aria-label="미션 시작하기" disabled={pending || limitReached} onClick={() => void onStart(m)}>
                   {pending ? '여는 중…' : '시작하기 →'}
                 </button>
               )}

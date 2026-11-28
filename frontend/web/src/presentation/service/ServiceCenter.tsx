@@ -33,7 +33,7 @@ export function ServiceContent({ page }: { page: 'help' | 'support' | 'notices' 
 export function Help({ role }: { role: string }) {
   const q = useParentQuery(['help', role], signal => serviceApi.help(role, signal))
   const root = '/' + role.toLowerCase()
-  return <section className="service-help">{role === 'PARENT' && <GuideReplay />}<header className="parent-page-head"><h1>이용 도움말</h1><p>학습 기록을 읽는 방법과 이용 안내를 확인하세요.</p></header><QueryFeedback query={q} />
+  return <section className="service-help">{role === 'PARENT' && <GuideReplay />}<header className="parent-page-head"><h1>이용 도움말</h1><p>{role === 'STUDENT' ? '사고뭉치를 쓰는 방법을 알려 줄게요.' : '학습 기록을 읽는 방법과 이용 안내를 확인하세요.'}</p></header><QueryFeedback query={q} />
     <div className="service-reading-list">{q.data?.items.map(item => <details key={item.title}><summary>{role === 'PARENT' && item.title === '수치와 분석의 한계' ? '학습 수치와 분석은 어떻게 읽어야 하나요?' : item.title}</summary><div className="service-reading-body"><p>{item.body}</p></div></details>)}</div>
     {q.data && !q.data.items.length && <p>등록된 도움말이 없습니다.</p>}
     <footer className="service-help-footer"><div><h2>더 확인할 내용이 있나요?</h2><p>문의하거나 이미 접수한 내용을 확인할 수 있어요.</p></div><div><Link to={root + '/support'}>문의하기</Link>{role !== 'ADMIN' && <Link to={root + '/support/results'}>내 접수 내역 보기</Link>}</div></footer>
@@ -66,8 +66,9 @@ export function Support({ level = 'h1' }: { level?: 'h1' | 'h2' } = {}) {
 type SupportKind = 'error-reports' | 'inquiries'
 function SupportTabs({ level: Title }: { level: 'h1' | 'h2' }) {
   const [params] = useSearchParams()
+  const student = useSession().session?.role === 'STUDENT'
   const [kind, setKind] = useState<SupportKind>(params.has('targetId') ? 'error-reports' : 'inquiries')
-  return <section className="service-support"><Title>문의·오류 신고</Title><p>일반 이용 문의와 학습 결과 오류를 구분해서 접수합니다. 접수만으로 판정이나 답변이 바뀌지는 않습니다.</p>
+  return <section className="service-support"><Title>문의·오류 신고</Title><p>{student ? '궁금한 점이나 이상한 결과를 알려 주세요.' : '일반 이용 문의와 학습 결과 오류를 구분해서 접수합니다. 접수만으로 판정이나 답변이 바뀌지는 않습니다.'}</p>
     <div className="ws-actions support-kind-tabs"><button aria-pressed={kind === 'inquiries'} onClick={() => setKind('inquiries')}>이용 중 궁금한 점이 있어요</button><button aria-pressed={kind === 'error-reports'} onClick={() => setKind('error-reports')}>학습 결과가 이상해요</button></div>
     {(['inquiries','error-reports'] as const).map(type => <SupportForm key={type} kind={type} active={kind === type} Sub={Title === 'h1' ? 'h2' : 'h3'} />)}
   </section>
@@ -75,6 +76,7 @@ function SupportTabs({ level: Title }: { level: 'h1' | 'h2' }) {
 function SupportForm({ kind, active, Sub }: { kind: SupportKind; active: boolean; Sub: 'h2' | 'h3' }) {
   const { session } = useSession()
   const [params] = useSearchParams()
+  const student = session?.role === 'STUDENT'
   const [targetType, setTargetType] = useState<SupportTarget>((['FOLLOWUP','JUDGMENT','ANALYSIS','REPORT'].includes(params.get('targetType') ?? '') ? params.get('targetType') : 'JUDGMENT') as SupportTarget)
   const [targetId, setTargetId] = useState(params.get('targetId') ?? '')
   const [category, setCategory] = useState(kind === 'error-reports' ? 'OTHER' : 'USAGE'), [title, setTitle] = useState(''), [comment, setComment] = useState(''), [notice, setNotice] = useState('')
@@ -97,7 +99,7 @@ function SupportForm({ kind, active, Sub }: { kind: SupportKind; active: boolean
       {kind === 'error-reports' && <><p role="note">{targetId ? `${supportTargetLabel(targetType)} 기록이 신고 대상으로 연결되어 있습니다.` : '신고할 결과 화면에서 오류 신고를 누르면 대상 기록이 자동으로 연결됩니다. 기록을 찾기 어려우면 일반 문의로 접수해 주세요.'}</p><details><summary>신고 대상 확인·직접 입력</summary><div className="ws-form"><label>신고 대상<select value={targetType} onChange={e => { setTargetType(e.target.value as SupportTarget); setTargetId('') }}>{[['JUDGMENT','판정'],['FOLLOWUP','되묻기'],['ANALYSIS','기록에 물어보기'],['REPORT','리포트']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label>대상 기록 번호<input value={targetId} onChange={e => setTargetId(e.target.value)} maxLength={200}/></label></div></details></>}
       <label>유형<select value={category} onChange={e => setCategory(e.target.value)}>{(kind === 'error-reports' ? [['WRONG_JUDGMENT','판정이 틀려요'],['ODD_QUESTION','질문이 이상해요'],['MISMATCH','숫자·인용이 달라요'],['INAPPROPRIATE','부적절한 표현'],['OTHER','기타']] : [['ACCOUNT','계정'],['USAGE','이용 방법'],['PAYMENT','결제']]).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
       {kind === 'inquiries' && <label>제목<input required value={title} onChange={e => setTitle(e.target.value)} maxLength={200}/></label>}
-      <label>내용<textarea required minLength={2} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} /></label><small>비밀번호·카드 정보·실제 아동 개인정보는 적지 마세요.</small>
+      <label>내용<textarea required minLength={2} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} /></label><small>{student ? '이름, 학교, 전화번호, 사는 곳, 비밀번호는 적지 마세요.' : '비밀번호·카드 정보·실제 아동 개인정보는 적지 마세요.'}</small>
       <button className="cj-primary" disabled={submit.isPending || !comment.trim() || (kind === 'error-reports' ? !targetId.trim() : !title.trim())}>접수하기</button><ErrorNotice error={submit.error} technical={session?.role === 'PARENT' ? false : undefined} /><p role="status">{notice}</p>
       </fieldset>
     </form><Sub>내 접수 내역</Sub><QueryFeedback query={q} />{q.data && !q.data.items.length && <p>접수한 내역이 없습니다.</p>}

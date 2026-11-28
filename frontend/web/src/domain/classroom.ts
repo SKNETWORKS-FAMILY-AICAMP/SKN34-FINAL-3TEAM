@@ -246,6 +246,10 @@ export function blankAnswer(inputType: InputType): AnswerContent {
     dictatedByGuardian: false,
   }
 }
+/** 마무리 예시 답·정답 글의 칸 구분 " / "(앞뒤 빈칸)을 줄바꿈으로(#1093, 내 답처럼 칸마다 한 줄). 빈칸 없는 빗금(1/2)은 그대로 */
+export function revealText(text: string): string {
+  return text.replace(/ \/ /g, '\n')
+}
 export function answerText(a: AnswerContent): string {
   if (a.inputType === 'SOLUTION_STEPS')
     return [
@@ -269,7 +273,7 @@ export function validateAnswer(a: AnswerContent, mission: Mission): string | nul
     (a.essay.reasons.length !== 2 ||
       ![a.essay.claim, ...a.essay.reasons, a.essay.rebuttal].every((v) => v.trim()))
   )
-    return '주장, 이유 두 가지, 다른 의견에 대한 답을 채워 주세요.'
+    return '주장, 이유 두 가지, 반대 의견에 답하기 칸을 모두 채워 주세요.'
   if (a.inputType === 'SOLUTION_STEPS' && (!a.finalAnswer.trim() || !a.steps.some((s) => s.trim())))
     return '답과 풀이 과정을 함께 남겨 주세요.'
   if (a.inputType === 'NARRATIVE' && !a.text.trim()) return '내 생각을 먼저 적어 주세요.'

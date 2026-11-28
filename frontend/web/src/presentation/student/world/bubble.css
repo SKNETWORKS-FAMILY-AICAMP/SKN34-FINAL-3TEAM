@@ -30,6 +30,8 @@
  * 아래 꼬리: 바깥 반폭 13·높이 20, 안쪽 반폭 11·높이 17, 안쪽 끝 16.37px(바깥 끝 20px) → 옆선 약 2px, 바깥 끝을 18.37px에서 잘라 끝 2px.
  * 왼쪽 꼬리: 바깥 반높이 12·길이 21, 안쪽 반높이 10·길이 17, 안쪽 끝 -16.76px(바깥 끝 -21px) → 옆선 약 1.9~2.06px, 바깥 끝을 안쪽 끝에서 2px 되는 곳에서 자름.
  * 그림자는 몸통과 같은 drop-shadow 하나를 같이 쓴다(위 filter).
+ * 안쪽(::after)은 같은 삼각형을 clip-path로 그리고 밑동만 몸통 안으로 3px 더 늘린다(#1093): 예전엔 밑동이 몸통 안으로 0.2~0.6px뿐이라
+ * 화면 배율 1.25 등에서 몸통 테두리가 꼬리 밑동에 세로줄로 비쳐 꼬리가 따로 붙은 것처럼 보였다. 모양·자리·옆선 두께는 그대로.
  */
 /* 아래 가운데 꼬리 */
 #class-journal .cj-app-student .st-bubble.st-bubble-down::before {
@@ -42,8 +44,11 @@
 #class-journal .cj-app-student .st-bubble.st-bubble-down::after {
   left: calc(50% - 11px);
   bottom: -16.37px;
-  border-width: 17px 11px 0 11px;
-  border-color: var(--st-bubble-bg) transparent transparent transparent;
+  width: 22px;
+  height: 20px;
+  border-width: 0;
+  background: var(--st-bubble-bg);
+  clip-path: polygon(0 0, 22px 0, 22px 3px, 11px 20px, 0 3px);
 }
 /* 왼쪽 아래 꼬리 */
 #class-journal .cj-app-student .st-bubble.st-bubble-left::before {
@@ -56,6 +61,9 @@
 #class-journal .cj-app-student .st-bubble.st-bubble-left::after {
   left: -16.76px;
   bottom: 16px;
-  border-width: 10px 17px 10px 0;
-  border-color: transparent var(--st-bubble-bg) transparent transparent;
+  width: 20px;
+  height: 20px;
+  border-width: 0;
+  background: var(--st-bubble-bg);
+  clip-path: polygon(0 10px, 17px 0, 20px 0, 20px 20px, 17px 20px);
 }

@@ -52,7 +52,9 @@
   padding-top: max(18px, env(safe-area-inset-top));
   padding-bottom: 18px;
 }
-#class-journal .st-tour .st-tour-box:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: -8px; }
+/* 초점 표시는 대사 말풍선 둘레에(#1093): 대화창 전체에 그리면 위로 튀어나온 얼굴·"그만 볼래" 위를 주황 선이 가로질렀다 */
+#class-journal .st-tour .st-tour-box:focus-visible { outline: none; }
+#class-journal .st-tour .st-tour-box:focus-visible .st-tour-bubble { outline: 4px solid var(--sk-accent); outline-offset: 4px; }
 /* 캐릭터 자리: 얼굴이 띠 위로 올라오고 이름표가 그 아래 */
 #class-journal .st-tour .st-tour-who {
   display: grid;
@@ -96,6 +98,8 @@
   line-height: 1.6;
   word-break: keep-all;
 }
+/* 다음 대사를 고르는 동안(최대 0.25초) 빈 말풍선 대신 생각 중 표시(#1093) */
+#class-journal .st-tour .st-tour-wait { color: var(--sk-ink); opacity: 0.55; letter-spacing: 0.1em; }
 #class-journal .st-tour .st-tour-count {
   position: absolute;
   left: 24px;
