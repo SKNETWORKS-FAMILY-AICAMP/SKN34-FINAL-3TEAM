@@ -36,7 +36,7 @@ test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기�
   // 프리미엄(E2E-PLUS reportNarrative=true) 주간이라 ReportJobService가 계산하는 narrativeEnabled와 같다
   const [from, to] = queueReport(nickname, { narrative: true }).split(' ')
 
-  await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+  await page.getByRole('link', { name: '리포트·기록에 물어보기', exact: true }).click()
   await page.waitForURL('**/parent/report**')
   await openCompletedReport(page, '일일', day)
   await expect(page.getByRole('heading', { name: '일일 리포트', exact: true })).toBeVisible()

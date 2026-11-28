@@ -47,7 +47,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await page.getByRole('dialog').getByRole('button',{name:/닫기$/}).click()
 
     const [from, to] = queueWeeklyReport(nickname).split(' ')
-    await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+    await page.getByRole('link', { name: '리포트·기록에 물어보기', exact: true }).click()
     await page.waitForURL('**/parent/report**')
     await openCompletedReport(page, '주간', `${from} ~ ${to}`)
     // 무료 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이용권·결제 비교표로 간다(누르지 않음)

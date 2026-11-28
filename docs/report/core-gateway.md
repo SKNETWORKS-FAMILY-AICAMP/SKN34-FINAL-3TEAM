@@ -1170,3 +1170,10 @@ ROLLBACK;
 
 - 호환 경로·필드와 `student.parent_sharing_enabled` 삭제는 #1078(#1061 릴리스와 #1062 배포 뒤)
 - 웹 학생 공개 설정 화면·비공개 안내 제거와 첫 둘러보기 고지는 #1062, 데이터 스크립트 호출 제거는 #1063(PR #1066, 이 PR 뒤 병합)
+
+## 39. 결제·탈퇴 이용권 만료 판정 시계 통일 (#1082 CI 후속, 2026-11-28)
+
+- `PaymentIntegrationTest`는 `paymentClock`을 2026-10-28로 고정하지만 탈퇴 가능 여부 SQL은 DB의 `CURRENT_TIMESTAMP`를 사용했다. 합성 이용권의 만료 시각인 2026-11-28 09:00 KST 이후에는 결제 권한은 유효하고 탈퇴만 허용되는 서로 다른 판정으로 `ci-core-service`와 `core-contracts`가 함께 실패했다.
+- `WithdrawalEligibilityService`도 `paymentClock`을 주입받고 현재 시각을 repository·MyBatis에 전달한다. 만료일 09:00 KST 경계, 자동 갱신 중·갱신 실패·미처리 환불·진행 중 결제의 탈퇴 차단 조건은 유지한다. API·DB 스키마 변경은 없다.
+- 실제 PostgreSQL 통합 검사에 만료 1초 전·정확한 만료 시각·1초 후와 만료 뒤 자동 갱신/갱신 실패 차단을 추가했다. 원래 실패한 상품 스냅숏·권한 검사도 그대로 유지한다.
+- 로컬 `PaymentIntegrationTest` 41개와 `AccountHttpTest` 9개, 총 50개 통과(격리된 PostgreSQL 컨테이너). 외부 PG는 합성 대역을 사용했다.

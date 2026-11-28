@@ -64,16 +64,15 @@ test('이용 동의 전에도 계정 관리와 탈퇴에 접근하고 금지된 
   expect(calls).not.toContain('GET /children')
 })
 
-test('오류 안내는 먼저 보이고 코드와 확인 번호는 자세히를 열 때만 보인다', async ({ page, context }) => {
+test('학부모 오류 안내는 보이고 개발 코드와 확인 번호는 노출하지 않는다', async ({ page, context }) => {
   await parentServer(context, 'error')
   await page.goto('/parent/billing')
   const notice = page.getByRole('alert').filter({ hasText: '이용권을 불러오지 못했습니다.' })
   await expect(notice).toBeVisible()
-  await expect(notice.getByText(/PRODUCTS_UNAVAILABLE/)).not.toBeVisible()
+  await expect(notice).toContainText('상품 조회 연결 실패')
+  await expect(notice).not.toContainText(/PRODUCTS_UNAVAILABLE|trace-synthetic|확인 번호/)
+  await expect(notice.getByText('문제 자세히 보기', { exact: true })).toHaveCount(0)
   await capture(page, 'error')
-  await notice.getByText('문제 자세히 보기', { exact: true }).click()
-  await expect(notice.getByText(/PRODUCTS_UNAVAILABLE/)).toBeVisible()
-  await expect(notice.getByText(/trace-synthetic/)).toBeVisible()
 })
 
 test('판매 상품이 없으면 빈 주문 확인과 비활성 구매 버튼을 보여 주지 않는다', async ({ page, context }) => {
@@ -90,7 +89,8 @@ test('결제 설정 장애는 문의 경로와 사용자 문구를 보여 주고
   await page.goto('/parent/billing')
   await expect(page.getByRole('note').filter({ hasText: '지금 결제를 이용할 수 없어요.' })).toBeVisible()
   await expect(page.getByRole('region', { name: '프리미엄 이용권', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '결제수단 선택', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '결제 준비 중', exact: true })).toBeDisabled()
+  await expect(page.getByRole('link', { name: '결제 문의하기', exact: true })).toHaveAttribute('href', '/parent/support')
   expect(calls.some(call => call.startsWith('POST /orders'))).toBe(false)
 })
 

@@ -200,6 +200,22 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         assertFalse(withdrawal.check(owner).canWithdraw)
         error("SUBSCRIPTION_DUPLICATE") { payments.create(owner,student,premium) }
     }
+    @Test fun `withdrawal follows the payment clock at KST expiry and preserves renewal blockers`() {
+        approved()
+        val expires=Instant.parse("2026-11-28T00:00:00Z") // 만료일 09:00 KST
+        at=expires.minusSeconds(1)
+        assertEquals(1,withdrawal.check(owner).activeSubscriptions)
+        assertFalse(withdrawal.check(owner).canWithdraw)
+        at=expires
+        assertEquals(0,withdrawal.check(owner).activeSubscriptions)
+        assertTrue(withdrawal.check(owner).canWithdraw)
+        at=expires.plusSeconds(1)
+        assertTrue(withdrawal.check(owner).canWithdraw)
+        jdbc.update("UPDATE subscription SET auto_renew=true WHERE student_id=?",student)
+        assertFalse(withdrawal.check(owner).canWithdraw)
+        jdbc.update("UPDATE subscription SET auto_renew=false,status='RENEWAL_FAILED' WHERE student_id=?",student)
+        assertFalse(withdrawal.check(owner).canWithdraw)
+    }
     @Test fun `missing configured free product is an explicit outage`() {
         jdbc.update("UPDATE product SET active=false WHERE id=?",free)
         error("PAYMENT_FREE_PRODUCT_UNAVAILABLE") { report.narrativeEnabled(student) }

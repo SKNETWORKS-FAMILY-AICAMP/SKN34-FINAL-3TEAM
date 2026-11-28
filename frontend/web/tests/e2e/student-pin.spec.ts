@@ -19,7 +19,11 @@ test('Google 로그인 보호자는 추가 재인증 없이 선택한 자녀 PIN
   const response = await saved
   expect(response.status()).toBe(204)
   expect(response.request().headers()['x-reauth-token']).toBeUndefined()
-  await expect(form.getByRole('status')).toContainText(`${nickname}의 PIN을 저장했습니다.`)
+  await expect(page.getByRole('dialog', { name: `${nickname} PIN 관리`, exact: true })).toBeHidden()
+  await expect(page.getByRole('status')).toContainText(`${nickname}의 PIN을 저장했습니다.`)
+  const manage = page.getByRole('button', { name: `${nickname} PIN 관리`, exact: true })
+  await expect(manage).toBeFocused()
+  await manage.click()
   await expect(form.locator('[data-pin-state]')).toHaveAttribute('data-pin-state', 'set')
   expect(reauth).toEqual([])
 })

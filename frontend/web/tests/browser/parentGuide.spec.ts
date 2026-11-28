@@ -34,7 +34,7 @@ test('3단계를 넘기고 마지막에 기기 화면으로 가면 다시 뜨지
   await expect(marked(page)).toHaveText(['학습 현황', '리포트·기록에 물어보기'])
 
   await card.getByRole('button', { name: '다음', exact: true }).click()
-  await expect(card.getByRole('heading', { name: '공개 동의는 계정·자녀 설정에서' })).toBeFocused()
+  await expect(card.getByRole('heading', { name: '친구 공개 동의는 계정·자녀 설정에서', exact: true })).toBeFocused()
   await expect(marked(page)).toHaveText('계정·자녀 설정')
   await expect(card.getByRole('button', { name: '건너뛰기' })).toHaveCount(0)
   await expect(card.getByRole('button', { name: '나중에', exact: true })).toBeVisible()

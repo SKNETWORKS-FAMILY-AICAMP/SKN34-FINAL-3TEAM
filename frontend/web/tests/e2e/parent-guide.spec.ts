@@ -44,7 +44,7 @@ test('마지막 단계에서 기기 등록하러 가면 기기 화면으로 가�
   await guide.getByRole('button', { name: '다음', exact: true }).click()
   await expect(guide.getByRole('heading', { name: '학습 현황과 리포트' })).toBeFocused()
   await guide.getByRole('button', { name: '다음', exact: true }).click()
-  await expect(guide.getByRole('heading', { name: '공개 동의는 계정·자녀 설정에서' })).toBeFocused()
+  await expect(guide.getByRole('heading', { name: '친구 공개 동의는 계정·자녀 설정에서', exact: true })).toBeFocused()
   const saved = onboardingPut(page)
   await guide.getByRole('button', { name: '기기 등록하러 가기', exact: true }).click()
   const first = await (await saved).json() as { completedAt: string }
