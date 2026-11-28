@@ -12,8 +12,9 @@ import type { TourLine } from './tourSteps.ts'
 import './tour.css'
 
 const TYPE_MS = 28
-/** 표시를 기다리는 시간: 가장 앞 경우가 보이면 바로, 다른 경우만 보이면 조금 더 기다렸다가, 아무것도 없으면 대체 대사 */
-const SETTLE_MS = 500
+/** 표시를 기다리는 시간: 가장 앞 경우가 보이면 바로, 다른 경우만 보이면 조금 더 기다렸다가, 아무것도 없으면 대체 대사.
+ * 500ms면 대사 넘길 때 말풍선이 빈 채로 멈춘 것처럼 보여 250ms로(#1093). 기다리는 동안은 말풍선에 "…" */
+const SETTLE_MS = 250
 const GIVE_UP_MS = 3000
 const reduceMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const tourEl = (target: string) => document.querySelector<HTMLElement>(`[data-tour="${target}"]`)
@@ -54,23 +55,40 @@ function useSpotlight(target: string | null, dock: RefObject<HTMLDivElement | nu
     const el = tourEl(target)
     if (!el) return
     // 대화창이 화면 아래에 있을 때의 윗선(대화창이 위로 올라가 있어도 아래 자리 기준으로 판단)
-    const dockTop = innerHeight - (dock.current?.offsetHeight ?? 0) - 14
-    // 스크롤해도 강조할 곳이 대화창 자리에 걸리면(한 화면에 맞춘 넓은 화면의 요일 칩 등) 대화창을 위로 올린다
-    const measure = () => {
-      const rect = el.getBoundingClientRect()
-      setSpot({ target, rect, top: rect.bottom + 8 > dockTop })
-    }
+    const dockH = dock.current?.offsetHeight ?? 0
+    const dockTop = innerHeight - dockH - 14
     const r = el.getBoundingClientRect()
     const gap = 16
-    if (r.top < gap || r.bottom > dockTop - gap) {
+    const coveredBelow = r.bottom > dockTop - gap
+    // 강조할 곳이 이미 화면 안에 다 보이는데 아래 대화창 자리에만 걸리면, 화면을 스크롤하지 않고 대화창을 위로 올린다(#1093 E6:
+    // 요일 칩에서 화면이 휙 내려갔다가 다음 화면으로 넘어갈 때 휙 올라가고, 스크롤 첫 순간 판단으로 대화창이 위아래로 깜빡였다).
+    // 위로 올린 대화창에도 가리면(강조할 곳이 화면 위쪽) 이 방법은 안 되니 스크롤한다
+    const flip = coveredBelow && r.top >= gap && r.bottom <= innerHeight && r.top > dockH + 14 + gap
+    const scrolled = !flip && (r.top < gap || coveredBelow)
+    if (scrolled) {
       const fits = r.height <= dockTop - gap * 2
       el.style.scrollMarginTop = `${gap}px`
       el.style.scrollMarginBottom = `${innerHeight - dockTop + gap}px`
       el.scrollIntoView({ block: fits ? 'end' : 'start', behavior: reduceMotion() ? 'auto' : 'smooth' })
     }
-    // 부드러운 스크롤 동안 위치를 따라간다(첫 틀에서 바로 잼)
+    // 스크롤하는 동안은 대화창 자리를 바꾸지 않고, 스크롤이 멈춘 뒤(위치가 3틀 그대로) 한 번만 판단한다.
+    // 스크롤해도 대화창 자리에 걸리면(더 내려갈 곳이 없는 화면) 그때 대화창을 위로
+    let settled = !scrolled
+    let last = Number.NaN
+    let still = 0
+    const measure = () => {
+      const rect = el.getBoundingClientRect()
+      if (!settled) {
+        still = Math.abs(rect.top - last) < 0.5 ? still + 1 : 0
+        last = rect.top
+        if (still >= 3) settled = true
+      }
+      setSpot({ target, rect, top: flip || (settled && rect.bottom + 8 > dockTop) })
+    }
+    // 부드러운 스크롤 동안 위치를 따라간다(첫 틀에서 바로 잼). 끝까지 안 멈추면 마지막 틀에서 판단
     let frames = 0
     let raf = requestAnimationFrame(function follow() {
+      if (frames === 44) settled = true
       measure()
       if (++frames < 45) raf = requestAnimationFrame(follow)
     })
@@ -202,7 +220,7 @@ export function StudentTour({ childId, page, shell }: { childId: string; page: S
             <span className="st-tour-name">{name}</span>
           </span>
           <SpeechBubble tail="left" className="st-tour-bubble">
-            <span className="st-tour-text" aria-hidden="true">{line.slice(0, shown)}</span>
+            <span className="st-tour-text" aria-hidden="true">{picked ? line.slice(0, shown) : <span className="st-tour-wait">…</span>}</span>
             <span className="st-tour-count" aria-hidden="true">{index + 1} / {TOUR_STEPS.length}</span>
             {done && <span className="st-tour-next" aria-hidden="true">▼</span>}
           </SpeechBubble>

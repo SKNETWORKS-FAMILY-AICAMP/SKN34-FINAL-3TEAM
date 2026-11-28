@@ -554,10 +554,15 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   )
   // 고르기·순서·분류는 정답 키로 전부 맞음/전부 아님이라 스티커·형광펜이 뜻이 없음(FeedbackFacade.withAnswerKey)
   const thoughtful = !CLOSED_TYPES.includes(a.mission.inputType)
-  // 스티커를 누른 요소만 그 근거 구절에 형광펜(평소엔 칠 없음, 사용자 결정 2026-11-20)
-  const [lit, setLit] = useState<string | null>(null)
-  const onLit = (id: string) => setLit((cur) => (cur === id ? null : id))
+  // 스티커를 누른 요소만 그 근거 구절에 형광펜(사용자 결정 2026-11-20). 처음에는 첫째로 찾은 스티커를 눌린 채로 보여 줘
+  // 스티커와 형광펜이 짝이라는 걸 안내 글 없이 알게 한다(#1093 E2 D안: 회색 "눌러 봐"가 꺼진 단추처럼 보였다). 다시 누르면 꺼짐
   const marks = thoughtful ? foundMarks(a.checklist ?? [], a.answers.map((v) => v.text)) : []
+  const firstFound = marks[0]?.id
+    ?? (thoughtful && lastAnswer ? foundMarks(lastAnswer.feedback?.judgment?.elements ?? [], [lastAnswer.text])[0]?.id : undefined)
+    ?? null
+  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  const lit = picked === undefined ? firstFound : picked
+  const onLit = (id: string) => setPicked(lit === id ? null : id)
   const answerVersions = (compact = false) => a.answers.map((v, i) => (
     <section className="ux-answer-version sw-version" key={v.answerId} aria-label={v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}>
       {!(compact && a.answers.length === 1) && <small>{v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}</small>}
@@ -1386,7 +1391,8 @@ function Stickers({ items, texts, label, title, lit, onLit, fresh }: { items: im
       {title && <h3 className="sw-stick-title">{title}</h3>}
       {yes.length > 0 && (
         <div className="sw-stick-row">
-          <b>뭉치가 찾았어 <small className="sw-stick-tip">눌러 봐</small></b>
+          {/* 안내 글 없이 첫 스티커를 눌린 채로 보여 준다(위 lit, #1093) */}
+          <b>뭉치가 찾았어</b>
           <ul className="sw-stickers">
             {yes.map((e, k) => (
               <li key={e.elementId} data-checked data-n={k + 1} data-lit={lit === e.elementId || undefined} data-evidence-verified="true">
@@ -1402,8 +1408,9 @@ function Stickers({ items, texts, label, title, lit, onLit, fresh }: { items: im
       )}
       {no.length > 0 && (
         <div className="sw-stick-row sw-stick-row-no">
+          {/* 보여 주기만 하는 목록(누르는 것 아님): 알약 모양 없이 흐린 글자(#1093) */}
           <b>아직 못 찾았어</b>
-          <ul className="sw-stickers">
+          <ul className="sw-stick-plain">
             {no.map((e) => <li key={e.elementId} data-evidence-verified="false">{e.label}</li>)}
           </ul>
         </div>

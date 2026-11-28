@@ -373,32 +373,61 @@
     radial-gradient(ellipse 60% 45% at 85% 100%, var(--hue, #9ccb8c) 0 98%, transparent 100%),
     #c6eae1;
 }
-/* 가구 이름표: 늘 화면 쪽을 본다 */
+/*
+ * 가구 팻말(#1093, 사용자 결정 2026-11-28 1안): 방 안(3D) 물건 위 벽면에 납작하게 붙인 물건 색 팻말(양 끝 못 자국).
+ * 자리는 바깥 단추의 transform(StudentRoom.tsx SPOTS.sign), 글자 크기는 단추마다 --st-sign-px(StudentRoom.tsx signPx: 화면에서 16px).
+ * 반투명 바탕은 연한 하늘색 벽과 구분이 안 돼 물건 색으로 되돌림
+ */
+/* transform-origin 0 0: 회전 기준을 왼쪽 위로 두어야 translate(-50%,-50%) 뒤 팻말 가운데가 정확히 SPOTS.sign 자리.
+   기본(가운데 기준)이면 왼쪽 벽 팻말(rotateY 90)이 벽에서 팻말 폭 절반만큼 방 안으로 떠 버렸다 */
 #class-journal .cj-app-student .st-world .st-room-tag {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 230px;
-  height: 44px;
-  margin: -44px 0 0 -115px;
+  transform-origin: 0 0;
+  width: max-content;
   padding: 0;
-  border: 2px solid var(--sk-line);
-  border-radius: 12px;
-  color: var(--sk-ink);
-  font-family: var(--st-display);
-  font-size: 18px;
-  transform-origin: 50% 100%;
+  border: 0;
+  background: none;
   pointer-events: auto;
   cursor: pointer;
 }
-#class-journal .cj-app-student .st-world .st-tag-desk { background: var(--sk-yellow); }
-#class-journal .cj-app-student .st-world .st-tag-wardrobe { background: #f7aec4; }
-#class-journal .cj-app-student .st-world .st-tag-window { background: #cfe6fa; }
-#class-journal .cj-app-student .st-world .st-tag-door { background: #ddf6d2; }
-#class-journal .cj-app-student .st-world .st-tag-shelf { background: #e8e0ff; }
-#class-journal .cj-app-student .st-world .st-tag-board { background: #fff1d6; }
-#class-journal .cj-app-student .st-world .st-room-tag:hover { background: var(--sk-yellow); }
-#class-journal .cj-app-student .st-world .st-room-tag:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+#class-journal .cj-app-student .st-world .st-room-sign {
+  position: relative;
+  display: block;
+  padding: 0.25em 1.05em;
+  /* 테두리·글자는 방 아래 칩(.st-room-chip)과 같게: 진한 남색 2px, Gowun Dodum 굵게 16px(화면 기준, em은 --st-sign-px 기준이라 0.125em = 2px) */
+  border: 0.125em solid var(--sk-line);
+  border-radius: 0.45em;
+  background: var(--st-sign-bg, #fffdf6);
+  box-shadow: 0 0.15em 0 rgb(31 78 107 / 0.18);
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-weight: 700;
+  font-size: var(--st-sign-px, 24px);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* 물건마다 예전 이름표 색(#1093 고치기 전 그대로). 연한 하늘색 벽과 구분되게 */
+#class-journal .cj-app-student .st-world .st-tag-desk { --st-sign-bg: var(--sk-yellow); }
+#class-journal .cj-app-student .st-world .st-tag-wardrobe { --st-sign-bg: #f7aec4; }
+#class-journal .cj-app-student .st-world .st-tag-window { --st-sign-bg: #cfe6fa; }
+#class-journal .cj-app-student .st-world .st-tag-door { --st-sign-bg: #ddf6d2; }
+#class-journal .cj-app-student .st-world .st-tag-shelf { --st-sign-bg: #e8e0ff; }
+#class-journal .cj-app-student .st-world .st-tag-board { --st-sign-bg: #fff1d6; }
+#class-journal .cj-app-student .st-world .st-room-sign::before,
+#class-journal .cj-app-student .st-world .st-room-sign::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 0.26em;
+  height: 0.26em;
+  margin-top: -0.13em;
+  border-radius: 50%;
+  background: var(--sk-line);
+}
+#class-journal .cj-app-student .st-world .st-room-sign::before { left: 0.3em; }
+#class-journal .cj-app-student .st-world .st-room-sign::after { right: 0.3em; }
+#class-journal .cj-app-student .st-world .st-room-tag:hover .st-room-sign { background: var(--sk-yellow); }
+#class-journal .cj-app-student .st-world .st-room-tag:focus-visible { outline: none; }
+#class-journal .cj-app-student .st-world .st-room-tag:focus-visible .st-room-sign { outline: 0.2em solid var(--sk-accent); outline-offset: 0.12em; }
 /* 캐릭터와 그림자: 바닥을 누르면 걸어가고, 점프하면 그림자가 작고 옅어진다 */
 #class-journal .cj-app-student .st-room-shadow {
   width: 100px;
@@ -775,10 +804,11 @@
 }
 
 /* ── 걷기·갈 곳 메뉴 (사용자 결정 2026-11-16): 안내 한 줄, 발판에 서면 말풍선 ── */
+/* 걷기 안내는 오른쪽 아래, 내 기록 칩(.st-room-chips, bottom 18px) 바로 위(#1093: 위에 두면 옷장 팻말과 겹쳤다) */
 #class-journal .cj-app-student .st-room-hint {
   position: absolute;
-  right: 16px;
-  top: 14px;
+  right: 20px;
+  bottom: 74px;
   z-index: 4;
   margin: 0;
   padding: 6px 14px;

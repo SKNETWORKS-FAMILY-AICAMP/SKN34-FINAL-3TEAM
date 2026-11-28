@@ -1331,7 +1331,9 @@
 #class-journal .st-world .sw-stick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #class-journal .st-world .sw-stick-row > b { flex: none; font-size: 15px; color: var(--sk-ink); }
 #class-journal .st-world .sw-stick-row-no > b { color: #6b7a78; }
-#class-journal .st-world .sw-stick-tip { margin-left: 4px; padding: 0 8px; border-radius: 999px; background: rgba(15, 59, 54, .08); color: #6b7a78; font-weight: 400; font-size: 14px; }
+/* 아직 못 찾은 생각: 누르는 것이 아니라 알약 없이 흐린 글자 목록(#1093: 점선 알약은 눌러도 아무 일 없는 단추처럼 보였다). 글자색 대비 4.5:1 넘게 */
+#class-journal .st-world .sw-stick-plain { display: flex; flex-wrap: wrap; gap: 2px 0; margin: 0; padding: 0; list-style: none; color: #56625f; font-size: 15px; }
+#class-journal .st-world .sw-stick-plain li + li::before { content: '·'; margin: 0 8px; }
 #class-journal .st-world .sw-stickers { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; }
 #class-journal .st-world .sw-stickers li { padding: 3px 12px; border: 2px dashed #b9c4c0; border-radius: 999px; background: transparent; color: #6b7a78; font-weight: 700; font-size: 15px; }
 #class-journal .st-world .sw-stickers li[data-checked] { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 2px solid var(--sk-line); background: #ffe27a; color: var(--sk-ink); box-shadow: 1px 2px 0 rgba(15, 59, 54, .25); }
